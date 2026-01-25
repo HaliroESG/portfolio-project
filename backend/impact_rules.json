@@ -1,0 +1,22 @@
+{
+    "high_impact": {
+      "score_range": [70, 100],
+      "keywords": [
+        "profit warning", "avertissement sur résultats", "guidance cut", 
+        "bankruptcy", "faillite", "merger", "acquisition", "opa", 
+        "investigation", "sec", "amf", "fraud", "fraude", "default"
+      ]
+    },
+    "medium_impact": {
+      "score_range": [40, 69],
+      "keywords": [
+        "earnings beat", "upgrade", "relèvement", "downgrade", "abaissement",
+        "buyback", "rachat d'actions", "dividend", "dividende", 
+        "partnership", "partenariat", "new contract"
+      ]
+    },
+    "official_sources": {
+      "score": 95,
+      "sources": ["Federal Reserve", "ECB", "Banque Centrale Européenne", "Fed"]
+    }
+  }
