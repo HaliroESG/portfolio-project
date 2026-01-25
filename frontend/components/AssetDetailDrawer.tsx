@@ -369,13 +369,13 @@ export function AssetDetailDrawer({ asset, isOpen, onClose }: AssetDetailDrawerP
               </div>
             </div>
 
-            {/* Latest Insights */}
+            {/* Latest Headlines */}
             {news.length > 0 && (
               <div className="bg-slate-50 dark:bg-[#080A0F] rounded-2xl border-2 border-slate-200 dark:border-white/5 p-6 shadow-xl">
                 <div className="flex items-center gap-2 mb-4">
                   <Newspaper className="w-5 h-5 text-blue-600 dark:text-[#00FF88]" />
                   <h3 className="text-sm font-black text-slate-950 dark:text-white uppercase tracking-tighter">
-                    Latest Insights
+                    Latest Headlines
                   </h3>
                 </div>
                 <div className="space-y-3">

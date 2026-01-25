@@ -27,8 +27,7 @@ export function HotNewsTickerTape() {
         const { data, error } = await supabase
           .from('news_feed')
           .select('*')
-          .in('category', ['MACRO'])
-          .or('impact_level.eq.HIGH,impact_score.gte.70')
+          .or('category.eq.MACRO,impact_level.eq.HIGH')
           .order('published_at', { ascending: false })
           .limit(20)
         
@@ -52,26 +51,15 @@ export function HotNewsTickerTape() {
     return null
   }
 
-  const getImpactColor = (level: string) => {
-    switch (level) {
-      case 'HIGH':
-        return 'text-red-400 dark:text-red-500'
-      case 'MEDIUM':
-        return 'text-amber-400 dark:text-amber-500'
-      default:
-        return 'text-slate-400 dark:text-gray-500'
-    }
-  }
-
   return (
-    <div className="bg-slate-950 dark:bg-black border-b-2 border-[#00FF88]/20 overflow-hidden">
+    <div className="bg-[#020617] border-b border-emerald-400/20 overflow-hidden">
       <div className="flex items-center gap-4 py-2">
         <div className="flex items-center gap-2 px-4 flex-shrink-0">
           <div className="relative">
             <div className="absolute inset-0 rounded-full bg-red-500 animate-ping opacity-75"></div>
             <div className="relative w-2 h-2 rounded-full bg-red-500"></div>
           </div>
-          <span className="text-[8px] font-black text-[#00FF88] uppercase tracking-[0.3em]">
+          <span className="text-[8px] font-mono font-black text-emerald-400 uppercase tracking-[0.3em]">
             HOT NEWS
           </span>
         </div>
@@ -83,30 +71,45 @@ export function HotNewsTickerTape() {
                 key={`${item.id}-${index}`}
                 className="flex items-center gap-3 flex-shrink-0 group"
               >
-                <span className={cn(
-                  "text-[9px] font-black uppercase tracking-wider",
-                  getImpactColor(item.impact_level)
-                )}>
-                  {item.impact_level}
-                </span>
-                <span className="text-[9px] font-mono text-slate-400 dark:text-gray-500">
+                {/* Badge rouge pulsant pour HIGH IMPACT */}
+                {item.impact_level === 'HIGH' ? (
+                  <div className="relative flex items-center gap-1.5">
+                    <div className="absolute inset-0 rounded-full bg-rose-500 animate-ping opacity-75"></div>
+                    <span className="relative text-[9px] font-mono font-black text-rose-500 uppercase tracking-wider px-1.5 py-0.5 bg-rose-500/10 rounded border border-rose-500/30">
+                      HIGH
+                    </span>
+                  </div>
+                ) : (
+                  <span className={cn(
+                    "text-[9px] font-mono font-black uppercase tracking-wider",
+                    item.impact_level === 'MEDIUM' ? 'text-amber-400' : 'text-slate-400'
+                  )}>
+                    {item.impact_level}
+                  </span>
+                )}
+                <span className="text-[9px] font-mono text-emerald-400/60">
                   [{item.source}]
                 </span>
                 <a
                   href={item.url}
                   target="_blank"
                   rel="noopener noreferrer"
-                  className="text-[10px] font-bold text-white dark:text-gray-200 hover:text-[#00FF88] transition-colors line-clamp-1 max-w-md"
+                  className={cn(
+                    "text-[10px] font-mono font-bold line-clamp-1 max-w-md transition-colors",
+                    item.impact_level === 'HIGH' 
+                      ? "text-rose-500 hover:text-rose-400" 
+                      : "text-emerald-400 hover:text-emerald-300"
+                  )}
                 >
                   {item.title}
                 </a>
                 {item.ticker && (
-                  <span className="text-[9px] font-mono font-black text-[#00FF88] px-1.5 py-0.5 bg-[#00FF88]/10 rounded">
+                  <span className="text-[9px] font-mono font-black text-emerald-400 px-1.5 py-0.5 bg-emerald-400/10 rounded border border-emerald-400/20">
                     {item.ticker}
                   </span>
                 )}
-                <ExternalLink className="w-3 h-3 text-slate-500 opacity-0 group-hover:opacity-100 transition-opacity" />
-                <div className="w-px h-4 bg-slate-700"></div>
+                <ExternalLink className="w-3 h-3 text-emerald-400/40 opacity-0 group-hover:opacity-100 transition-opacity" />
+                <div className="w-px h-4 bg-emerald-400/20"></div>
               </div>
             ))}
           </div>
