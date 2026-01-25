@@ -9,6 +9,7 @@ import { GeographicMap } from '../components/GeographicMap'
 import { CurrencyWidget } from '../components/CurrencyWidget'
 import { MacroStrip } from '../components/MacroStrip'
 import { AssetDetailDrawer } from '../components/AssetDetailDrawer'
+import { HotNewsTickerTape } from '../components/HotNewsTickerTape'
 import { mockRegions, mockCurrencyPairs } from '../utils/mockData'
 import { Asset } from '../types'
 import { cn } from '../lib/utils'
@@ -72,6 +73,7 @@ export default function PortfolioDashboard() {
       <Sidebar />
       <div className="flex-1 flex flex-col min-w-0">
         <Header lastSync={lastSync} />
+        <HotNewsTickerTape />
         <MacroStrip />
         <main className="flex-1 p-6 overflow-hidden flex flex-col gap-6">
           <div className="flex-1 flex gap-6 min-h-0">

@@ -51,6 +51,11 @@ export function MacroStrip() {
   const [jpyVolatility, setJpyVolatility] = useState<number | null>(null)
   const [miseryIndex, setMiseryIndex] = useState<number | null>(null)
 
+  // Define getIndicator function first to avoid hoisting issues
+  const getIndicator = (id: string): MacroIndicator | undefined => {
+    return indicators.find(i => i.id === id)
+  }
+
   useEffect(() => {
     async function fetchMacro() {
       try {
@@ -105,10 +110,6 @@ export function MacroStrip() {
     // Placeholder: Random value between 0.5-2.0%
     setJpyVolatility(1.2)
   }, [])
-
-  const getIndicator = (id: string): MacroIndicator | undefined => {
-    return indicators.find(i => i.id === id)
-  }
 
   const getTrendColor = (indicator: MacroIndicator | undefined, config: typeof MACRO_CONFIG[string]): string => {
     if (!indicator || indicator.value === null) return 'text-slate-400'

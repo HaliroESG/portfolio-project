@@ -2,8 +2,10 @@
 
 import React from 'react'
 import { Asset } from '../types'
-import { X, ExternalLink, Star, TrendingUp, TrendingDown, Globe2, Activity } from 'lucide-react'
+import { X, ExternalLink, Star, TrendingUp, TrendingDown, Globe2, Activity, Newspaper } from 'lucide-react'
 import { cn } from '../lib/utils'
+import { useEffect, useState } from 'react'
+import { supabase } from '../lib/supabase'
 
 interface AssetDetailDrawerProps {
   asset: Asset | null
@@ -40,12 +42,50 @@ const COUNTRY_NAMES: Record<string, string> = {
   'MX': 'Mexico',
 }
 
+interface NewsItem {
+  id: string
+  url: string
+  title: string
+  source: string
+  impact_level: string
+  impact_score: number
+  published_at: string
+}
+
 export function AssetDetailDrawer({ asset, isOpen, onClose }: AssetDetailDrawerProps) {
+  const [news, setNews] = useState<NewsItem[]>([])
+  
   if (!asset) return null
 
   const dayChange = asset.performance?.day?.value || 0
   const isPositive = dayChange >= 0
   const hasMissingData = asset.price === null || asset.price === 0 || asset.price === undefined
+
+  // Fetch news for this ticker
+  useEffect(() => {
+    if (!asset.ticker) return
+
+    async function fetchNews() {
+      try {
+        const { data, error } = await supabase
+          .from('news_feed')
+          .select('*')
+          .eq('ticker', asset.ticker)
+          .order('impact_score', { ascending: false })
+          .order('published_at', { ascending: false })
+          .limit(5)
+        
+        if (error) throw error
+        if (data) {
+          setNews(data)
+        }
+      } catch (err) {
+        console.error('Error fetching news:', err)
+      }
+    }
+
+    fetchNews()
+  }, [asset.ticker])
 
   // Prepare geographic breakdown data
   const geographicData = asset.constituents 
@@ -328,6 +368,54 @@ export function AssetDetailDrawer({ asset, isOpen, onClose }: AssetDetailDrawerP
                 </div>
               </div>
             </div>
+
+            {/* Latest Insights */}
+            {news.length > 0 && (
+              <div className="bg-slate-50 dark:bg-[#080A0F] rounded-2xl border-2 border-slate-200 dark:border-white/5 p-6 shadow-xl">
+                <div className="flex items-center gap-2 mb-4">
+                  <Newspaper className="w-5 h-5 text-blue-600 dark:text-[#00FF88]" />
+                  <h3 className="text-sm font-black text-slate-950 dark:text-white uppercase tracking-tighter">
+                    Latest Insights
+                  </h3>
+                </div>
+                <div className="space-y-3">
+                  {news.map((item) => (
+                    <a
+                      key={item.id}
+                      href={item.url}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="block p-3 bg-white dark:bg-[#0A0D12] rounded-xl border border-slate-200 dark:border-white/5 hover:border-blue-500 dark:hover:border-[#00FF88] transition-colors group"
+                    >
+                      <div className="flex items-start justify-between gap-2 mb-1">
+                        <span className={cn(
+                          "text-[9px] font-black uppercase tracking-wider px-1.5 py-0.5 rounded",
+                          item.impact_level === 'HIGH' 
+                            ? "bg-red-100 dark:bg-red-950/30 text-red-700 dark:text-red-400"
+                            : item.impact_level === 'MEDIUM'
+                            ? "bg-amber-100 dark:bg-amber-950/30 text-amber-700 dark:text-amber-400"
+                            : "bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-gray-400"
+                        )}>
+                          {item.impact_level}
+                        </span>
+                        <span className="text-[8px] font-mono text-slate-400 dark:text-gray-500">
+                          {item.source}
+                        </span>
+                      </div>
+                      <p className="text-xs font-bold text-slate-950 dark:text-white group-hover:text-blue-600 dark:group-hover:text-[#00FF88] transition-colors line-clamp-2">
+                        {item.title}
+                      </p>
+                      <div className="flex items-center justify-between mt-2">
+                        <span className="text-[8px] font-mono text-slate-400 dark:text-gray-500">
+                          Score: {item.impact_score}
+                        </span>
+                        <ExternalLink className="w-3 h-3 text-slate-400 dark:text-gray-500 opacity-0 group-hover:opacity-100 transition-opacity" />
+                      </div>
+                    </a>
+                  ))}
+                </div>
+              </div>
+            )}
 
             {/* Quick Actions */}
             <div className="bg-slate-50 dark:bg-[#080A0F] rounded-2xl border-2 border-slate-200 dark:border-white/5 p-6 shadow-xl">

@@ -2,7 +2,8 @@ name: Financial Data Sync
 
 on:
   schedule:
-    - cron: '0 9-22 * * 1-5'
+    - cron: '0 9-22 * * 1-5'  # Stock and macro sync (hourly during market hours)
+    - cron: '*/30 * * * *'     # News sync (every 30 minutes)
   workflow_dispatch:
 
 jobs:
@@ -45,3 +46,10 @@ jobs:
           SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
           SUPABASE_KEY: ${{ secrets.SUPABASE_SERVICE_KEY }}
         run: python macro_sync.py
+
+      - name: Sync News Feed
+        working-directory: ./backend
+        env:
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_KEY: ${{ secrets.SUPABASE_SERVICE_KEY }}
+        run: python news_sync.py
