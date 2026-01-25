@@ -7,6 +7,7 @@ import { Header } from '../components/Header'
 import { AssetTable } from '../components/AssetTable'
 import { GeographicMap } from '../components/GeographicMap'
 import { CurrencyWidget } from '../components/CurrencyWidget'
+import { MacroStrip } from '../components/MacroStrip'
 import { mockRegions, mockCurrencyPairs } from '../utils/mockData'
 import { Asset } from '../types'
 
@@ -26,9 +27,8 @@ export default function PortfolioDashboard() {
             new Date(item.last_update) > new Date(max) ? item.last_update : max, data[0].last_update)
           setLastSync(new Date(latest).toLocaleTimeString('fr-FR'))
 
-          // MAPPING + TRI ALPHABÉTIQUE
+          // MAPPING + TRI ALPHABÉTIQUE ROBUSTE
           const formattedAssets: Asset[] = data
-            .sort((a: any, b: any) => a.name.localeCompare(b.name))
             .map((item: any) => ({
               id: item.id,
               name: item.name || 'Unknown',
@@ -44,6 +44,17 @@ export default function PortfolioDashboard() {
                 ytd: { value: (item.perf_ytd_eur || 0) * 100, currencyImpact: 0 },
               }
             }))
+            .sort((a: Asset, b: Asset) => {
+              // Handle null/undefined names gracefully
+              const nameA = (a.name || '').trim().toLowerCase()
+              const nameB = (b.name || '').trim().toLowerCase()
+              
+              if (!nameA && !nameB) return 0
+              if (!nameA) return 1
+              if (!nameB) return -1
+              
+              return nameA.localeCompare(nameB, 'en', { sensitivity: 'base' })
+            })
           setAssets(formattedAssets)
         }
       } catch (err) { console.error(err) } finally { setLoading(false) }
@@ -56,6 +67,7 @@ export default function PortfolioDashboard() {
       <Sidebar />
       <div className="flex-1 flex flex-col min-w-0">
         <Header lastSync={lastSync} />
+        <MacroStrip />
         <main className="flex-1 p-6 overflow-hidden flex flex-col gap-6">
           <div className="flex-1 flex gap-6 min-h-0">
             {/* Table Matrix */}
@@ -68,8 +80,10 @@ export default function PortfolioDashboard() {
             {/* Map Mini View */}
             <div className="w-[35%] flex flex-col">
               <h2 className="text-[10px] font-black text-slate-500 uppercase tracking-[0.2em] mb-2 px-1">Regional Exposure</h2>
-              <div className="flex-1 bg-white dark:bg-[#0D1117]/50 rounded-3xl border-2 border-slate-200 dark:border-white/5 p-4 shadow-2xl">
-                <GeographicMap regions={mockRegions} hoveredAsset={hoveredAsset} />
+              <div className="flex-1 bg-white dark:bg-slate-50 dark:bg-[#0D1117]/50 rounded-3xl border-2 border-slate-200 dark:border-white/5 p-4 shadow-2xl">
+                <div className="w-full h-full bg-white dark:bg-transparent rounded-2xl overflow-hidden">
+                  <GeographicMap regions={mockRegions} hoveredAsset={hoveredAsset} />
+                </div>
               </div>
             </div>
           </div>
