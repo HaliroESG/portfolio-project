@@ -1,0 +1,21 @@
+---
+globs: *
+description: Architecture du projet (Data Pipeline -> Frontend)
+---
+
+# Architecture Globale
+
+Ce projet est un Monorepo composé de deux parties interdépendante :
+
+1. **Backend (Data Pipeline)** : Dossier `backend/`
+   - Scripts Python exécutés via GitHub Actions.
+   - Pousse les données dans Supabase.
+   - **Règle** : Si on modifie la structure des données envoyées par Python, il FAUT vérifier les types TypeScript dans le frontend.
+
+2. **Frontend (UI)** : Dossier `frontend/`
+   - Next.js hébergé sur Vercel.
+   - Lit les données depuis Supabase.
+   - **Règle** : Utiliser les types définis dans `frontend/types.ts` qui doivent matcher les colonnes Supabase.
+
+## Context Awareness
+- Quand je travaille sur `bridge.py`, analyse `frontend/types.ts` pour assurer la cohérence.

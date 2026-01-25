@@ -1,0 +1,41 @@
+name: Financial Data Sync
+
+on:
+  schedule:
+    - cron: '0 9-22 * * 1-5'
+  workflow_dispatch:
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v3
+
+      - name: Set up Python
+        uses: actions/setup-python@v4
+        with:
+          python-version: '3.11'
+
+      - name: Install dependencies
+        working-directory: ./backend
+        run: |
+          pip install yfinance supabase pandas gspread oauth2client
+
+      - name: Sync Stock Data
+        working-directory: ./backend
+        env:
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          # ICI LA CORRECTION : On mappe le bon secret vers le bon nom de variable
+          SUPABASE_KEY: ${{ secrets.SUPABASE_SERVICE_KEY }}
+          GSPREAD_SERVICE_ACCOUNT: ${{ secrets.GSPREAD_SERVICE_ACCOUNT }}
+          GSHEET_NAME: ${{ secrets.GSHEET_NAME }}
+        run: python bridge.py
+
+      - name: Sync Macro Indicators
+        working-directory: ./backend
+        env:
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_KEY: ${{ secrets.SUPABASE_SERVICE_KEY }}
+        run: python macro_sync.py

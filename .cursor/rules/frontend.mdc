@@ -1,0 +1,63 @@
+---
+globs: frontend/**/*
+description: Frontend development rules for Next.js 14, TypeScript, Tailwind, Shadcn/UI
+---
+
+# Frontend Development Rules
+
+## TypeScript Standards
+
+- **Strict Mode**: Always enabled. No `any` types unless absolutely necessary.
+- **Type Safety**: Use proper types from `types.ts` for all Supabase data.
+- **Interfaces**: Define interfaces for component props and data structures.
+
+## Client Components
+
+- Use `"use client"` directive at the top of any component that:
+  - Uses React hooks (useState, useEffect, etc.)
+  - Handles user interactions
+  - Accesses browser APIs
+  - Uses context providers
+
+## Tailwind CSS Best Practices
+
+- **Utility-First**: Prefer Tailwind utility classes over custom CSS.
+- **Responsive Design**: Use responsive prefixes (sm:, md:, lg:) when needed.
+- **Dark Mode**: Use `dark:` prefix for dark mode styles. Theme is controlled by `next-themes`.
+- **Financial UI Standards**:
+  - Light mode: Use `text-slate-950` for high contrast text
+  - Use `shadow-2xl` for depth in light mode cards
+  - Dark mode: Use `dark:bg-[#0D1117]/50` for card backgrounds
+  - Borders: `border-slate-200 dark:border-white/5`
+
+## Component Structure
+
+- **File Organization**: Co-locate related components in `components/` directory.
+- **Naming**: Use PascalCase for component files and exports.
+- **Props**: Define TypeScript interfaces for all component props.
+- **Imports**: Use path aliases when available (`@/components`, `@/lib`).
+
+## Path Aliases
+
+- `@/*` maps to `frontend/` root (configured in `tsconfig.json`)
+- Use `@/components` instead of relative paths when possible
+- Use `@/lib` for utility functions
+
+## Supabase Integration
+
+- **Client**: Use `supabase` client from `lib/supabase.ts`
+- **Queries**: Always handle errors with try/catch
+- **Types**: Match Supabase table structures with TypeScript types in `types.ts`
+
+## Performance
+
+- **Code Splitting**: Next.js handles this automatically via App Router
+- **Images**: Use Next.js `Image` component for optimized images
+- **Loading States**: Always provide loading states for async operations
+
+## Styling Patterns
+
+- **Rounded Corners**: Use `rounded-3xl` or `rounded-[40px]` for modern look
+- **Spacing**: Use consistent spacing scale (p-4, p-6, p-8, gap-6, etc.)
+- **Typography**: Use `font-black` for headings, `uppercase` with `tracking-tighter` for titles
+- **Colors**: Maintain high contrast for financial data readability

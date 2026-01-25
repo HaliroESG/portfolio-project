@@ -1,0 +1,79 @@
+---
+globs: backend/**/*
+description: Backend development rules for Python ETL scripts with Supabase
+---
+
+# Backend Development Rules
+
+## Python Coding Standards
+
+- **PEP 8**: Follow Python PEP 8 style guide
+- **Line Length**: Maximum 100 characters (flexible for readability)
+- **Imports**: Group imports (standard library, third-party, local)
+- **Naming**: Use snake_case for functions and variables, PascalCase for classes
+
+## Pydantic Validation
+
+- Use Pydantic models for data validation when working with structured data
+- Validate data before sending to Supabase
+- Define clear schemas for API responses and database records
+
+## Supabase Interaction
+
+- **Client Creation**: Use `create_client(SUPABASE_URL, SUPABASE_KEY)` from `supabase` package
+- **Service Key**: Use `SUPABASE_SERVICE_KEY` (not anon key) for backend operations
+- **Error Handling**: Always wrap Supabase operations in try/except blocks
+- **Transactions**: Use batch operations when updating multiple records
+
+## Environment Variables
+
+- **Loading**: Use `os.environ.get()` to load environment variables
+- **Required Variables**: Always check for required env vars and fail gracefully if missing
+- **GitHub Secrets**: Map secrets correctly in workflow files:
+  - `SUPABASE_URL` → `SUPABASE_URL`
+  - `SUPABASE_SERVICE_KEY` → `SUPABASE_KEY` (backend scripts expect `SUPABASE_KEY`)
+
+## Error Handling Patterns
+
+```python
+try:
+    # Operation
+    result = supabase.table("table_name").insert(data).execute()
+    print(f"✅ Success: {result}")
+except Exception as e:
+    print(f"❌ Error: {e}")
+    # Log error but don't crash entire script
+```
+
+## Data Processing
+
+- **Pandas**: Use pandas DataFrames for data manipulation
+- **Type Conversion**: Explicitly convert types (float, int, str) to avoid warnings
+- **Date Handling**: Use `datetime.now().isoformat()` for ISO 8601 timestamps
+- **Null Handling**: Check for empty DataFrames and null values before processing
+
+## Logging
+
+- **Print Statements**: Use descriptive print statements with emojis for visual clarity:
+  - `✅` for success
+  - `❌` for errors
+  - `⚠️` for warnings
+- **Flush Output**: Use `flush=True` in print statements for real-time CI/CD logs
+
+## Script Structure
+
+- **Main Functions**: Define main logic in functions (e.g., `sync_macro()`, `update_currencies()`)
+- **Entry Point**: Use `if __name__ == "__main__":` for script execution
+- **Modularity**: Break complex operations into smaller, testable functions
+
+## Dependencies
+
+- **Required Packages**: yfinance, supabase, pandas, gspread, oauth2client
+- **Installation**: Document in workflow files and README
+- **Version Pinning**: Consider pinning versions for production stability
+
+## Data Synchronization
+
+- **Idempotency**: Design scripts to be idempotent (safe to run multiple times)
+- **Incremental Updates**: Update only changed data when possible
+- **Rate Limiting**: Be mindful of API rate limits (yfinance, Google Sheets)
