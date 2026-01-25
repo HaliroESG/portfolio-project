@@ -4,6 +4,7 @@ import React, { useEffect, useState } from 'react'
 import { supabase } from '../lib/supabase'
 import { ExternalLink } from 'lucide-react'
 import { cn } from '../lib/utils'
+import { Tooltip } from './Tooltip'
 
 interface NewsItem {
   id: string
@@ -13,6 +14,7 @@ interface NewsItem {
   category: string
   impact_level: string
   impact_score: number
+  impact_explanation?: string | null
   ticker: string | null
   published_at: string
 }
@@ -75,21 +77,26 @@ export function HotNewsTickerTape() {
                 className="flex items-center gap-3 flex-shrink-0 group"
               >
                 {/* Badge rouge pulsant pour HIGH IMPACT */}
-                {item.impact_level === 'HIGH' ? (
-                  <div className="relative flex items-center gap-1.5">
-                    <div className="absolute inset-0 rounded-full bg-rose-500 animate-ping opacity-75"></div>
-                    <span className="relative text-[9px] font-mono font-black text-rose-500 uppercase tracking-wider px-1.5 py-0.5 bg-rose-500/10 rounded border border-rose-500/30">
-                      HIGH
+                <Tooltip 
+                  content={item.impact_explanation || `Impact Level: ${item.impact_level}`}
+                  side="top"
+                >
+                  {item.impact_level === 'HIGH' ? (
+                    <div className="relative flex items-center gap-1.5 cursor-help">
+                      <div className="absolute inset-0 rounded-full bg-rose-500 animate-ping opacity-75"></div>
+                      <span className="relative text-[9px] font-mono font-black text-rose-500 uppercase tracking-wider px-1.5 py-0.5 bg-rose-500/10 rounded border border-rose-500/30">
+                        HIGH
+                      </span>
+                    </div>
+                  ) : (
+                    <span className={cn(
+                      "text-[9px] font-mono font-black uppercase tracking-wider cursor-help",
+                      item.impact_level === 'MEDIUM' ? 'text-amber-400' : 'text-slate-400'
+                    )}>
+                      {item.impact_level}
                     </span>
-                  </div>
-                ) : (
-                  <span className={cn(
-                    "text-[9px] font-mono font-black uppercase tracking-wider",
-                    item.impact_level === 'MEDIUM' ? 'text-amber-400' : 'text-slate-400'
-                  )}>
-                    {item.impact_level}
-                  </span>
-                )}
+                  )}
+                </Tooltip>
                 <span className="text-[9px] font-mono text-emerald-400/60">
                   [{item.source}]
                 </span>

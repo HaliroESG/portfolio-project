@@ -2,7 +2,7 @@
 
 import React, { useEffect, useState } from 'react'
 import { supabase } from '../lib/supabase'
-import { TrendingUp, TrendingDown, AlertCircle } from 'lucide-react'
+import { TrendingUp, TrendingDown, AlertCircle, HelpCircle } from 'lucide-react'
 import { Tooltip } from './Tooltip'
 
 interface MacroIndicator {
@@ -181,9 +181,10 @@ export function MacroStrip() {
                     </div>
                     <div className="flex flex-col">
                       <div className="flex items-baseline gap-1.5">
-                        <span className="text-[7px] font-black text-slate-400 dark:text-slate-500 uppercase tracking-wider cursor-help">
+                        <span className="text-[7px] font-black text-slate-400 dark:text-slate-500 uppercase tracking-wider">
                           {config.label}
                         </span>
+                        <HelpCircle className="w-2.5 h-2.5 text-slate-400 dark:text-slate-500 cursor-help" />
                       </div>
                       <div className="flex items-baseline gap-1.5">
                         <span className={`text-sm font-mono font-black ${getTrendColor(indicator, config)}`}>
@@ -212,9 +213,12 @@ export function MacroStrip() {
                 <div className="relative w-1.5 h-1.5 rounded-full bg-green-500"></div>
               </div>
               <div className="flex flex-col">
-                <span className="text-[7px] font-black text-slate-400 dark:text-slate-500 uppercase tracking-wider cursor-help">
-                  SPREAD
-                </span>
+                <div className="flex items-center gap-1">
+                  <span className="text-[7px] font-black text-slate-400 dark:text-slate-500 uppercase tracking-wider">
+                    SPREAD
+                  </span>
+                  <HelpCircle className="w-2.5 h-2.5 text-slate-400 dark:text-slate-500 cursor-help" />
+                </div>
                 <span className={`text-sm font-mono font-black ${yieldSpread !== null && yieldSpread < 0 ? 'text-red-500 dark:text-red-400' : 'text-slate-950 dark:text-white'}`}>
                   {yieldSpread !== null ? `${yieldSpread >= 0 ? '+' : ''}${yieldSpread.toFixed(2)}%` : '--'}
                 </span>
@@ -231,9 +235,12 @@ export function MacroStrip() {
                 <div className="relative w-1.5 h-1.5 rounded-full bg-green-500"></div>
               </div>
               <div className="flex flex-col">
-                <span className="text-[7px] font-black text-slate-400 dark:text-slate-500 uppercase tracking-wider cursor-help">
-                  MISERY
-                </span>
+                <div className="flex items-center gap-1">
+                  <span className="text-[7px] font-black text-slate-400 dark:text-slate-500 uppercase tracking-wider">
+                    MISERY
+                  </span>
+                  <HelpCircle className="w-2.5 h-2.5 text-slate-400 dark:text-slate-500 cursor-help" />
+                </div>
                 <span className={`text-sm font-mono font-black ${miseryIndex !== null && miseryIndex > 7 ? 'text-red-500 dark:text-red-400' : 'text-slate-950 dark:text-white'}`}>
                   {miseryIndex !== null ? miseryIndex.toFixed(1) : '--'}
                 </span>
@@ -250,9 +257,12 @@ export function MacroStrip() {
                 <div className="relative w-1.5 h-1.5 rounded-full bg-green-500"></div>
               </div>
               <div className="flex flex-col">
-                <span className="text-[7px] font-black text-slate-400 dark:text-slate-500 uppercase tracking-wider cursor-help">
-                  JPY
-                </span>
+                <div className="flex items-center gap-1">
+                  <span className="text-[7px] font-black text-slate-400 dark:text-slate-500 uppercase tracking-wider">
+                    JPY
+                  </span>
+                  <HelpCircle className="w-2.5 h-2.5 text-slate-400 dark:text-slate-500 cursor-help" />
+                </div>
                 <span className={`text-sm font-mono font-black ${jpyVolatility !== null && jpyVolatility > 1.5 ? 'text-amber-500 dark:text-amber-400' : 'text-slate-950 dark:text-white'}`}>
                   {jpyVolatility !== null ? `${jpyVolatility.toFixed(1)}%` : '--'}
                 </span>

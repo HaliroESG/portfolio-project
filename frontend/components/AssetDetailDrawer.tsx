@@ -6,6 +6,7 @@ import { X, ExternalLink, Star, TrendingUp, TrendingDown, Globe2, Activity, News
 import { cn } from '../lib/utils'
 import { useEffect, useState } from 'react'
 import { supabase } from '../lib/supabase'
+import { Tooltip } from './Tooltip'
 
 interface AssetDetailDrawerProps {
   asset: Asset | null
@@ -49,6 +50,7 @@ interface NewsItem {
   source: string
   impact_level: string
   impact_score: number
+  impact_explanation?: string | null
   published_at: string
 }
 
@@ -107,14 +109,17 @@ export function AssetDetailDrawer({ asset, isOpen, onClose }: AssetDetailDrawerP
 
   const handleYahooFinance = () => {
     if (!asset?.ticker) return
-    window.open(`https://finance.yahoo.com/quote/${asset.ticker}`, '_blank')
+    window.open(`https://finance.yahoo.com/quote/${asset?.ticker}`, '_blank')
   }
 
   const handleWatchlist = () => {
     // TODO: Implement watchlist functionality
     if (!asset?.ticker) return
-    console.log('Add to watchlist:', asset.ticker)
+    console.log('Add to watchlist:', asset?.ticker)
   }
+
+  // Sécurité totale : ne rien rendre si pas d'asset
+  if (!asset) return null
 
   return (
     <>
@@ -128,6 +133,7 @@ export function AssetDetailDrawer({ asset, isOpen, onClose }: AssetDetailDrawerP
       />
 
       {/* Drawer */}
+      {asset && (
       <div
         className={cn(
           "fixed right-0 top-0 h-full w-full max-w-2xl bg-white dark:bg-[#0A0D12] z-50 shadow-2xl dark:shadow-[0_0_50px_rgba(0,255,136,0.1)]",
@@ -143,7 +149,7 @@ export function AssetDetailDrawer({ asset, isOpen, onClose }: AssetDetailDrawerP
               <div className="flex-1">
                 <div className="flex items-center gap-3 mb-2">
                   <h2 className="text-2xl font-black text-slate-950 dark:text-white uppercase tracking-tighter">
-                    {asset.name}
+                    {asset?.name || 'Unknown Asset'}
                   </h2>
                   {hasMissingData && (
                     <span className="inline-flex items-center gap-1 px-2 py-1 rounded text-[9px] font-black uppercase tracking-wider text-amber-600 dark:text-amber-500 bg-amber-50 dark:bg-amber-950/30 border border-amber-200 dark:border-amber-800/50">
@@ -153,10 +159,10 @@ export function AssetDetailDrawer({ asset, isOpen, onClose }: AssetDetailDrawerP
                 </div>
                 <div className="flex items-center gap-2">
                   <span className="text-sm font-mono font-bold text-slate-500 dark:text-gray-400">
-                    {asset.ticker}
+                    {asset?.ticker || 'N/A'}
                   </span>
                   <span className="text-xs font-black text-slate-400 dark:text-gray-500 uppercase tracking-widest">
-                    {asset.type}
+                    {asset?.type || 'N/A'}
                   </span>
                 </div>
               </div>
@@ -394,16 +400,21 @@ export function AssetDetailDrawer({ asset, isOpen, onClose }: AssetDetailDrawerP
                       className="block p-3 bg-white dark:bg-[#0A0D12] rounded-xl border border-slate-200 dark:border-white/5 hover:border-blue-500 dark:hover:border-[#00FF88] transition-colors group"
                     >
                       <div className="flex items-start justify-between gap-2 mb-1">
-                        <span className={cn(
-                          "text-[9px] font-black uppercase tracking-wider px-1.5 py-0.5 rounded",
-                          item.impact_level === 'HIGH' 
-                            ? "bg-red-100 dark:bg-red-950/30 text-red-700 dark:text-red-400"
-                            : item.impact_level === 'MEDIUM'
-                            ? "bg-amber-100 dark:bg-amber-950/30 text-amber-700 dark:text-amber-400"
-                            : "bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-gray-400"
-                        )}>
-                          {item.impact_level}
-                        </span>
+                        <Tooltip 
+                          content={item.impact_explanation || `Impact Level: ${item.impact_level}`}
+                          side="top"
+                        >
+                          <span className={cn(
+                            "text-[9px] font-black uppercase tracking-wider px-1.5 py-0.5 rounded cursor-help",
+                            item.impact_level === 'HIGH' 
+                              ? "bg-red-100 dark:bg-red-950/30 text-red-700 dark:text-red-400"
+                              : item.impact_level === 'MEDIUM'
+                              ? "bg-amber-100 dark:bg-amber-950/30 text-amber-700 dark:text-amber-400"
+                              : "bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-gray-400"
+                          )}>
+                            {item.impact_level}
+                          </span>
+                        </Tooltip>
                         <span className="text-[8px] font-mono text-slate-400 dark:text-gray-500">
                           {item.source}
                         </span>
@@ -448,6 +459,7 @@ export function AssetDetailDrawer({ asset, isOpen, onClose }: AssetDetailDrawerP
           </div>
         </div>
       </div>
+      )}
     </>
   )
 }

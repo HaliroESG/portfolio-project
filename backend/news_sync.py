@@ -3,6 +3,7 @@ import re
 import json
 import random
 import sys
+import urllib.request
 import feedparser
 import requests
 from datetime import datetime, timedelta
@@ -167,7 +168,16 @@ def fetch_news_from_rss(rss_config: dict) -> list:
     news_items = []
     
     try:
-        feed = feedparser.parse(rss_config["url"])
+        # Ajouter User-Agent pour éviter les erreurs 403
+        headers = {
+            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36'
+        }
+        
+        # Utiliser urllib avec headers pour éviter les erreurs 403
+        req = urllib.request.Request(rss_config["url"], headers=headers)
+        with urllib.request.urlopen(req) as response:
+            feed_content = response.read()
+            feed = feedparser.parse(feed_content)
         
         if feed.bozo and feed.bozo_exception:
             print(f"    ⚠️ Erreur parsing RSS {rss_config['source']}: {feed.bozo_exception}", flush=True)

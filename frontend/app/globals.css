@@ -135,4 +135,5 @@
 
 .animate-marquee {
   animation: marquee 60s linear infinite;
+  will-change: transform;
 }

@@ -35,21 +35,28 @@ export default function PortfolioDashboard() {
 
           // MAPPING + TRI ALPHABÉTIQUE ROBUSTE
           const formattedAssets: Asset[] = data
-            .map((item: any) => ({
-              id: item.id,
-              name: item.name || 'Unknown',
-              ticker: item.ticker || 'N/A',
-              price: item.last_price || 0,
-              currency: item.currency || 'EUR',
-              type: item.type as any,
-              constituents: item.geo_coverage || {},
-              performance: {
-                day: { value: (item.perf_day_eur || 0) * 100, currencyImpact: ((item.perf_day_eur || 0) - (item.perf_day_local || 0)) * 100 },
-                week: { value: (item.perf_week_local || 0) * 100, currencyImpact: 0 },
-                month: { value: (item.perf_month_local || 0) * 100, currencyImpact: 0 },
-                ytd: { value: (item.perf_ytd_eur || 0) * 100, currencyImpact: 0 },
+            .map((item: any) => {
+              // Sécuriser le mapping du type
+              const validTypes = ['Stock', 'STOCK', 'ETF', 'Crypto', 'CRYPTO', 'Cash']
+              const itemType = item.type || 'Stock'
+              const safeType = validTypes.includes(itemType) ? itemType : 'Stock'
+              
+              return {
+                id: item.id || '',
+                name: item.name || 'Unknown',
+                ticker: item.ticker || 'N/A',
+                price: item.last_price || 0,
+                currency: item.currency || 'EUR',
+                type: safeType as any,
+                constituents: item.geo_coverage || {},
+                performance: {
+                  day: { value: (item.perf_day_eur || 0) * 100, currencyImpact: ((item.perf_day_eur || 0) - (item.perf_day_local || 0)) * 100 },
+                  week: { value: (item.perf_week_local || 0) * 100, currencyImpact: 0 },
+                  month: { value: (item.perf_month_local || 0) * 100, currencyImpact: 0 },
+                  ytd: { value: (item.perf_ytd_eur || 0) * 100, currencyImpact: 0 },
+                }
               }
-            }))
+            })
             .sort((a: Asset, b: Asset) => {
               // Handle null/undefined names gracefully
               const nameA = (a.name || '').trim().toLowerCase()
