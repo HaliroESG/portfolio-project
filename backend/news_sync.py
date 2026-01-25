@@ -1,5 +1,7 @@
 import os
 import re
+import json
+import random
 import feedparser
 import requests
 from datetime import datetime, timedelta
@@ -7,6 +9,35 @@ from supabase import create_client
 from urllib.parse import urlparse
 
 print("--- 📰 DÉMARRAGE DE LA SYNCHRONISATION DES ACTUALITÉS ---", flush=True)
+
+# === CHARGEMENT DE LA CONFIGURATION D'IMPACT ===
+def load_impact_rules():
+    """Charge les règles d'impact depuis impact_rules.json."""
+    try:
+        script_dir = os.path.dirname(os.path.abspath(__file__))
+        rules_path = os.path.join(script_dir, "impact_rules.json")
+        
+        with open(rules_path, "r", encoding="utf-8") as f:
+            rules = json.load(f)
+        
+        high_count = len(rules.get("high_impact", {}).get("keywords", []))
+        medium_count = len(rules.get("medium_impact", {}).get("keywords", []))
+        official_count = len(rules.get("official_sources", {}).get("sources", []))
+        
+        print(f"✅ Rules loaded: {high_count} high-impact keywords, {medium_count} medium-impact keywords, {official_count} official sources", flush=True)
+        
+        return rules
+    except Exception as e:
+        print(f"❌ ERREUR : Impossible de charger impact_rules.json: {e}", flush=True)
+        print("   Utilisation des règles par défaut...", flush=True)
+        # Fallback vers une structure minimale
+        return {
+            "high_impact": {"score_range": [70, 100], "keywords": []},
+            "medium_impact": {"score_range": [40, 69], "keywords": []},
+            "official_sources": {"score": 95, "sources": []}
+        }
+
+IMPACT_RULES = load_impact_rules()
 
 # 1. RÉCUPÉRATION DES VARIABLES
 SUPABASE_URL = os.environ.get("SUPABASE_URL")
@@ -33,69 +64,69 @@ except Exception as e:
 RSS_SOURCES = [
     {
         "url": "https://www.federalreserve.gov/feeds/press.xml",
-        "source": "FED",
-        "category": "MACRO",
-        "force_high_impact": True
+        "source": "Federal Reserve",
+        "category": "MACRO"
     },
     {
         "url": "https://www.ecb.europa.eu/press/shared/rss/press.xml",
         "source": "ECB",
-        "category": "MACRO",
-        "force_high_impact": True
+        "category": "MACRO"
     }
 ]
 
-# === MOTS-CLÉS POUR LE SCORING D'IMPACT (FR/EN) ===
-HIGH_IMPACT_KEYWORDS = [
-    # English
-    "profit warning", "guidance cut", "bankruptcy", "merger", "acquisition", "takeover",
-    "investigation", "sec", "amf", "rate decision", "interest rate", "federal reserve",
-    "ecb decision", "monetary policy", "quantitative easing", "tapering",
-    # French
-    "avertissement sur résultats", "faillite", "opa", "rachat", "enquête", "amf",
-    "décision de taux", "banque centrale", "politique monétaire"
-]
-
-MEDIUM_IMPACT_KEYWORDS = [
-    # English
-    "earnings beat", "upgrade", "downgrade", "buyback", "dividend", "partnership",
-    "expansion", "contract", "guidance", "forecast",
-    # French
-    "rachat d'actions", "dividende", "partenariat", "expansion", "contrat", "orientation"
-]
-
-def calculate_impact_score(title: str, description: str, source: str, force_high: bool = False) -> int:
+# === FONCTION DE CALCUL D'IMPACT BASÉE SUR JSON ===
+def calculate_impact(title: str, description: str, source: str) -> dict:
     """
-    Calcule un score d'impact basé sur les mots-clés et la source.
-    Returns: 0-100 (HIGH: 70-100, MEDIUM: 40-69, LOW: 0-39)
+    Calcule l'impact d'une news basé sur les règles JSON.
+    Returns: {
+        "impact_level": "HIGH" | "MEDIUM" | "LOW",
+        "impact_score": int (0-100),
+        "impact_explanation": str
+    }
     """
-    if force_high:
-        return 95  # Force HIGH (95) pour les sources officielles (Fed/ECB)
-    
     text = (title + " " + (description or "")).lower()
+    source_normalized = source.upper()
     
-    # Compter les occurrences de mots-clés HIGH
-    high_count = sum(1 for keyword in HIGH_IMPACT_KEYWORDS if keyword in text)
-    medium_count = sum(1 for keyword in MEDIUM_IMPACT_KEYWORDS if keyword in text)
+    # 1. Vérifier si la source est officielle
+    official_sources = [s.upper() for s in IMPACT_RULES.get("official_sources", {}).get("sources", [])]
+    if source_normalized in official_sources:
+        official_score = IMPACT_RULES.get("official_sources", {}).get("score", 95)
+        return {
+            "impact_level": "HIGH",
+            "impact_score": official_score,
+            "impact_explanation": f"Source officielle: {source}"
+        }
     
-    # Calcul du score
-    base_score = 30  # Score de base
-    high_score = high_count * 25  # Chaque mot-clé HIGH ajoute 25 points
-    medium_score = medium_count * 10  # Chaque mot-clé MEDIUM ajoute 10 points
+    # 2. Parcourir les keywords HIGH IMPACT
+    high_keywords = IMPACT_RULES.get("high_impact", {}).get("keywords", [])
+    for keyword in high_keywords:
+        if keyword.lower() in text:
+            score_range = IMPACT_RULES.get("high_impact", {}).get("score_range", [70, 100])
+            score = random.randint(score_range[0], score_range[1])
+            return {
+                "impact_level": "HIGH",
+                "impact_score": score,
+                "impact_explanation": f"Détection mot-clé: {keyword}"
+            }
     
-    total_score = base_score + high_score + medium_score
+    # 3. Parcourir les keywords MEDIUM IMPACT
+    medium_keywords = IMPACT_RULES.get("medium_impact", {}).get("keywords", [])
+    for keyword in medium_keywords:
+        if keyword.lower() in text:
+            score_range = IMPACT_RULES.get("medium_impact", {}).get("score_range", [40, 69])
+            score = random.randint(score_range[0], score_range[1])
+            return {
+                "impact_level": "MEDIUM",
+                "impact_score": score,
+                "impact_explanation": f"Détection mot-clé: {keyword}"
+            }
     
-    # Limiter entre 0 et 100
-    return min(100, max(0, total_score))
-
-def get_impact_level(score: int) -> str:
-    """Détermine le niveau d'impact basé sur le score."""
-    if score >= 70:
-        return "HIGH"
-    elif score >= 40:
-        return "MEDIUM"
-    else:
-        return "LOW"
+    # 4. Aucun match -> LOW IMPACT (pour ne pas polluer le Ticker Tape)
+    return {
+        "impact_level": "LOW",
+        "impact_score": 10,
+        "impact_explanation": "Aucun mot-clé détecté"
+    }
 
 def extract_ticker_from_text(text: str) -> str | None:
     """
@@ -131,12 +162,11 @@ def fetch_news_from_rss(rss_config: dict) -> list:
             if not link:
                 continue
             
-            # Calculer le score d'impact
-            impact_score = calculate_impact_score(
+            # Calculer l'impact basé sur les règles JSON
+            impact_result = calculate_impact(
                 title,
                 description,
-                rss_config["source"],
-                rss_config.get("force_high_impact", False)
+                rss_config["source"]
             )
             
             # Extraire le ticker si possible
@@ -159,8 +189,9 @@ def fetch_news_from_rss(rss_config: dict) -> list:
                 "source": rss_config["source"],
                 "category": rss_config["category"],
                 "ticker": ticker,
-                "impact_score": impact_score,
-                "impact_level": get_impact_level(impact_score),
+                "impact_score": impact_result["impact_score"],
+                "impact_level": impact_result["impact_level"],
+                "impact_explanation": impact_result["impact_explanation"],
                 "published_at": published_date,
                 "last_update": datetime.now().isoformat()
             })
@@ -204,12 +235,11 @@ def fetch_news_from_marketaux(ticker: str) -> list:
                 if not url_link:
                     continue
                 
-                # Calculer le score d'impact basé sur les mots-clés
-                impact_score = calculate_impact_score(
+                # Calculer l'impact basé sur les règles JSON
+                impact_result = calculate_impact(
                     title,
                     description,
-                    "MARKETAUX",
-                    force_high=False
+                    "MARKETAUX"
                 )
                 
                 # Formater la date
@@ -222,8 +252,9 @@ def fetch_news_from_marketaux(ticker: str) -> list:
                     "source": "MARKETAUX",
                     "category": "EQUITY",  # News liées aux tickers = EQUITY
                     "ticker": ticker,
-                    "impact_score": impact_score,
-                    "impact_level": get_impact_level(impact_score),
+                    "impact_score": impact_result["impact_score"],
+                    "impact_level": impact_result["impact_level"],
+                    "impact_explanation": impact_result["impact_explanation"],
                     "published_at": published_date,
                     "last_update": datetime.now().isoformat()
                 })
@@ -315,6 +346,10 @@ def sync_news():
                     "published_at": news_item["published_at"],
                     "last_update": news_item["last_update"]
                 }
+                
+                # Ajouter impact_explanation si disponible (optionnel pour compatibilité)
+                if "impact_explanation" in news_item:
+                    payload["impact_explanation"] = news_item["impact_explanation"]
                 
                 supabase.table("news_feed").upsert(payload, on_conflict="url").execute()
             
