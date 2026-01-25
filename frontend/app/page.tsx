@@ -80,8 +80,8 @@ export default function PortfolioDashboard() {
             {/* Map Mini View */}
             <div className="w-[35%] flex flex-col">
               <h2 className="text-[10px] font-black text-slate-500 uppercase tracking-[0.2em] mb-2 px-1">Regional Exposure</h2>
-              <div className="flex-1 bg-white dark:bg-slate-50 dark:bg-[#0D1117]/50 rounded-3xl border-2 border-slate-200 dark:border-white/5 p-4 shadow-2xl">
-                <div className="w-full h-full bg-white dark:bg-transparent rounded-2xl overflow-hidden">
+              <div className="flex-1 bg-white dark:bg-[#0D1117]/50 rounded-3xl border-2 border-slate-200 dark:border-white/5 shadow-2xl dark:shadow-inner overflow-hidden">
+                <div className="w-full h-full bg-white dark:bg-transparent rounded-2xl overflow-hidden scale-100">
                   <GeographicMap regions={mockRegions} hoveredAsset={hoveredAsset} />
                 </div>
               </div>

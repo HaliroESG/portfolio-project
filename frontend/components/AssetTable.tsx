@@ -43,22 +43,18 @@ export function AssetTable({ assets, onHoverAsset }: AssetTableProps) {
                       <div className="flex items-center gap-1.5 flex-1 min-w-0">
                         <span className="text-sm font-black text-slate-950 dark:text-gray-100 truncate">{asset.name}</span>
                         {missingData && (
-                          <div className="group/icon relative flex-shrink-0">
-                            <AlertCircle className="w-3.5 h-3.5 text-amber-500 flex-shrink-0" />
-                            <div className="absolute left-0 top-full mt-1 hidden group-hover/icon:block z-20">
-                              <div className="bg-slate-950 dark:bg-slate-800 text-white text-[9px] font-mono px-2 py-1 rounded border border-slate-700 whitespace-nowrap shadow-xl">
-                                Ticker Error: Check Yahoo Finance Symbol
-                              </div>
-                            </div>
-                          </div>
+                          <span className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-[9px] font-black uppercase tracking-wider text-amber-600 dark:text-amber-500 bg-amber-50 dark:bg-amber-950/30 border border-amber-200 dark:border-amber-800/50 flex-shrink-0">
+                            <AlertCircle className="w-2.5 h-2.5" />
+                            Check Ticker
+                          </span>
                         )}
                       </div>
                       <span className="text-[10px] font-mono font-bold text-slate-500 dark:text-gray-500 flex-shrink-0">{asset.ticker}</span>
                     </div>
                     <div className="flex justify-between items-baseline mt-1">
                       <span className="text-[9px] font-black text-slate-500 dark:text-gray-500 uppercase tracking-widest">{asset.type}</span>
-                      <span className={`text-xs font-mono font-black ${missingData ? 'text-slate-400 dark:text-gray-600' : 'text-slate-950 dark:text-gray-200'}`}>
-                        {missingData ? '--' : (asset.price ?? 0).toLocaleString('fr-FR')} <span className="text-[9px] font-bold text-slate-500 dark:text-gray-500">{asset.currency}</span>
+                      <span className={`text-xs font-mono font-black ${missingData ? 'text-amber-600 dark:text-amber-500' : 'text-slate-950 dark:text-gray-200'}`}>
+                        {missingData ? 'N/A' : (asset.price ?? 0).toLocaleString('fr-FR')} <span className="text-[9px] font-bold text-slate-500 dark:text-gray-500">{asset.currency}</span>
                       </span>
                     </div>
                   </div>

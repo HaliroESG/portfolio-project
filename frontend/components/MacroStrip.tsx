@@ -94,13 +94,13 @@ export function MacroStrip() {
   }
 
   return (
-    <div className="bg-slate-950 dark:bg-[#0A0D12] border-b-2 border-slate-800 dark:border-white/10 px-6 py-3">
-      <div className="flex items-center justify-between gap-8">
+    <div className="bg-white dark:bg-slate-950 border-b-2 border-slate-200 dark:border-slate-800 px-4 py-2">
+      <div className="flex items-center justify-between gap-6">
         <div className="flex items-center gap-2">
-          <span className="text-[9px] font-black text-slate-500 uppercase tracking-[0.3em]">MACRO</span>
+          <span className="text-[8px] font-black text-slate-400 dark:text-slate-500 uppercase tracking-[0.3em]">MACRO</span>
         </div>
         
-        <div className="flex items-center gap-8 flex-1 justify-center">
+        <div className="flex items-center gap-6 flex-1 justify-center">
           {(['^VIX', 'DX-Y.NYB', '^MOVE', '^TNX'] as const).map((id) => {
             const indicator = getIndicator(id)
             const config = MACRO_CONFIG[id]
@@ -109,24 +109,33 @@ export function MacroStrip() {
             
             return (
               <div key={id} className="flex items-center gap-3">
-                <div className="flex flex-col">
-                  <span className="text-[8px] font-black text-slate-500 uppercase tracking-widest">
-                    {config.label}
-                  </span>
-                  <div className="flex items-baseline gap-2">
-                    <span className={`text-lg font-mono font-black ${getTrendColor(indicator, config)}`}>
-                      {value !== null ? config.format(value) : '--'}
-                    </span>
-                    {getTrendIcon(indicator)}
+                <div className="flex items-center gap-1.5">
+                  {/* Pulsing Live Dot */}
+                  <div className="relative flex-shrink-0">
+                    <div className="absolute inset-0 rounded-full bg-green-500 animate-ping opacity-75"></div>
+                    <div className="relative w-1.5 h-1.5 rounded-full bg-green-500"></div>
                   </div>
-                  {change !== null && (
-                    <span className={`text-[9px] font-mono ${change >= 0 ? 'text-red-400' : 'text-green-400'}`}>
-                      {change >= 0 ? '+' : ''}{(change * 100).toFixed(2)}%
-                    </span>
-                  )}
+                  <div className="flex flex-col">
+                    <div className="flex items-baseline gap-1.5">
+                      <span className="text-[7px] font-black text-slate-400 dark:text-slate-500 uppercase tracking-wider">
+                        {config.label}
+                      </span>
+                    </div>
+                    <div className="flex items-baseline gap-1.5">
+                      <span className={`text-sm font-mono font-black ${getTrendColor(indicator, config)}`}>
+                        {value !== null ? config.format(value) : '--'}
+                      </span>
+                      {getTrendIcon(indicator)}
+                      {change !== null && (
+                        <span className={`text-[8px] font-mono font-bold ${change >= 0 ? 'text-red-500 dark:text-red-400' : 'text-green-500 dark:text-green-400'}`}>
+                          {change >= 0 ? '+' : ''}{(change * 100).toFixed(2)}%
+                        </span>
+                      )}
+                    </div>
+                  </div>
                 </div>
                 {id !== '^TNX' && (
-                  <div className="w-px h-8 bg-slate-700 dark:bg-white/10" />
+                  <div className="w-px h-6 bg-slate-300 dark:bg-slate-700" />
                 )}
               </div>
             )
@@ -135,9 +144,9 @@ export function MacroStrip() {
         
         <div className="flex items-center gap-2">
           {indicators.some(i => i.value !== null && i.id === '^VIX' && i.value >= 20) && (
-            <div className="flex items-center gap-1.5 px-2 py-1 bg-red-500/10 border border-red-500/30 rounded">
-              <AlertCircle className="w-3 h-3 text-red-400" />
-              <span className="text-[9px] font-black text-red-400 uppercase">RISK</span>
+            <div className="flex items-center gap-1 px-2 py-0.5 bg-red-500/10 dark:bg-red-500/20 border border-red-500/30 dark:border-red-500/50 rounded">
+              <AlertCircle className="w-2.5 h-2.5 text-red-500 dark:text-red-400" />
+              <span className="text-[8px] font-black text-red-500 dark:text-red-400 uppercase">RISK</span>
             </div>
           )}
         </div>

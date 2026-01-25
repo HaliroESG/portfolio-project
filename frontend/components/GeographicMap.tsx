@@ -24,10 +24,31 @@ interface GeographicMapProps {
 
 export function GeographicMap({ regions, hoveredAsset }: GeographicMapProps) {
   const [mounted, setMounted] = useState(false)
+  const [isDark, setIsDark] = useState(false)
 
-  // Évite les erreurs d'hydratation Next.js
+  // Évite les erreurs d'hydratation Next.js et détecte le thème
   useEffect(() => {
     setMounted(true)
+    // Check initial theme
+    const checkTheme = () => {
+      if (typeof window !== 'undefined') {
+        const isDarkMode = document.documentElement.classList.contains('dark') ||
+          window.matchMedia('(prefers-color-scheme: dark)').matches
+        setIsDark(isDarkMode)
+      }
+    }
+    checkTheme()
+    
+    // Watch for theme changes
+    const observer = new MutationObserver(checkTheme)
+    if (typeof window !== 'undefined') {
+      observer.observe(document.documentElement, {
+        attributes: true,
+        attributeFilter: ['class']
+      })
+    }
+    
+    return () => observer.disconnect()
   }, [])
 
   // Échelle de couleur pour la heatmap globale
@@ -45,15 +66,15 @@ export function GeographicMap({ regions, hoveredAsset }: GeographicMapProps) {
     return map
   }, [regions])
 
-  if (!mounted) return <div className="h-full w-full bg-[#080A0F]" />
+  if (!mounted) return <div className="h-full w-full bg-white dark:bg-[#080A0F]" />
 
   return (
-    <div className="bg-[#080A0F] border border-[#1a1d24] rounded-lg h-full flex flex-col relative overflow-hidden shadow-inner">
+    <div className="bg-white dark:bg-[#080A0F] h-full w-full flex flex-col relative overflow-hidden shadow-inner dark:shadow-2xl">
       
       {/* Indicateur de Statut */}
-      <div className="absolute top-4 left-4 z-20 p-2 bg-black/50 rounded border border-white/10 backdrop-blur-sm">
-        <div className="text-[10px] text-gray-500 uppercase font-mono tracking-tighter">View Mode</div>
-        <div className={`text-xs font-bold ${hoveredAsset ? 'text-[#00FF88]' : 'text-orange-500'}`}>
+      <div className="absolute top-4 left-4 z-20 p-2 bg-white/90 dark:bg-black/50 rounded border border-slate-300 dark:border-white/10 backdrop-blur-sm shadow-lg">
+        <div className="text-[10px] text-slate-500 dark:text-gray-500 uppercase font-mono tracking-tighter">View Mode</div>
+        <div className={`text-xs font-bold ${hoveredAsset ? 'text-blue-600 dark:text-[#00FF88]' : 'text-slate-700 dark:text-orange-500'}`}>
           {hoveredAsset ? `FOCUS: ${hoveredAsset.ticker}` : 'MARKET HEATMAP'}
         </div>
       </div>
@@ -65,10 +86,7 @@ export function GeographicMap({ regions, hoveredAsset }: GeographicMapProps) {
               {({ geographies }) =>
                 geographies.map((geo) => {
                   // --- IDENTIFICATION DU PAYS ---
-                  // On normalise l'ID numérique sur 3 chiffres (ex: "250")
                   const numericId = geo.id?.toString().padStart(3, '0');
-                  
-                  // On cherche la correspondance : Dictionnaire -> Propriétés Géo -> ID Brut
                   const countryCode = (
                     ISO_MAP[numericId] || 
                     geo.properties?.ISO_A2 || 
@@ -78,42 +96,49 @@ export function GeographicMap({ regions, hoveredAsset }: GeographicMapProps) {
                   // --- CALCUL DU STYLE ---
                   const perf = performanceMap.get(countryCode);
                   
-                  // Couleurs par défaut (Heatmap)
-                  let fill = perf !== undefined ? colorScale(perf) : '#12151c';
+                  // Base colors: light gray in light mode, dark gray in dark mode
+                  let fill = isDark ? 'rgba(30, 41, 59, 0.5)' : 'rgb(241, 245, 249)'; // slate-800/50 or slate-100
                   let opacity = 1;
-                  let stroke = '#1a1d24';
+                  let stroke = isDark ? 'rgb(51, 65, 85)' : 'rgb(203, 213, 225)'; // slate-700 or slate-300
                   let strokeWidth = 0.5;
 
                   // --- OVERRIDE SI SURVOL (Look-through) ---
-                  if (hoveredAsset && hoveredAsset.constituents) { // Changé geo_coverage -> constituents
-                    const weight = hoveredAsset.constituents[countryCode]; // Changé geo_coverage -> constituents
+                  if (hoveredAsset && hoveredAsset.constituents) {
+                    const weight = hoveredAsset.constituents[countryCode];
                     
-                    if (weight !== undefined) {
-                      // Calcul de l'opacité en fonction du poids (ex: 0.2 à 1.0)
-                      const opacity = 0.2 + (weight / 100) * 0.8;
-                      return `rgba(0, 255, 136, ${opacity})`; // Vert Quant
+                    if (weight !== undefined && weight > 0) {
+                      // Blue gradient with opacity based on exposure (0.3 to 1.0)
+                      const exposureOpacity = 0.3 + (Math.min(weight / 100, 1) * 0.7);
+                      fill = 'rgb(59, 130, 246)'; // blue-500
+                      opacity = exposureOpacity;
+                      stroke = 'rgb(37, 99, 235)'; // blue-600
+                      strokeWidth = 0.75;
                     }
+                  } else if (perf !== undefined) {
+                    // Heatmap mode: use color scale for performance
+                    fill = colorScale(perf);
+                    opacity = 0.8;
                   }
 
                   return (
-                  <Geography
-                        key={geo.rsmKey}
-                        geography={geo}
-                        fill={fill}
-                        fillOpacity={opacity}
-                        stroke={stroke}
-                        strokeWidth={strokeWidth}
-                        style={{
-                          default: { outline: 'none', transition: 'all 250ms' },
-                          // On ne permet le highlight individuel que si on ne survole pas déjà un actif
-                          hover: { 
-                            fill: hoveredAsset ? fill : "#3B82F6", 
-                            fillOpacity: 1,
-                            outline: 'none', 
-                            cursor: 'pointer' 
-                          },
-                          pressed: { outline: 'none' },
-                        }}
+                    <Geography
+                      key={geo.rsmKey}
+                      geography={geo}
+                      fill={fill}
+                      fillOpacity={opacity}
+                      stroke={stroke}
+                      strokeWidth={strokeWidth}
+                      style={{
+                        default: { outline: 'none', transition: 'all 250ms ease-in-out' },
+                        hover: { 
+                          fill: hoveredAsset ? fill : 'rgb(59, 130, 246)', // blue-500
+                          fillOpacity: hoveredAsset ? opacity : 0.9,
+                          outline: 'none', 
+                          cursor: 'pointer',
+                          transition: 'all 250ms ease-in-out'
+                        },
+                        pressed: { outline: 'none' },
+                      }}
                     />
                   )
                 })

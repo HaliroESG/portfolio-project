@@ -21,9 +21,9 @@ export default function GeoPage() {
             <h1 className="text-4xl font-black uppercase tracking-tighter text-slate-950 dark:text-white">Global <span className="text-[#00FF88]">Exposure</span></h1>
           </div>
           <div className="flex-1 grid grid-cols-12 gap-8">
-            <div className="col-span-9 bg-white dark:bg-black/20 rounded-3xl border-2 border-slate-200 dark:border-white/5 shadow-2xl p-4 relative overflow-hidden">
+            <div className="col-span-9 bg-white dark:bg-black/20 rounded-3xl border-2 border-slate-200 dark:border-white/5 shadow-2xl dark:shadow-inner p-4 relative overflow-hidden">
                {/* Wrapper pour forcer le contraste de la carte */}
-               <div className="w-full h-full rounded-2xl bg-white dark:bg-transparent transition-colors">
+               <div className="w-full h-full rounded-2xl bg-white dark:bg-transparent transition-colors scale-100">
                   <GeographicMap regions={mockRegions} hoveredAsset={null} />
                </div>
             </div>
