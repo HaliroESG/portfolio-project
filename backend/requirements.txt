@@ -1,0 +1,8 @@
+yfinance
+supabase
+pandas
+gspread
+oauth2client
+scipy
+statsmodels
+numpy

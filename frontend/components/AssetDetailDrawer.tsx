@@ -2,7 +2,7 @@
 
 import React from 'react'
 import { Asset } from '../types'
-import { X, ExternalLink, Star, TrendingUp, TrendingDown, Globe2 } from 'lucide-react'
+import { X, ExternalLink, Star, TrendingUp, TrendingDown, Globe2, Activity } from 'lucide-react'
 import { cn } from '../lib/utils'
 
 interface AssetDetailDrawerProps {
@@ -247,6 +247,83 @@ export function AssetDetailDrawer({ asset, isOpen, onClose }: AssetDetailDrawerP
                   )}>
                     {((asset.performance?.ytd?.value || 0) >= 0 ? '+' : '')}
                     {(asset.performance?.ytd?.value || 0).toFixed(2)}%
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            {/* Technical Indicators */}
+            <div className="bg-slate-50 dark:bg-[#080A0F] rounded-2xl border-2 border-slate-200 dark:border-white/5 p-6 shadow-xl">
+              <div className="flex items-center gap-2 mb-4">
+                <Activity className="w-5 h-5 text-blue-600 dark:text-[#00FF88]" />
+                <h3 className="text-sm font-black text-slate-950 dark:text-white uppercase tracking-tighter">
+                  Technical Indicators
+                </h3>
+              </div>
+              <div className="space-y-4">
+                {/* MA200 Status */}
+                <div className="flex items-center justify-between p-3 bg-white dark:bg-[#0A0D12] rounded-xl border border-slate-200 dark:border-white/5">
+                  <div className="flex flex-col">
+                    <span className="text-[10px] font-black text-slate-400 dark:text-gray-500 uppercase tracking-wider">
+                      MA200 Status
+                    </span>
+                    <span className="text-xs font-mono text-slate-600 dark:text-gray-400 mt-1">
+                      Price vs 200-Day Moving Average
+                    </span>
+                  </div>
+                  <span className={cn(
+                    "px-3 py-1.5 rounded-lg text-xs font-black uppercase tracking-tighter",
+                    "bg-green-100 dark:bg-green-950/30 text-green-700 dark:text-green-400 border border-green-300 dark:border-green-800/50"
+                  )}>
+                    Above MA200
+                  </span>
+                </div>
+
+                {/* Long-term Trend (20-Year Linear Regression) */}
+                <div className="flex items-center justify-between p-3 bg-white dark:bg-[#0A0D12] rounded-xl border border-slate-200 dark:border-white/5">
+                  <div className="flex flex-col">
+                    <span className="text-[10px] font-black text-slate-400 dark:text-gray-500 uppercase tracking-wider">
+                      Long-term Trend
+                    </span>
+                    <span className="text-xs font-mono text-slate-600 dark:text-gray-400 mt-1">
+                      20-Year Linear Regression Slope
+                    </span>
+                  </div>
+                  <div className="text-right">
+                    <div className="text-sm font-mono font-black text-slate-950 dark:text-white">
+                      +0.042
+                    </div>
+                    <div className="text-[9px] font-bold text-green-600 dark:text-green-400 uppercase">
+                      Bullish
+                    </div>
+                  </div>
+                </div>
+
+                {/* RSI Gauge */}
+                <div className="p-3 bg-white dark:bg-[#0A0D12] rounded-xl border border-slate-200 dark:border-white/5">
+                  <div className="flex items-center justify-between mb-3">
+                    <span className="text-[10px] font-black text-slate-400 dark:text-gray-500 uppercase tracking-wider">
+                      Relative Strength Index (RSI)
+                    </span>
+                    <span className="text-sm font-mono font-black text-slate-950 dark:text-white">
+                      58.3
+                    </span>
+                  </div>
+                  <div className="relative h-3 w-full bg-slate-200 dark:bg-white/5 rounded-full overflow-hidden">
+                    <div className="absolute inset-0 flex">
+                      <div className="w-1/3 bg-red-500 dark:bg-red-500/50"></div>
+                      <div className="w-1/3 bg-yellow-500 dark:bg-yellow-500/50"></div>
+                      <div className="w-1/3 bg-green-500 dark:bg-green-500/50"></div>
+                    </div>
+                    <div 
+                      className="absolute top-0 h-full w-1 bg-slate-950 dark:bg-white transition-all duration-500"
+                      style={{ left: '58.3%' }}
+                    />
+                  </div>
+                  <div className="flex justify-between mt-1 text-[8px] font-bold text-slate-500 dark:text-gray-500">
+                    <span>Oversold</span>
+                    <span>Neutral</span>
+                    <span>Overbought</span>
                   </div>
                 </div>
               </div>

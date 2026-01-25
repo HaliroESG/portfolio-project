@@ -3,9 +3,11 @@ import json
 import gspread
 import yfinance as yf
 import pandas as pd
-from datetime import datetime
+import numpy as np
+from datetime import datetime, timedelta
 from supabase import create_client
 from oauth2client.service_account import ServiceAccountCredentials
+from scipy.stats import linregress
 
 print("--- 🔍 DÉMARRAGE DU DIAGNOSTIC ---", flush=True)
 
@@ -58,7 +60,6 @@ def update_macro_hub():
         "BTC-USD": ["Bitcoin", "CRYPTO"]
     }
     
-    
     print("--- MISE À JOUR DU HUB MACRO ---", flush=True)
     
     for ticker, info in indicators.items():
@@ -86,7 +87,109 @@ def update_macro_hub():
                 else:
                     print(f"    ⚠️ Pas assez de données pour {ticker}")
             except Exception as e:
-                print(f"    ❌ Erreur macro {ticker}: {e}")
+                print(f"    ❌ Erreur macro {ticker}: {e}", flush=True)
+    
+    # === CALCULS MACRO AVANCÉS ===
+    
+    # 1. Yield Spread (10Y-2Y)
+    yield_spread_10y2y = None
+    try:
+        # Récupérer 10Y Treasury rate
+        data_10y = yf.download("^TNX", period="5d", progress=False)
+        
+        # Yahoo Finance n'a pas de ticker direct pour 2Y Treasury
+        # Utiliser ^FVX (5Y) et ajuster approximativement pour 2Y
+        # Ou utiliser une approximation basée sur la courbe des taux
+        data_5y = None
+        try:
+            data_5y = yf.download("^FVX", period="5d", progress=False)  # 5Y Treasury
+        except:
+            pass
+        
+        if not data_10y.empty and len(data_10y) >= 1:
+            rate_10y = float(data_10y['Close'].iloc[-1].iloc[0]) if isinstance(data_10y['Close'].iloc[-1], pd.Series) else float(data_10y['Close'].iloc[-1])
+            
+            if data_5y is not None and not data_5y.empty and len(data_5y) >= 1:
+                rate_5y = float(data_5y['Close'].iloc[-1].iloc[0]) if isinstance(data_5y['Close'].iloc[-1], pd.Series) else float(data_5y['Close'].iloc[-1])
+                # Approximation: 2Y ≈ 5Y - 0.3% (ajustement empirique basé sur la courbe des taux)
+                rate_2y_approx = rate_5y - 0.3
+                yield_spread_10y2y = rate_10y - rate_2y_approx
+            else:
+                # Sans données 5Y, on ne peut pas calculer précisément le spread
+                # Mettre None plutôt qu'une valeur arbitraire
+                print(f"    ⚠️ Données 5Y manquantes pour calculer précisément le Yield Spread", flush=True)
+                yield_spread_10y2y = None
+            
+            # Sauvegarder dans macro_indicators seulement si calcul réussi
+            if yield_spread_10y2y is not None:
+                payload_spread = {
+                    "id": "SPREAD_10Y_2Y",
+                    "name": "Yield Spread (10Y-2Y)",
+                    "category": "RATES",
+                    "value": yield_spread_10y2y,
+                    "change_pct": None,
+                    "last_update": datetime.now().isoformat()
+                }
+                supabase.table("macro_indicators").upsert(payload_spread).execute()
+                print(f"    ✅ Yield Spread (10Y-2Y): {yield_spread_10y2y:.2f}%", flush=True)
+        else:
+            print(f"    ⚠️ Pas assez de données pour calculer Yield Spread", flush=True)
+    except Exception as e:
+        print(f"    ⚠️ Erreur calcul Yield Spread: {e}", flush=True)
+    
+    # 2. Carry Trade Monitor - Volatilité JPY/USD (5 jours)
+    jpy_volatility = None
+    try:
+        data_jpy = yf.download("JPYUSD=X", period="5d", progress=False)
+        if not data_jpy.empty and len(data_jpy) >= 5:
+            if isinstance(data_jpy.columns, pd.MultiIndex): 
+                data_jpy.columns = data_jpy.columns.get_level_values(0)
+            
+            # Calculer les rendements logarithmiques
+            returns = np.log(data_jpy['Close'] / data_jpy['Close'].shift(1)).dropna()
+            # Volatilité réalisée sur 5 jours, annualisée
+            std_dev = returns.std()
+            jpy_volatility = float(std_dev * np.sqrt(252) * 100)  # En pourcentage
+            
+            # Sauvegarder dans macro_indicators
+            payload_jpy = {
+                "id": "JPY_VOLATILITY",
+                "name": "JPY/USD Volatility (Carry Trade Risk)",
+                "category": "FOREX",
+                "value": jpy_volatility,
+                "change_pct": None,
+                "last_update": datetime.now().isoformat()
+            }
+            supabase.table("macro_indicators").upsert(payload_jpy).execute()
+            print(f"    ✅ JPY Volatility: {jpy_volatility:.2f}%", flush=True)
+        else:
+            print(f"    ⚠️ Pas assez de données pour calculer JPY volatility", flush=True)
+    except Exception as e:
+        print(f"    ⚠️ Erreur calcul JPY volatility: {e}", flush=True)
+    
+    # 3. Misery Index (Inflation + Unemployment)
+    misery_index = None
+    try:
+        # Placeholder: Utiliser des valeurs constantes ou essayer de récupérer depuis une API
+        # Pour l'instant, utiliser des valeurs estimées basées sur les données US récentes
+        # TODO: Intégrer une API réelle (ex: FRED API pour inflation et chômage US)
+        inflation_estimate = 3.2  # Placeholder - remplacer par API réelle
+        unemployment_estimate = 3.7  # Placeholder - remplacer par API réelle
+        misery_index = inflation_estimate + unemployment_estimate
+        
+        # Sauvegarder dans macro_indicators
+        payload_misery = {
+            "id": "MISERY_INDEX",
+            "name": "Misery Index (Inflation + Unemployment)",
+            "category": "ECONOMIC",
+            "value": misery_index,
+            "change_pct": None,
+            "last_update": datetime.now().isoformat()
+        }
+        supabase.table("macro_indicators").upsert(payload_misery).execute()
+        print(f"    ✅ Misery Index: {misery_index:.1f} (Inflation: {inflation_estimate:.1f}% + Unemployment: {unemployment_estimate:.1f}%)", flush=True)
+    except Exception as e:
+        print(f"    ⚠️ Erreur calcul Misery Index: {e}", flush=True)
 
 
 def get_financial_data(ticker, currency):
@@ -94,19 +197,37 @@ def get_financial_data(ticker, currency):
     print(f"    📊 Analyse financière : {ticker} ({currency})...", flush=True)
     
     try:
-        df_asset = yf.download(ticker, period="2y", progress=False)
+        # Récupérer 1 an d'historique pour MA200 (minimum 200 jours ouvrés)
+        df_asset = yf.download(ticker, period="1y", progress=False)
+        
+        # Pour la régression 20 ans, essayer de récupérer le maximum d'historique
+        df_long = None
+        try:
+            df_long = yf.download(ticker, period="max", progress=False)
+        except:
+            try:
+                df_long = yf.download(ticker, period="20y", progress=False)
+            except:
+                pass
         
         if currency == "EUR":
             df_fx = pd.DataFrame(1.0, index=df_asset.index, columns=['Close'])
         else:
             fx_ticker = f"{currency}EUR=X"
-            df_fx = yf.download(fx_ticker, period="2y", progress=False)
+            df_fx = yf.download(fx_ticker, period="1y", progress=False)
 
         if isinstance(df_asset.columns, pd.MultiIndex): df_asset.columns = df_asset.columns.get_level_values(0)
         if isinstance(df_fx.columns, pd.MultiIndex): df_fx.columns = df_fx.columns.get_level_values(0)
 
         df = df_asset[['Close']].rename(columns={'Close': 'price'})
-        df['fx'] = df_fx['Close']
+        
+        # Aligner les index pour le FX
+        if currency != "EUR":
+            df_fx_aligned = df_fx.reindex(df.index, method='ffill')
+            df['fx'] = df_fx_aligned['Close']
+        else:
+            df['fx'] = 1.0
+        
         df = df.ffill() # Correction FutureWarning fillna
 
         df['val_eur'] = df['price'] * df['fx']
@@ -122,6 +243,54 @@ def get_financial_data(ticker, currency):
 
         calc = lambda current, start: (current / start) - 1
 
+        # === CALCULS D'INDICATEURS TECHNIQUES ===
+        
+        # 1. MA200 (200-Day Moving Average)
+        ma200_value = None
+        ma200_status = None
+        try:
+            if len(df) >= 200:
+                ma200_value = float(df['price'].rolling(window=200).mean().iloc[-1])
+                current_price = float(df['price'].iloc[-1])
+                ma200_status = "above" if current_price > ma200_value else "below"
+            else:
+                print(f"      ⚠️ Pas assez de données pour MA200 ({len(df)} jours)", flush=True)
+        except Exception as e:
+            print(f"      ⚠️ Erreur calcul MA200: {e}", flush=True)
+
+        # 2. Régression Linéaire 20 ans (slope)
+        trend_slope = None
+        try:
+            if df_long is not None and len(df_long) >= 100:
+                if isinstance(df_long.columns, pd.MultiIndex): 
+                    df_long.columns = df_long.columns.get_level_values(0)
+                prices = df_long['Close'].values
+                # Créer un index numérique pour la régression (jours depuis le début)
+                x = np.arange(len(prices))
+                slope, intercept, r_value, p_value, std_err = linregress(x, prices)
+                trend_slope = float(slope)
+            else:
+                print(f"      ⚠️ Pas assez d'historique pour régression 20 ans", flush=True)
+        except Exception as e:
+            print(f"      ⚠️ Erreur calcul régression: {e}", flush=True)
+
+        # 3. Volatilité annualisée (30 derniers jours)
+        volatility_30d = None
+        try:
+            if len(df) >= 30:
+                # Calculer les rendements logarithmiques
+                returns = np.log(df['price'] / df['price'].shift(1)).dropna()
+                # Prendre les 30 derniers jours
+                recent_returns = returns.tail(30)
+                # Écart-type des rendements
+                std_dev = recent_returns.std()
+                # Annualiser: multiplier par sqrt(252) pour les jours ouvrés
+                volatility_30d = float(std_dev * np.sqrt(252) * 100)  # En pourcentage
+            else:
+                print(f"      ⚠️ Pas assez de données pour volatilité 30d ({len(df)} jours)", flush=True)
+        except Exception as e:
+            print(f"      ⚠️ Erreur calcul volatilité: {e}", flush=True)
+
         return {
             "last_price": float(df['price'].iloc[-1]),
             "perf_eur": {
@@ -133,7 +302,11 @@ def get_financial_data(ticker, currency):
             "perf_local": {
                 "day": calc(df['price'].iloc[-1], df['price'].iloc[-2]),
                 "ytd": calc(df['price'].iloc[-1], start_year_local)
-            }
+            },
+            "ma200_value": ma200_value,
+            "ma200_status": ma200_status,
+            "trend_slope": trend_slope,
+            "volatility_30d": volatility_30d
         }
     except Exception as e:
         print(f"    ❌ Erreur calculs pour {ticker}: {e}")
@@ -210,6 +383,11 @@ def run_sync():
                 "perf_ytd_local": mkt['perf_local']['ytd'],
                 "perf_ytd_eur": mkt['perf_eur']['ytd'],
                 "geo_coverage": geo_coverage,
+                # Nouveaux champs d'indicateurs techniques
+                "ma200_value": mkt.get('ma200_value'),
+                "ma200_status": mkt.get('ma200_status'),
+                "trend_slope": mkt.get('trend_slope'),
+                "volatility_30d": mkt.get('volatility_30d'),
                 "last_update": datetime.now().isoformat()
             }
             

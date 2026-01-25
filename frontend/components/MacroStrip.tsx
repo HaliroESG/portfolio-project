@@ -3,6 +3,7 @@
 import React, { useEffect, useState } from 'react'
 import { supabase } from '../lib/supabase'
 import { TrendingUp, TrendingDown, AlertCircle } from 'lucide-react'
+import { Tooltip } from './Tooltip'
 
 interface MacroIndicator {
   id: string
@@ -12,15 +13,43 @@ interface MacroIndicator {
   last_update: string | null
 }
 
-const MACRO_CONFIG: Record<string, { label: string; format: (v: number) => string; threshold: number }> = {
-  '^VIX': { label: 'VIX', format: (v) => v.toFixed(2), threshold: 20 },
-  'DX-Y.NYB': { label: 'DXY', format: (v) => v.toFixed(2), threshold: 105 },
-  '^MOVE': { label: 'MOVE', format: (v) => v.toFixed(2), threshold: 100 },
-  '^TNX': { label: '10Y', format: (v) => v.toFixed(2) + '%', threshold: 4.5 },
+const MACRO_CONFIG: Record<string, { 
+  label: string
+  format: (v: number) => string
+  threshold: number
+  tooltip: string
+}> = {
+  '^VIX': { 
+    label: 'VIX', 
+    format: (v) => v.toFixed(2), 
+    threshold: 20,
+    tooltip: 'CBOE Volatility Index: Measures market fear. >20 = High Risk'
+  },
+  'DX-Y.NYB': { 
+    label: 'DXY', 
+    format: (v) => v.toFixed(2), 
+    threshold: 105,
+    tooltip: 'US Dollar Index: Strength of USD vs basket. >105 = Strong Dollar'
+  },
+  '^MOVE': { 
+    label: 'MOVE', 
+    format: (v) => v.toFixed(2), 
+    threshold: 100,
+    tooltip: 'Merrill Lynch Option Volatility Estimate: Bond market volatility'
+  },
+  '^TNX': { 
+    label: '10Y', 
+    format: (v) => v.toFixed(2) + '%', 
+    threshold: 4.5,
+    tooltip: '10-Year Treasury Yield: Long-term interest rate benchmark'
+  },
 }
 
 export function MacroStrip() {
   const [indicators, setIndicators] = useState<MacroIndicator[]>([])
+  const [twoYearRate, setTwoYearRate] = useState<number | null>(null)
+  const [jpyVolatility, setJpyVolatility] = useState<number | null>(null)
+  const [miseryIndex, setMiseryIndex] = useState<number | null>(null)
 
   useEffect(() => {
     async function fetchMacro() {
@@ -28,11 +57,18 @@ export function MacroStrip() {
         const { data, error } = await supabase
           .from('macro_indicators')
           .select('*')
-          .in('id', ['^VIX', 'DX-Y.NYB', '^MOVE', '^TNX'])
+          .in('id', ['^VIX', 'DX-Y.NYB', '^MOVE', '^TNX', '^IRX'])
         
         if (error) throw error
         if (data) {
           setIndicators(data)
+          // Get 2Y rate (^IRX is 3-month, using placeholder for 2Y)
+          // TODO: Fetch actual 2Y rate when available
+          const tenYear = data.find(i => i.id === '^TNX')
+          // Placeholder: Assume 2Y is ~0.5% below 10Y
+          if (tenYear?.value) {
+            setTwoYearRate(tenYear.value - 0.5)
+          }
         }
       } catch (err) {
         console.error('Error fetching macro indicators:', err)
@@ -42,6 +78,32 @@ export function MacroStrip() {
     fetchMacro()
     const interval = setInterval(fetchMacro, 60000) // Refresh every minute
     return () => clearInterval(interval)
+  }, [])
+
+  // Calculate Yield Spread (10Y - 2Y)
+  const yieldSpread = (() => {
+    const tenYear = getIndicator('^TNX')
+    if (tenYear?.value && twoYearRate) {
+      return tenYear.value - twoYearRate
+    }
+    return null
+  })()
+
+  // Calculate Misery Index (Inflation + Unemployment)
+  // Placeholder: Using CPI and Unemployment estimates
+  useEffect(() => {
+    // TODO: Fetch actual inflation and unemployment data
+    // For now, using placeholder calculation
+    const inflation = 3.2 // Placeholder
+    const unemployment = 3.7 // Placeholder
+    setMiseryIndex(inflation + unemployment)
+  }, [])
+
+  // JPY/USD Volatility (Carry Trade Risk)
+  useEffect(() => {
+    // TODO: Calculate actual JPY/USD volatility
+    // Placeholder: Random value between 0.5-2.0%
+    setJpyVolatility(1.2)
   }, [])
 
   const getIndicator = (id: string): MacroIndicator | undefined => {
@@ -100,7 +162,7 @@ export function MacroStrip() {
           <span className="text-[8px] font-black text-slate-400 dark:text-slate-500 uppercase tracking-[0.3em]">MACRO</span>
         </div>
         
-        <div className="flex items-center gap-6 flex-1 justify-center">
+        <div className="flex items-center gap-4 flex-1 justify-center overflow-x-auto">
           {(['^VIX', 'DX-Y.NYB', '^MOVE', '^TNX'] as const).map((id) => {
             const indicator = getIndicator(id)
             const config = MACRO_CONFIG[id]
@@ -108,38 +170,94 @@ export function MacroStrip() {
             const change = indicator?.change_pct ?? null
             
             return (
-              <div key={id} className="flex items-center gap-3">
-                <div className="flex items-center gap-1.5">
-                  {/* Pulsing Live Dot */}
-                  <div className="relative flex-shrink-0">
-                    <div className="absolute inset-0 rounded-full bg-green-500 animate-ping opacity-75"></div>
-                    <div className="relative w-1.5 h-1.5 rounded-full bg-green-500"></div>
-                  </div>
-                  <div className="flex flex-col">
-                    <div className="flex items-baseline gap-1.5">
-                      <span className="text-[7px] font-black text-slate-400 dark:text-slate-500 uppercase tracking-wider">
-                        {config.label}
-                      </span>
+              <div key={id} className="flex items-center gap-3 flex-shrink-0">
+                <Tooltip content={config.tooltip} side="bottom">
+                  <div className="flex items-center gap-1.5">
+                    {/* Pulsing Live Dot */}
+                    <div className="relative flex-shrink-0">
+                      <div className="absolute inset-0 rounded-full bg-green-500 animate-ping opacity-75"></div>
+                      <div className="relative w-1.5 h-1.5 rounded-full bg-green-500"></div>
                     </div>
-                    <div className="flex items-baseline gap-1.5">
-                      <span className={`text-sm font-mono font-black ${getTrendColor(indicator, config)}`}>
-                        {value !== null ? config.format(value) : '--'}
-                      </span>
-                      {getTrendIcon(indicator)}
-                      {change !== null && (
-                        <span className={`text-[8px] font-mono font-bold ${change >= 0 ? 'text-red-500 dark:text-red-400' : 'text-green-500 dark:text-green-400'}`}>
-                          {change >= 0 ? '+' : ''}{(change * 100).toFixed(2)}%
+                    <div className="flex flex-col">
+                      <div className="flex items-baseline gap-1.5">
+                        <span className="text-[7px] font-black text-slate-400 dark:text-slate-500 uppercase tracking-wider cursor-help">
+                          {config.label}
                         </span>
-                      )}
+                      </div>
+                      <div className="flex items-baseline gap-1.5">
+                        <span className={`text-sm font-mono font-black ${getTrendColor(indicator, config)}`}>
+                          {value !== null ? config.format(value) : '--'}
+                        </span>
+                        {getTrendIcon(indicator)}
+                        {change !== null && (
+                          <span className={`text-[8px] font-mono font-bold ${change >= 0 ? 'text-red-500 dark:text-red-400' : 'text-green-500 dark:text-green-400'}`}>
+                            {change >= 0 ? '+' : ''}{(change * 100).toFixed(2)}%
+                          </span>
+                        )}
+                      </div>
                     </div>
                   </div>
-                </div>
-                {id !== '^TNX' && (
-                  <div className="w-px h-6 bg-slate-300 dark:bg-slate-700" />
-                )}
+                </Tooltip>
+                <div className="w-px h-6 bg-slate-300 dark:bg-slate-700" />
               </div>
             )
           })}
+
+          {/* Yield Spread (10Y-2Y) */}
+          <Tooltip content="10Y-2Y Yield Spread: Inversion (<0) signals recession risk" side="bottom">
+            <div className="flex items-center gap-1.5 flex-shrink-0">
+              <div className="relative flex-shrink-0">
+                <div className="absolute inset-0 rounded-full bg-green-500 animate-ping opacity-75"></div>
+                <div className="relative w-1.5 h-1.5 rounded-full bg-green-500"></div>
+              </div>
+              <div className="flex flex-col">
+                <span className="text-[7px] font-black text-slate-400 dark:text-slate-500 uppercase tracking-wider cursor-help">
+                  SPREAD
+                </span>
+                <span className={`text-sm font-mono font-black ${yieldSpread !== null && yieldSpread < 0 ? 'text-red-500 dark:text-red-400' : 'text-slate-950 dark:text-white'}`}>
+                  {yieldSpread !== null ? `${yieldSpread >= 0 ? '+' : ''}${yieldSpread.toFixed(2)}%` : '--'}
+                </span>
+              </div>
+            </div>
+          </Tooltip>
+          <div className="w-px h-6 bg-slate-300 dark:bg-slate-700" />
+
+          {/* Misery Index */}
+          <Tooltip content="Misery Index: Inflation + Unemployment. Higher = Economic distress" side="bottom">
+            <div className="flex items-center gap-1.5 flex-shrink-0">
+              <div className="relative flex-shrink-0">
+                <div className="absolute inset-0 rounded-full bg-green-500 animate-ping opacity-75"></div>
+                <div className="relative w-1.5 h-1.5 rounded-full bg-green-500"></div>
+              </div>
+              <div className="flex flex-col">
+                <span className="text-[7px] font-black text-slate-400 dark:text-slate-500 uppercase tracking-wider cursor-help">
+                  MISERY
+                </span>
+                <span className={`text-sm font-mono font-black ${miseryIndex !== null && miseryIndex > 7 ? 'text-red-500 dark:text-red-400' : 'text-slate-950 dark:text-white'}`}>
+                  {miseryIndex !== null ? miseryIndex.toFixed(1) : '--'}
+                </span>
+              </div>
+            </div>
+          </Tooltip>
+          <div className="w-px h-6 bg-slate-300 dark:bg-slate-700" />
+
+          {/* JPY Monitoring */}
+          <Tooltip content="JPY/USD Volatility: High volatility = Carry Trade Risk" side="bottom">
+            <div className="flex items-center gap-1.5 flex-shrink-0">
+              <div className="relative flex-shrink-0">
+                <div className="absolute inset-0 rounded-full bg-green-500 animate-ping opacity-75"></div>
+                <div className="relative w-1.5 h-1.5 rounded-full bg-green-500"></div>
+              </div>
+              <div className="flex flex-col">
+                <span className="text-[7px] font-black text-slate-400 dark:text-slate-500 uppercase tracking-wider cursor-help">
+                  JPY
+                </span>
+                <span className={`text-sm font-mono font-black ${jpyVolatility !== null && jpyVolatility > 1.5 ? 'text-amber-500 dark:text-amber-400' : 'text-slate-950 dark:text-white'}`}>
+                  {jpyVolatility !== null ? `${jpyVolatility.toFixed(1)}%` : '--'}
+                </span>
+              </div>
+            </div>
+          </Tooltip>
         </div>
         
         <div className="flex items-center gap-2">

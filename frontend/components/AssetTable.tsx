@@ -1,6 +1,6 @@
 "use client"
 
-import React from 'react';
+import React, { useMemo } from 'react';
 import { Asset } from '../types';
 import { PerformanceCell } from './PerformanceCell';
 import { AlertCircle } from 'lucide-react';
@@ -11,12 +11,65 @@ interface AssetTableProps {
   onHoverAsset: (asset: Asset | null) => void;
   onSelectAsset: (asset: Asset) => void;
   selectedAssetId: string | null;
+  groupByClass?: boolean;
+  currencyFilter?: string;
 }
 
-export function AssetTable({ assets, onHoverAsset, onSelectAsset, selectedAssetId }: AssetTableProps) {
+export function AssetTable({ assets, onHoverAsset, onSelectAsset, selectedAssetId, groupByClass = false, currencyFilter = "ALL" }: AssetTableProps) {
   const hasMissingData = (asset: Asset): boolean => {
     return asset.price === null || asset.price === 0 || asset.price === undefined;
   }
+
+  // Calculate volatility (annualized % based on performance variance)
+  const calculateVolatility = (asset: Asset): number => {
+    const perf = asset.performance
+    const values = [
+      perf?.day?.value || 0,
+      perf?.week?.value || 0,
+      perf?.month?.value || 0,
+      perf?.ytd?.value || 0,
+    ].filter(v => v !== 0)
+    
+    if (values.length === 0) return 0
+    
+    const mean = values.reduce((a, b) => a + b, 0) / values.length
+    const variance = values.reduce((sum, val) => sum + Math.pow(val - mean, 2), 0) / values.length
+    const stdDev = Math.sqrt(variance)
+    
+    // Annualize: multiply by sqrt(252) for daily, but we're using mixed periods
+    // Simplified: use stdDev * 16 (rough annualization factor)
+    return Math.abs(stdDev * 16)
+  }
+
+  // Filter and group assets
+  const processedAssets = useMemo(() => {
+    let filtered = assets
+
+    // Apply currency filter
+    if (currencyFilter !== "ALL") {
+      filtered = filtered.filter(asset => asset.currency === currencyFilter)
+    }
+
+    // Group by asset class if enabled
+    if (groupByClass) {
+      const grouped = filtered.reduce((acc, asset) => {
+        const type = asset.type.toUpperCase()
+        if (!acc[type]) acc[type] = []
+        acc[type].push(asset)
+        return acc
+      }, {} as Record<string, Asset[]>)
+
+      // Flatten grouped assets with headers
+      const result: (Asset | { isHeader: true; type: string })[] = []
+      Object.entries(grouped).forEach(([type, assets]) => {
+        result.push({ isHeader: true, type })
+        result.push(...assets.sort((a, b) => a.name.localeCompare(b.name)))
+      })
+      return result
+    }
+
+    return filtered
+  }, [assets, groupByClass, currencyFilter])
 
   return (
     <div className="w-full h-full overflow-auto bg-white dark:bg-[#080A0F] transition-colors duration-300">
@@ -28,12 +81,29 @@ export function AssetTable({ assets, onHoverAsset, onSelectAsset, selectedAssetI
             <th className="p-4 text-[10px] font-black text-slate-950 dark:text-gray-500 uppercase tracking-widest text-center border-l border-slate-200 dark:border-[#1a1d24]">Week</th>
             <th className="p-4 text-[10px] font-black text-slate-950 dark:text-gray-500 uppercase tracking-widest text-center border-l border-slate-200 dark:border-[#1a1d24]">Month</th>
             <th className="p-4 text-[10px] font-black text-slate-950 dark:text-gray-500 uppercase tracking-widest text-center border-l border-slate-200 dark:border-[#1a1d24]">YTD</th>
+            <th className="p-4 text-[10px] font-black text-slate-950 dark:text-gray-500 uppercase tracking-widest text-center border-l border-slate-200 dark:border-[#1a1d24]">Volatility</th>
           </tr>
         </thead>
         <tbody className="divide-y divide-slate-200 dark:divide-[#1a1d24]">
-          {assets.map((asset) => {
+          {processedAssets.map((item, index) => {
+            // Handle group headers
+            if ('isHeader' in item && item.isHeader) {
+              return (
+                <tr key={`header-${item.type}`} className="bg-slate-100 dark:bg-[#0D1117]">
+                  <td colSpan={6} className="p-3 border-b-2 border-slate-300 dark:border-[#1a1d24]">
+                    <span className="text-[10px] font-black text-slate-950 dark:text-white uppercase tracking-widest">
+                      {item.type}
+                    </span>
+                  </td>
+                </tr>
+              )
+            }
+
+            const asset = item as Asset
             const missingData = hasMissingData(asset);
             const isSelected = selectedAssetId === asset.id;
+            const volatility = calculateVolatility(asset);
+            
             return (
               <tr 
                 key={asset.id} 
@@ -72,7 +142,17 @@ export function AssetTable({ assets, onHoverAsset, onSelectAsset, selectedAssetI
                 <td className="p-0 border-r border-slate-200 dark:border-[#1a1d24] w-28"><PerformanceCell data={asset.performance.day} /></td>
                 <td className="p-0 border-r border-slate-200 dark:border-[#1a1d24] w-28"><PerformanceCell data={asset.performance.week} /></td>
                 <td className="p-0 border-r border-slate-200 dark:border-[#1a1d24] w-28"><PerformanceCell data={asset.performance.month} /></td>
-                <td className="p-0 w-28"><PerformanceCell data={asset.performance.ytd} /></td>
+                <td className="p-0 border-r border-slate-200 dark:border-[#1a1d24] w-28"><PerformanceCell data={asset.performance.ytd} /></td>
+                <td className="p-4 text-center border-l border-slate-200 dark:border-[#1a1d24]">
+                  <span className={cn(
+                    "text-xs font-mono font-black",
+                    volatility > 30 ? "text-red-600 dark:text-red-400" :
+                    volatility > 20 ? "text-amber-600 dark:text-amber-400" :
+                    "text-slate-950 dark:text-white"
+                  )}>
+                    {volatility > 0 ? `${volatility.toFixed(1)}%` : 'N/A'}
+                  </span>
+                </td>
               </tr>
             );
           })}

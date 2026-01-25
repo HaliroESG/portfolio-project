@@ -18,6 +18,8 @@ export default function PortfolioDashboard() {
   const [assets, setAssets] = useState<Asset[]>([])
   const [loading, setLoading] = useState(true)
   const [lastSync, setLastSync] = useState<string>("")
+  const [groupByClass, setGroupByClass] = useState(false)
+  const [currencyFilter, setCurrencyFilter] = useState<string>("ALL")
 
   useEffect(() => {
     async function fetchAssets() {
@@ -65,7 +67,7 @@ export default function PortfolioDashboard() {
   }, [])
 
   return (
-    <div className="flex h-screen bg-slate-50 dark:bg-[#080A0F] text-slate-950 dark:text-gray-300 transition-colors duration-500">
+    <div className="flex h-screen bg-slate-100 dark:bg-[#080A0F] text-slate-950 dark:text-gray-300 transition-colors duration-500">
       <Sidebar />
       <div className="flex-1 flex flex-col min-w-0">
         <Header lastSync={lastSync} />
@@ -74,13 +76,48 @@ export default function PortfolioDashboard() {
           <div className="flex-1 flex gap-6 min-h-0">
             {/* Table Matrix */}
             <div className="w-[65%] flex flex-col">
-              <h2 className="text-[10px] font-black text-slate-500 uppercase tracking-[0.2em] mb-2 px-1">Portfolio Matrix (A-Z)</h2>
+              <div className="flex items-center justify-between mb-2 px-1">
+                <h2 className="text-[10px] font-black text-slate-500 uppercase tracking-[0.2em]">Portfolio Matrix</h2>
+                <div className="flex items-center gap-3">
+                  {/* Group by Asset Class Toggle */}
+                  <button
+                    onClick={() => setGroupByClass(!groupByClass)}
+                    className={cn(
+                      "px-3 py-1 rounded-lg text-[9px] font-black uppercase tracking-wider transition-colors",
+                      groupByClass
+                        ? "bg-blue-600 text-white dark:bg-[#00FF88] dark:text-black"
+                        : "bg-slate-200 text-slate-700 dark:bg-white/10 dark:text-gray-300"
+                    )}
+                  >
+                    Group by Class
+                  </button>
+                  {/* Currency Filter */}
+                  <div className="flex items-center gap-1">
+                    {['ALL', 'EUR', 'USD', 'JPY'].map((curr) => (
+                      <button
+                        key={curr}
+                        onClick={() => setCurrencyFilter(curr)}
+                        className={cn(
+                          "px-2 py-1 rounded text-[9px] font-black uppercase tracking-wider transition-colors",
+                          currencyFilter === curr
+                            ? "bg-slate-950 text-white dark:bg-[#00FF88] dark:text-black"
+                            : "bg-slate-200 text-slate-600 dark:bg-white/10 dark:text-gray-400 hover:bg-slate-300 dark:hover:bg-white/20"
+                        )}
+                      >
+                        {curr}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+              </div>
               <div className="flex-1 bg-white dark:bg-[#0D1117]/50 rounded-3xl border-2 border-slate-200 dark:border-white/5 shadow-2xl overflow-hidden">
                 <AssetTable 
                   assets={assets} 
                   onHoverAsset={setHoveredAsset}
                   onSelectAsset={setSelectedAsset}
                   selectedAssetId={selectedAsset?.id || null}
+                  groupByClass={groupByClass}
+                  currencyFilter={currencyFilter}
                 />
               </div>
             </div>
