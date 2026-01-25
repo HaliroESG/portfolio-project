@@ -18,6 +18,7 @@ jobs:
         with:
           python-version: '3.11'
 
+      # Monorepo: Toutes les opérations Python s'exécutent dans ./backend
       - name: Install dependencies
         working-directory: ./backend
         run: |
