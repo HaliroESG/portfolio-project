@@ -31,7 +31,8 @@ export interface Asset {
 export interface MarketRegion {
   id: string
   name: string
-  code: string 
+  code: string
+  value: number // Valeur normalisée pour l'affichage (0-100)
   performance: number 
   exposure: number 
   coordinates: [number, number] 

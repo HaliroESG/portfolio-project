@@ -3,7 +3,7 @@ import re
 import json
 import random
 import sys
-import urllib.request
+import time
 import feedparser
 import requests
 from datetime import datetime, timedelta
@@ -18,7 +18,7 @@ def load_impact_rules():
     """Charge les règles d'impact depuis impact_rules.json."""
     try:
         # Trouve le dossier où se trouve le script (robuste pour GitHub Actions)
-        script_dir = Path(__file__).parent.absolute()
+        script_dir = Path(__file__).parent.resolve()
         json_path = script_dir / "impact_rules.json"
         
         # Log pour débogage (utile dans GitHub Actions)
@@ -84,12 +84,12 @@ except Exception as e:
 # === CONFIGURATION DES SOURCES RSS ===
 RSS_SOURCES = [
     {
-        "url": "https://www.federalreserve.gov/feeds/press.xml",
+        "url": "https://www.federalreserve.gov/feeds/press_all.xml",
         "source": "Federal Reserve",
         "category": "MACRO"
     },
     {
-        "url": "https://www.ecb.europa.eu/press/shared/rss/press.xml",
+        "url": "https://www.ecb.europa.eu/press/tvservices/rss/press.xml",
         "source": "ECB",
         "category": "MACRO"
     }
@@ -168,16 +168,15 @@ def fetch_news_from_rss(rss_config: dict) -> list:
     news_items = []
     
     try:
-        # Ajouter User-Agent pour éviter les erreurs 403
+        # Ajouter User-Agent pour éviter les erreurs 403 (Fed/ECB)
         headers = {
             'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36'
         }
         
-        # Utiliser urllib avec headers pour éviter les erreurs 403
-        req = urllib.request.Request(rss_config["url"], headers=headers)
-        with urllib.request.urlopen(req) as response:
-            feed_content = response.read()
-            feed = feedparser.parse(feed_content)
+        # Utiliser requests.get() avec headers avant de parser avec feedparser
+        response = requests.get(rss_config["url"], headers=headers, timeout=10)
+        response.raise_for_status()
+        feed = feedparser.parse(response.content)
         
         if feed.bozo and feed.bozo_exception:
             print(f"    ⚠️ Erreur parsing RSS {rss_config['source']}: {feed.bozo_exception}", flush=True)
@@ -233,25 +232,37 @@ def fetch_news_from_rss(rss_config: dict) -> list:
     
     return news_items
 
-def fetch_news_from_marketaux(ticker: str) -> list:
-    """Récupère les actualités depuis l'API Marketaux pour un ticker donné."""
+def fetch_news_from_marketaux(tickers: list[str]) -> list:
+    """
+    Récupère les actualités depuis l'API Marketaux pour une liste de tickers (batching).
+    Limite à 10 tickers par requête pour respecter les limites API.
+    """
     news_items = []
     
     if not MARKETAUX_API_KEY:
-        print(f"    ⚠️ MARKETAUX_API_KEY non configurée, skip pour {ticker}", flush=True)
+        print(f"    ⚠️ MARKETAUX_API_KEY non configurée, skip pour {len(tickers)} tickers", flush=True)
+        return news_items
+    
+    if not tickers:
         return news_items
     
     try:
         # API Marketaux: https://marketaux.com/documentation
+        # Supporte plusieurs tickers séparés par des virgules
         url = "https://api.marketaux.com/v1/news/all"
+        
+        # Joindre les tickers avec des virgules (max 10 par requête)
+        symbols_str = ",".join(tickers[:10])  # Limiter à 10 tickers
+        
         params = {
-            "symbols": ticker,
+            "symbols": symbols_str,
             "api_token": MARKETAUX_API_KEY,
-            "limit": 10,
-            "filter_entities": True
+            "limit": 50,  # Augmenter la limite car on a plusieurs tickers
+            "filter_entities": True,
+            "language": "en"  # Filtrer les résultats en anglais
         }
         
-        response = requests.get(url, params=params, timeout=10)
+        response = requests.get(url, params=params, timeout=15)
         response.raise_for_status()
         data = response.json()
         
@@ -261,9 +272,25 @@ def fetch_news_from_marketaux(ticker: str) -> list:
                 description = article.get("description", "")
                 url_link = article.get("url", "")
                 published = article.get("published_at", "")
+                entities = article.get("entities", [])  # Liste d'entités liées à l'article
                 
                 if not url_link:
                     continue
+                
+                # Extraire le ticker depuis le champ entities (au lieu d'utiliser l'argument)
+                # Les entities contiennent des objets avec des symboles de tickers
+                extracted_ticker = None
+                if entities and len(entities) > 0:
+                    # Prendre le premier symbole trouvé dans les entities
+                    first_entity = entities[0]
+                    if isinstance(first_entity, dict) and "symbol" in first_entity:
+                        extracted_ticker = first_entity["symbol"]
+                    elif isinstance(first_entity, str):
+                        extracted_ticker = first_entity
+                
+                # Fallback : si aucun ticker trouvé dans entities, utiliser le premier ticker de la requête
+                if not extracted_ticker and tickers:
+                    extracted_ticker = tickers[0]
                 
                 # Calculer l'impact basé sur les règles JSON
                 impact_result = calculate_impact(
@@ -281,7 +308,7 @@ def fetch_news_from_marketaux(ticker: str) -> list:
                     "description": description[:500] if description else None,
                     "source": "MARKETAUX",
                     "category": "EQUITY",  # News liées aux tickers = EQUITY
-                    "ticker": ticker,
+                    "ticker": extracted_ticker,  # Ticker extrait depuis entities
                     "impact_score": impact_result["impact_score"],
                     "impact_level": impact_result["impact_level"],
                     "impact_explanation": impact_result["impact_explanation"],
@@ -289,10 +316,15 @@ def fetch_news_from_marketaux(ticker: str) -> list:
                     "last_update": datetime.now().isoformat()
                 })
         
-        print(f"    ✅ Marketaux ({ticker}): {len(news_items)} articles récupérés", flush=True)
+        print(f"    ✅ Marketaux (batch de {len(tickers[:10])} tickers): {len(news_items)} articles récupérés", flush=True)
         
+    except requests.exceptions.HTTPError as e:
+        if e.response and e.response.status_code == 402:
+            print(f"    ⚠️ Erreur 402 (Payment Required) - Limite API Marketaux atteinte pour {len(tickers)} tickers", flush=True)
+        else:
+            print(f"    ⚠️ Erreur HTTP Marketaux pour {len(tickers)} tickers: {e}", flush=True)
     except Exception as e:
-        print(f"    ⚠️ Erreur Marketaux pour {ticker}: {e}", flush=True)
+        print(f"    ⚠️ Erreur Marketaux pour {len(tickers)} tickers: {e}", flush=True)
     
     return news_items
 
@@ -324,7 +356,7 @@ def sync_news():
         news_items = fetch_news_from_rss(rss_config)
         all_news.extend(news_items)
     
-    # 2. Récupérer les tickers depuis market_watch et fetch depuis Marketaux
+    # 2. Récupérer les tickers depuis market_watch et fetch depuis Marketaux (BATCHING)
     print("--- SOURCE MARKETAUX (TICKERS) ---", flush=True)
     try:
         # Récupérer tous les tickers uniques depuis market_watch
@@ -334,10 +366,20 @@ def sync_news():
             tickers = list(set([item["ticker"] for item in response.data if item.get("ticker")]))
             print(f"    📊 {len(tickers)} tickers trouvés dans market_watch", flush=True)
             
-            # Limiter à 20 tickers pour éviter de dépasser les limites API
-            for ticker in tickers[:20]:
-                news_items = fetch_news_from_marketaux(ticker)
+            # Batching : Grouper les tickers par lots de 10 pour réduire les appels API
+            batch_size = 10
+            ticker_batches = [tickers[i:i + batch_size] for i in range(0, len(tickers), batch_size)]
+            
+            print(f"    📦 {len(ticker_batches)} batch(s) de {batch_size} tickers à traiter", flush=True)
+            
+            for batch_idx, ticker_batch in enumerate(ticker_batches, 1):
+                print(f"    🔄 Traitement batch {batch_idx}/{len(ticker_batches)}: {', '.join(ticker_batch)}", flush=True)
+                news_items = fetch_news_from_marketaux(ticker_batch)
                 all_news.extend(news_items)
+                
+                # Petite pause entre les batches pour éviter les rate limits
+                if batch_idx < len(ticker_batches):
+                    time.sleep(1)
         else:
             print("    ⚠️ Aucun ticker trouvé dans market_watch", flush=True)
             

@@ -1,10 +1,9 @@
 "use client"
 
-import React from 'react'
+import React, { useEffect, useState } from 'react'
 import { Asset } from '../types'
 import { X, ExternalLink, Star, TrendingUp, TrendingDown, Globe2, Activity, Newspaper } from 'lucide-react'
 import { cn } from '../lib/utils'
-import { useEffect, useState } from 'react'
 import { supabase } from '../lib/supabase'
 import { Tooltip } from './Tooltip'
 
@@ -64,19 +63,21 @@ export function AssetDetailDrawer({ asset, isOpen, onClose }: AssetDetailDrawerP
   const isPositive = dayChange >= 0
   const hasMissingData = asset?.price === null || asset?.price === 0 || asset?.price === undefined
 
-  // Fetch news for this ticker
+  // Fetch news for this ticker - useCallback pour éviter les boucles infinies
+  // Fetch news for this ticker - sécurisé pour éviter les boucles infinies
   useEffect(() => {
+    // Garde-fou au début de l'effet
     if (!asset?.ticker) return
 
     async function fetchNews() {
       try {
-        const ticker = asset?.ticker // Use optional chaining
+        const ticker = asset?.ticker // Utiliser optional chaining
         if (!ticker) return
         
         const { data, error } = await supabase
           .from('news_feed')
           .select('*')
-          .eq('ticker', ticker)
+          .eq('ticker', ticker) // Utiliser ticker (singulier) pour la requête
           .order('impact_score', { ascending: false })
           .order('published_at', { ascending: false })
           .limit(5)
@@ -91,7 +92,7 @@ export function AssetDetailDrawer({ asset, isOpen, onClose }: AssetDetailDrawerP
     }
 
     fetchNews()
-  }, [asset?.ticker])
+  }, [asset?.ticker]) // Dépendance : seulement asset?.ticker (pas asset entier)
 
   // Prepare geographic breakdown data
   const geographicData = asset?.constituents 

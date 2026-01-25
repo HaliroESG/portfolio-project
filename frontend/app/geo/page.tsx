@@ -52,8 +52,10 @@ const TICKER_SUFFIX_TO_COUNTRY: Record<string, string> = {
   '.CA': 'CA', // Canada
   '.AU': 'AU', // Australia
   '.IT': 'IT', // Italy
+  '.MI': 'IT', // Italy (Milan)
   '.ES': 'ES', // Spain
   '.MC': 'ES', // Spain (Madrid)
+  '.AS': 'NL', // Netherlands (Amsterdam)
   '.NL': 'NL', // Netherlands
   '.SE': 'SE', // Sweden
   '.NO': 'NO', // Norway
@@ -105,7 +107,7 @@ function getCountryFromTicker(ticker: string): string | null {
     return 'US'
   }
   
-  // Par défaut, si c'est un ticker US simple (3-5 lettres), on assume US
+  // Par défaut, si c'est un ticker US simple (3-5 lettres sans suffixe), on assume US
   if (/^[A-Z]{3,5}$/.test(ticker)) {
     return 'US'
   }
@@ -138,7 +140,8 @@ export default function GeoPage() {
             const countryCode = getCountryFromTicker(ticker)
             
             if (countryCode) {
-              const perf = (item.perf_ytd_eur || item.perf_ytd_local || 0) * 100
+              // Utiliser perf_day_eur pour la performance quotidienne
+              const perf = (item.perf_day_eur || item.perf_ytd_eur || item.perf_ytd_local || 0) * 100
               const exposure = item.last_price || 0 // Utiliser le prix comme proxy d'exposition
               
               if (!countryMap.has(countryCode)) {
@@ -170,13 +173,15 @@ export default function GeoPage() {
           const maxPerf = Math.max(...performance.map(p => Math.abs(p.avgPerformance)), 1) || 1
           
           const regionsData: MarketRegion[] = performance.map((p, index) => {
-            const coords = COUNTRY_COORDS[p.code] || [0, 0] // Fallback si pays non trouvé
+            const coords = COUNTRY_COORDS[p.code] || [0, 0] as [number, number] // Fallback si pays non trouvé
             const exposurePct = (p.totalExposure / totalGlobalExposure) * 100
+            const normalizedValue = Math.max(0, (p.avgPerformance / maxPerf) * 100) // Normaliser pour l'affichage
             
             return {
               id: `region-${p.code}-${index}`,
               code: p.code,
               name: p.name,
+              value: normalizedValue,
               performance: p.avgPerformance,
               exposure: exposurePct,
               coordinates: coords
