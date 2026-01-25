@@ -17,26 +17,26 @@ interface CountryPerformance {
   totalExposure: number
 }
 
-// Coordonnées GPS pour chaque pays (centre approximatif)
+// Coordonnées GPS pour chaque pays (format [latitude, longitude])
 const COUNTRY_COORDS: Record<string, [number, number]> = {
-  'US': [-95.7129, 37.0902], // États-Unis (centre)
-  'FR': [2.2137, 46.2276], // France
-  'GB': [-3.4360, 55.3781], // Royaume-Uni
-  'DE': [10.4515, 51.1657], // Allemagne
-  'JP': [138.2529, 36.2048], // Japon
-  'CN': [104.1954, 35.8617], // Chine
-  'CH': [8.2275, 46.8182], // Suisse
-  'CA': [-106.3468, 56.1304], // Canada
-  'AU': [133.7751, -25.2744], // Australie
-  'IT': [12.5674, 41.8719], // Italie
-  'ES': [-3.7492, 40.4637], // Espagne
-  'NL': [5.2913, 52.1326], // Pays-Bas
-  'SE': [18.6435, 60.1282], // Suède
-  'NO': [8.4689, 60.4720], // Norvège
-  'DK': [9.5018, 56.2639], // Danemark
-  'FI': [25.7482, 61.9241], // Finlande
-  'IE': [-8.2439, 53.4129], // Irlande
-  'BE': [4.4699, 50.5039], // Belgique
+  'US': [37, -95], // États-Unis (centre)
+  'FR': [46, 2], // France
+  'GB': [55, -3], // Royaume-Uni
+  'DE': [51, 10], // Allemagne
+  'JP': [36, 138], // Japon
+  'CN': [35, 104], // Chine
+  'CH': [46, 8], // Suisse
+  'CA': [56, -106], // Canada
+  'AU': [-25, 133], // Australie
+  'IT': [41, 12], // Italie
+  'ES': [40, -3], // Espagne
+  'NL': [52, 5], // Pays-Bas
+  'SE': [60, 18], // Suède
+  'NO': [60, 8], // Norvège
+  'DK': [56, 9], // Danemark
+  'FI': [61, 25], // Finlande
+  'IE': [53, -8], // Irlande
+  'BE': [50, 4], // Belgique
 }
 
 // Mapping des suffixes de ticker vers codes pays

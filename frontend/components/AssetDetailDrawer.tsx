@@ -60,9 +60,9 @@ export function AssetDetailDrawer({ asset, isOpen, onClose }: AssetDetailDrawerP
   // Sécurité totale : si pas d'asset, ne rien afficher
   if (!asset) return null
 
-  const dayChange = asset.performance?.day?.value || 0
+  const dayChange = asset?.performance?.day?.value || 0
   const isPositive = dayChange >= 0
-  const hasMissingData = asset.price === null || asset.price === 0 || asset.price === undefined
+  const hasMissingData = asset?.price === null || asset?.price === 0 || asset?.price === undefined
 
   // Fetch news for this ticker
   useEffect(() => {
@@ -94,7 +94,7 @@ export function AssetDetailDrawer({ asset, isOpen, onClose }: AssetDetailDrawerP
   }, [asset?.ticker])
 
   // Prepare geographic breakdown data
-  const geographicData = asset.constituents 
+  const geographicData = asset?.constituents 
     ? Object.entries(asset.constituents)
         .map(([code, value]) => ({
           code: code.toUpperCase(),
@@ -184,13 +184,13 @@ export function AssetDetailDrawer({ asset, isOpen, onClose }: AssetDetailDrawerP
                     ? "text-amber-600 dark:text-amber-500" 
                     : "text-slate-950 dark:text-white"
                 )}>
-                  {hasMissingData ? 'N/A' : (asset.price ?? 0).toLocaleString('fr-FR', { 
+                  {hasMissingData ? 'N/A' : (asset?.price ?? 0).toLocaleString('fr-FR', { 
                     minimumFractionDigits: 2, 
                     maximumFractionDigits: 2 
                   })}
                 </span>
                 <span className="text-lg font-bold text-slate-500 dark:text-gray-400">
-                  {asset.currency}
+                  {asset?.currency || 'N/A'}
                 </span>
               </div>
               <div className="flex items-center gap-2 mt-2">
@@ -279,12 +279,12 @@ export function AssetDetailDrawer({ asset, isOpen, onClose }: AssetDetailDrawerP
                   </span>
                   <div className={cn(
                     "text-lg font-mono font-black",
-                    (asset.performance?.week?.value || 0) >= 0
+                    (asset?.performance?.week?.value || 0) >= 0
                       ? "text-green-600 dark:text-green-400"
                       : "text-red-600 dark:text-red-400"
                   )}>
-                    {((asset.performance?.week?.value || 0) >= 0 ? '+' : '')}
-                    {(asset.performance?.week?.value || 0).toFixed(2)}%
+                    {((asset?.performance?.week?.value || 0) >= 0 ? '+' : '')}
+                    {(asset?.performance?.week?.value || 0).toFixed(2)}%
                   </div>
                 </div>
                 <div className="space-y-1">
@@ -293,12 +293,12 @@ export function AssetDetailDrawer({ asset, isOpen, onClose }: AssetDetailDrawerP
                   </span>
                   <div className={cn(
                     "text-lg font-mono font-black",
-                    (asset.performance?.ytd?.value || 0) >= 0
+                    (asset?.performance?.ytd?.value || 0) >= 0
                       ? "text-green-600 dark:text-green-400"
                       : "text-red-600 dark:text-red-400"
                   )}>
-                    {((asset.performance?.ytd?.value || 0) >= 0 ? '+' : '')}
-                    {(asset.performance?.ytd?.value || 0).toFixed(2)}%
+                    {((asset?.performance?.ytd?.value || 0) >= 0 ? '+' : '')}
+                    {(asset?.performance?.ytd?.value || 0).toFixed(2)}%
                   </div>
                 </div>
               </div>
