@@ -11,6 +11,7 @@ import { MacroStrip } from '../components/MacroStrip'
 import { AssetDetailDrawer } from '../components/AssetDetailDrawer'
 import { mockRegions, mockCurrencyPairs } from '../utils/mockData'
 import { Asset } from '../types'
+import { cn } from '../lib/utils'
 
 export default function PortfolioDashboard() {
   const [hoveredAsset, setHoveredAsset] = useState<Asset | null>(null)
