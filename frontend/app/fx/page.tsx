@@ -31,19 +31,40 @@ export default function FXPage() {
         
         if (currenciesError) throw currenciesError
         
-        // Récupérer aussi les actifs pour calculer les variations de devises
+        // Récupérer aussi les actifs Forex/Currency pour calculer les variations de devises
         const { data: assetsData, error: assetsError } = await supabase
           .from('market_watch')
-          .select('currency, perf_day_eur, perf_week_local, perf_month_local')
+          .select('ticker, currency, perf_day_eur, perf_week_local, perf_month_local, type')
           .not('currency', 'is', null)
+          .or('type.eq.Forex,type.eq.Currency,ticker.like.*=X')
+        
+        // Filtrer aussi les tickers qui sont des paires de devises (EURUSD=X, GBPUSD=X, etc.)
+        const forexAssets = assetsData?.filter((asset: any) => {
+          const ticker = (asset.ticker || '').toUpperCase()
+          const type = (asset.type || '').toUpperCase()
+          return type === 'FOREX' || type === 'CURRENCY' || ticker.includes('=X')
+        }) || []
         
         if (assetsError) throw assetsError
         
         if (currenciesData && currenciesData.length > 0) {
-          // Calculer les variations basées sur les performances des actifs par devise
+          // Calculer les variations basées sur les performances des actifs Forex/Currency par devise
           const currencyPerformance = new Map<string, number[]>()
           
-          if (assetsData) {
+          if (forexAssets && forexAssets.length > 0) {
+            forexAssets.forEach((asset: any) => {
+              const curr = asset.currency
+              if (curr && asset.perf_day_eur !== null) {
+                if (!currencyPerformance.has(curr)) {
+                  currencyPerformance.set(curr, [])
+                }
+                currencyPerformance.get(curr)!.push((asset.perf_day_eur || 0) * 100)
+              }
+            })
+          }
+          
+          // Si pas de données Forex, utiliser tous les actifs comme fallback
+          if (currencyPerformance.size === 0 && assetsData) {
             assetsData.forEach((asset: any) => {
               const curr = asset.currency
               if (curr && asset.perf_day_eur !== null) {

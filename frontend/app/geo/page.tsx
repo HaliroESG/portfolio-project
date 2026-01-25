@@ -5,14 +5,38 @@ import { Sidebar } from '../../components/Sidebar'
 import { Header } from '../../components/Header'
 import { GeographicMap } from '../../components/GeographicMap'
 import { supabase } from '../../lib/supabase'
-import { Globe } from 'lucide-react'
+import { Globe, Loader2 } from 'lucide-react'
 import { cn } from '../../lib/utils'
+import { MarketRegion } from '../../types'
 
 interface CountryPerformance {
   code: string
   name: string
   avgPerformance: number
   assetCount: number
+  totalExposure: number
+}
+
+// Coordonnées GPS pour chaque pays (centre approximatif)
+const COUNTRY_COORDS: Record<string, [number, number]> = {
+  'US': [-95.7129, 37.0902], // États-Unis (centre)
+  'FR': [2.2137, 46.2276], // France
+  'GB': [-3.4360, 55.3781], // Royaume-Uni
+  'DE': [10.4515, 51.1657], // Allemagne
+  'JP': [138.2529, 36.2048], // Japon
+  'CN': [104.1954, 35.8617], // Chine
+  'CH': [8.2275, 46.8182], // Suisse
+  'CA': [-106.3468, 56.1304], // Canada
+  'AU': [133.7751, -25.2744], // Australie
+  'IT': [12.5674, 41.8719], // Italie
+  'ES': [-3.7492, 40.4637], // Espagne
+  'NL': [5.2913, 52.1326], // Pays-Bas
+  'SE': [18.6435, 60.1282], // Suède
+  'NO': [8.4689, 60.4720], // Norvège
+  'DK': [9.5018, 56.2639], // Danemark
+  'FI': [25.7482, 61.9241], // Finlande
+  'IE': [-8.2439, 53.4129], // Irlande
+  'BE': [4.4699, 50.5039], // Belgique
 }
 
 // Mapping des suffixes de ticker vers codes pays
@@ -92,7 +116,8 @@ function getCountryFromTicker(ticker: string): string | null {
 export default function GeoPage() {
   const [lastSync, setLastSync] = useState("")
   const [countryPerformance, setCountryPerformance] = useState<CountryPerformance[]>([])
-  const [regions, setRegions] = useState<Array<{ code: string; name: string; value: number }>>([])
+  const [regions, setRegions] = useState<MarketRegion[]>([])
+  const [loading, setLoading] = useState(true)
 
   useEffect(() => {
     async function fetchData() {
@@ -105,8 +130,8 @@ export default function GeoPage() {
             new Date(item.last_update) > new Date(max) ? item.last_update : max, data[0].last_update)
           setLastSync(new Date(latest).toLocaleTimeString('fr-FR'))
 
-          // Grouper par pays et calculer la performance moyenne
-          const countryMap = new Map<string, { total: number; count: number }>()
+          // Grouper par pays et calculer la performance moyenne et l'exposition
+          const countryMap = new Map<string, { total: number; count: number; totalExposure: number }>()
           
           data.forEach((item: any) => {
             const ticker = item.ticker || ''
@@ -114,41 +139,58 @@ export default function GeoPage() {
             
             if (countryCode) {
               const perf = (item.perf_ytd_eur || item.perf_ytd_local || 0) * 100
+              const exposure = item.last_price || 0 // Utiliser le prix comme proxy d'exposition
               
               if (!countryMap.has(countryCode)) {
-                countryMap.set(countryCode, { total: 0, count: 0 })
+                countryMap.set(countryCode, { total: 0, count: 0, totalExposure: 0 })
               }
               
               const entry = countryMap.get(countryCode)!
               entry.total += perf
               entry.count += 1
+              entry.totalExposure += exposure
             }
           })
 
           // Convertir en array et calculer les moyennes
           const performance: CountryPerformance[] = Array.from(countryMap.entries())
-            .map(([code, { total, count }]) => ({
+            .map(([code, { total, count, totalExposure }]) => ({
               code,
               name: COUNTRY_NAMES[code] || code,
               avgPerformance: total / count,
-              assetCount: count
+              assetCount: count,
+              totalExposure
             }))
             .sort((a, b) => b.avgPerformance - a.avgPerformance)
 
           setCountryPerformance(performance)
 
-          // Préparer les régions pour la carte (normaliser entre 0-100 pour l'affichage)
-          const maxPerf = Math.max(...performance.map(p => Math.abs(p.avgPerformance)), 1)
-          const regionsData = performance.map(p => ({
-            code: p.code,
-            name: p.name,
-            value: Math.max(0, (p.avgPerformance / maxPerf) * 100) // Normaliser pour l'affichage
-          }))
+          // Préparer les régions pour la carte selon l'interface MarketRegion
+          const totalGlobalExposure = performance.reduce((sum, p) => sum + p.totalExposure, 0) || 1
+          const maxPerf = Math.max(...performance.map(p => Math.abs(p.avgPerformance)), 1) || 1
+          
+          const regionsData: MarketRegion[] = performance.map((p, index) => {
+            const coords = COUNTRY_COORDS[p.code] || [0, 0] // Fallback si pays non trouvé
+            const exposurePct = (p.totalExposure / totalGlobalExposure) * 100
+            
+            return {
+              id: `region-${p.code}-${index}`,
+              code: p.code,
+              name: p.name,
+              performance: p.avgPerformance,
+              exposure: exposurePct,
+              coordinates: coords
+            }
+          })
           
           setRegions(regionsData)
+          setLoading(false)
+        } else {
+          setLoading(false)
         }
       } catch (err) {
         console.error('Error fetching geographic data:', err)
+        setLoading(false)
       }
     }
     fetchData()
@@ -168,7 +210,20 @@ export default function GeoPage() {
           <div className="flex-1 grid grid-cols-12 gap-8">
             <div className="col-span-9 bg-white dark:bg-black/20 rounded-3xl border-2 border-slate-200 dark:border-white/5 shadow-2xl dark:shadow-inner p-4 relative overflow-hidden">
               <div className="w-full h-full rounded-2xl bg-white dark:bg-transparent transition-colors scale-100">
-                <GeographicMap regions={regions} hoveredAsset={null} />
+                {loading ? (
+                  <div className="flex items-center justify-center h-full">
+                    <Loader2 className="w-8 h-8 animate-spin text-slate-400" />
+                  </div>
+                ) : !regions || regions.length === 0 ? (
+                  <div className="flex items-center justify-center h-full">
+                    <div className="text-center">
+                      <Globe className="w-12 h-12 mx-auto text-slate-400 mb-4" />
+                      <p className="text-slate-500 dark:text-gray-400">No geographic data available</p>
+                    </div>
+                  </div>
+                ) : (
+                  <GeographicMap regions={regions} hoveredAsset={null} />
+                )}
               </div>
             </div>
             <div className="col-span-3 space-y-6">
