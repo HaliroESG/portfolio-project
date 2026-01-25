@@ -63,14 +63,17 @@ export function AssetDetailDrawer({ asset, isOpen, onClose }: AssetDetailDrawerP
 
   // Fetch news for this ticker
   useEffect(() => {
-    if (!asset.ticker) return
+    if (!asset?.ticker) return
 
     async function fetchNews() {
       try {
+        const ticker = asset.ticker // Store in local variable for type safety
+        if (!ticker) return
+        
         const { data, error } = await supabase
           .from('news_feed')
           .select('*')
-          .eq('ticker', asset.ticker)
+          .eq('ticker', ticker)
           .order('impact_score', { ascending: false })
           .order('published_at', { ascending: false })
           .limit(5)
@@ -85,7 +88,7 @@ export function AssetDetailDrawer({ asset, isOpen, onClose }: AssetDetailDrawerP
     }
 
     fetchNews()
-  }, [asset.ticker])
+  }, [asset?.ticker])
 
   // Prepare geographic breakdown data
   const geographicData = asset.constituents 
