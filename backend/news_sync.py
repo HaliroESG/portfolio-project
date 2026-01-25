@@ -14,10 +14,17 @@ print("--- 📰 DÉMARRAGE DE LA SYNCHRONISATION DES ACTUALITÉS ---", flush=Tru
 def load_impact_rules():
     """Charge les règles d'impact depuis impact_rules.json."""
     try:
-        script_dir = os.path.dirname(os.path.abspath(__file__))
-        rules_path = os.path.join(script_dir, "impact_rules.json")
+        # Utiliser le chemin relatif au script pour fonctionner dans GitHub Actions
+        base_path = os.path.dirname(os.path.abspath(__file__))
+        json_path = os.path.join(base_path, 'impact_rules.json')
         
-        with open(rules_path, "r", encoding="utf-8") as f:
+        # Log pour débogage (utile dans GitHub Actions)
+        if not os.path.exists(json_path):
+            print(f"⚠️ Fichier JSON non trouvé à: {json_path}", flush=True)
+            print(f"   Répertoire courant: {os.getcwd()}", flush=True)
+            print(f"   Répertoire du script: {base_path}", flush=True)
+        
+        with open(json_path, "r", encoding="utf-8") as f:
             rules = json.load(f)
         
         high_count = len(rules.get("high_impact", {}).get("keywords", []))
@@ -27,6 +34,16 @@ def load_impact_rules():
         print(f"✅ Rules loaded: {high_count} high-impact keywords, {medium_count} medium-impact keywords, {official_count} official sources", flush=True)
         
         return rules
+    except FileNotFoundError as e:
+        print(f"❌ ERREUR : Fichier impact_rules.json introuvable: {e}", flush=True)
+        print(f"   Chemin recherché: {json_path if 'json_path' in locals() else 'N/A'}", flush=True)
+        print("   Utilisation des règles par défaut...", flush=True)
+        # Fallback vers une structure minimale
+        return {
+            "high_impact": {"score_range": [70, 100], "keywords": []},
+            "medium_impact": {"score_range": [40, 69], "keywords": []},
+            "official_sources": {"score": 95, "sources": []}
+        }
     except Exception as e:
         print(f"❌ ERREUR : Impossible de charger impact_rules.json: {e}", flush=True)
         print("   Utilisation des règles par défaut...", flush=True)

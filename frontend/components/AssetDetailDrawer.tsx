@@ -67,7 +67,7 @@ export function AssetDetailDrawer({ asset, isOpen, onClose }: AssetDetailDrawerP
 
     async function fetchNews() {
       try {
-        const ticker = asset.ticker // Store in local variable for type safety
+        const ticker = asset?.ticker // Use optional chaining
         if (!ticker) return
         
         const { data, error } = await supabase
@@ -105,11 +105,13 @@ export function AssetDetailDrawer({ asset, isOpen, onClose }: AssetDetailDrawerP
   const totalExposure = geographicData.reduce((sum, item) => sum + item.value, 0)
 
   const handleYahooFinance = () => {
+    if (!asset?.ticker) return
     window.open(`https://finance.yahoo.com/quote/${asset.ticker}`, '_blank')
   }
 
   const handleWatchlist = () => {
     // TODO: Implement watchlist functionality
+    if (!asset?.ticker) return
     console.log('Add to watchlist:', asset.ticker)
   }
 
