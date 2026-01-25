@@ -8,11 +8,13 @@ import { AssetTable } from '../components/AssetTable'
 import { GeographicMap } from '../components/GeographicMap'
 import { CurrencyWidget } from '../components/CurrencyWidget'
 import { MacroStrip } from '../components/MacroStrip'
+import { AssetDetailDrawer } from '../components/AssetDetailDrawer'
 import { mockRegions, mockCurrencyPairs } from '../utils/mockData'
 import { Asset } from '../types'
 
 export default function PortfolioDashboard() {
   const [hoveredAsset, setHoveredAsset] = useState<Asset | null>(null)
+  const [selectedAsset, setSelectedAsset] = useState<Asset | null>(null)
   const [assets, setAssets] = useState<Asset[]>([])
   const [loading, setLoading] = useState(true)
   const [lastSync, setLastSync] = useState<string>("")
@@ -74,7 +76,12 @@ export default function PortfolioDashboard() {
             <div className="w-[65%] flex flex-col">
               <h2 className="text-[10px] font-black text-slate-500 uppercase tracking-[0.2em] mb-2 px-1">Portfolio Matrix (A-Z)</h2>
               <div className="flex-1 bg-white dark:bg-[#0D1117]/50 rounded-3xl border-2 border-slate-200 dark:border-white/5 shadow-2xl overflow-hidden">
-                <AssetTable assets={assets} onHoverAsset={setHoveredAsset} />
+                <AssetTable 
+                  assets={assets} 
+                  onHoverAsset={setHoveredAsset}
+                  onSelectAsset={setSelectedAsset}
+                  selectedAssetId={selectedAsset?.id || null}
+                />
               </div>
             </div>
             {/* Map Mini View */}
@@ -90,6 +97,13 @@ export default function PortfolioDashboard() {
           <CurrencyWidget pairs={mockCurrencyPairs} />
         </main>
       </div>
+      
+      {/* Asset Detail Drawer */}
+      <AssetDetailDrawer
+        asset={selectedAsset}
+        isOpen={selectedAsset !== null}
+        onClose={() => setSelectedAsset(null)}
+      />
     </div>
   )
 }
