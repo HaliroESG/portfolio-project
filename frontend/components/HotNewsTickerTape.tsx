@@ -47,7 +47,10 @@ export function HotNewsTickerTape() {
     return () => clearInterval(interval)
   }, [])
 
-  if (loading || news.length === 0) {
+  // Protection contre undefined/null
+  const safeNews = news || []
+  
+  if (loading || safeNews.length === 0) {
     return null
   }
 
@@ -65,8 +68,8 @@ export function HotNewsTickerTape() {
         </div>
         
         <div className="flex-1 overflow-hidden relative">
-          <div className="flex gap-8 whitespace-nowrap animate-marquee">
-            {[...news, ...news].map((item, index) => (
+          <div className="flex gap-8 whitespace-nowrap animate-marquee" style={{ width: 'max-content' }}>
+            {[...safeNews, ...safeNews].map((item, index) => (
               <div
                 key={`${item.id}-${index}`}
                 className="flex items-center gap-3 flex-shrink-0 group"

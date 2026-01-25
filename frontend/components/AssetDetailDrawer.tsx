@@ -55,6 +55,7 @@ interface NewsItem {
 export function AssetDetailDrawer({ asset, isOpen, onClose }: AssetDetailDrawerProps) {
   const [news, setNews] = useState<NewsItem[]>([])
   
+  // Sécurité totale : si pas d'asset, ne rien afficher
   if (!asset) return null
 
   const dayChange = asset.performance?.day?.value || 0

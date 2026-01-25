@@ -2,9 +2,11 @@ import os
 import re
 import json
 import random
+import sys
 import feedparser
 import requests
 from datetime import datetime, timedelta
+from pathlib import Path
 from supabase import create_client
 from urllib.parse import urlparse
 
@@ -14,15 +16,16 @@ print("--- 📰 DÉMARRAGE DE LA SYNCHRONISATION DES ACTUALITÉS ---", flush=Tru
 def load_impact_rules():
     """Charge les règles d'impact depuis impact_rules.json."""
     try:
-        # Utiliser le chemin relatif au script pour fonctionner dans GitHub Actions
-        base_path = os.path.dirname(os.path.abspath(__file__))
-        json_path = os.path.join(base_path, 'impact_rules.json')
+        # Trouve le dossier où se trouve le script (robuste pour GitHub Actions)
+        script_dir = Path(__file__).parent.absolute()
+        json_path = script_dir / "impact_rules.json"
         
         # Log pour débogage (utile dans GitHub Actions)
-        if not os.path.exists(json_path):
+        if not json_path.exists():
             print(f"⚠️ Fichier JSON non trouvé à: {json_path}", flush=True)
             print(f"   Répertoire courant: {os.getcwd()}", flush=True)
-            print(f"   Répertoire du script: {base_path}", flush=True)
+            print(f"   Répertoire du script: {script_dir}", flush=True)
+            print(f"   Liste des fichiers dans le répertoire: {list(script_dir.iterdir())}", flush=True)
         
         with open(json_path, "r", encoding="utf-8") as f:
             rules = json.load(f)
