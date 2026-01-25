@@ -6,3 +6,5 @@ oauth2client
 scipy
 statsmodels
 numpy
+scipy==1.15.1
+statsmodels==0.14.4
