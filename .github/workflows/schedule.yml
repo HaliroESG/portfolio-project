@@ -19,10 +19,15 @@ jobs:
           python-version: '3.11'
 
       # Monorepo: Toutes les opérations Python s'exécutent dans ./backend
-      - name: Install dependencies
+- name: Install dependencies
         working-directory: ./backend
         run: |
-          pip install yfinance supabase pandas gspread oauth2client
+          python -m pip install --upgrade pip
+          pip install wheel
+          # On installe explicitement les libs scientifiques lourdes d'abord
+          pip install scipy==1.15.1 statsmodels==0.14.4
+          # On installe le reste via le fichier
+          pip install -r requirements.txt
 
       - name: Sync Stock Data
         working-directory: ./backend

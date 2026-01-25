@@ -31,9 +31,10 @@ This is a **monorepo** containing:
 ## Backend Stack
 
 - **Language**: Python 3.11
-- **Libraries**: yfinance, supabase, pandas, gspread, oauth2client
+- **Libraries**: yfinance, supabase, pandas, numpy, gspread, oauth2client, scipy, statsmodels
 - **Database**: Supabase (server-side)
 - **CI/CD**: GitHub Actions (scheduled runs)
+- **Dependencies**: Managed via `backend/requirements.txt` with pinned versions for stability
 
 ### Backend Guidelines
 
