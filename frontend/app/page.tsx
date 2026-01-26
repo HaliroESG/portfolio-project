@@ -69,6 +69,8 @@ export default function PortfolioDashboard() {
               last_update: item.last_update || undefined,
               pe_ratio: item.pe_ratio ?? null,
               market_cap: item.market_cap ?? null,
+              asset_class: item.asset_class ?? null,
+              quantity: item.quantity ?? null,
               performance: {
                 day: { value: (item.perf_day_eur || 0) * 100, currencyImpact: ((item.perf_day_eur || 0) - (item.perf_day_local || 0)) * 100 },
                 week: { value: (item.perf_week_local || 0) * 100, currencyImpact: 0 },

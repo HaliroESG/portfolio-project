@@ -27,20 +27,24 @@ interface GovernanceWidgetProps {
   assets: Asset[]
 }
 
-// Map asset types to asset classes
-function mapAssetTypeToClass(assetType: string): string {
-  const typeUpper = assetType.toUpperCase()
+// Normalize asset_class to standard format (EQUITY -> Equity)
+function normalizeAssetClass(assetClass: string | null | undefined): string | null {
+  if (!assetClass) return null
   
-  if (typeUpper === 'CASH') {
+  const upper = assetClass.toUpperCase()
+  // Map common variations to standard format
+  if (upper === 'EQUITY' || upper === 'STOCK' || upper === 'STOCKS') {
+    return 'Equity'
+  }
+  if (upper === 'BOND' || upper === 'BONDS' || upper === 'FIXED_INCOME') {
+    return 'Bond'
+  }
+  if (upper === 'CASH' || upper === 'CASH_EQUIVALENTS') {
     return 'Cash'
   }
   
-  if (typeUpper === 'BOND' || typeUpper.includes('BOND')) {
-    return 'Bond'
-  }
-  
-  // Default: Stock, STOCK, ETF, Crypto, CRYPTO → Equity
-  return 'Equity'
+  // Return capitalized version (first letter uppercase, rest lowercase)
+  return assetClass.charAt(0).toUpperCase() + assetClass.slice(1).toLowerCase()
 }
 
 // Calculate drift status based on tolerance
@@ -106,17 +110,35 @@ export function GovernanceWidget({ assets }: GovernanceWidgetProps) {
   const allocationData = useMemo((): AllocationData[] => {
     if (!assets || assets.length === 0) return []
     
-    // Calculate total portfolio value (in EUR, using price as proxy)
+    // Calculate total portfolio value: Sum(price * quantity) for all assets
     const totalValue = assets.reduce((sum, asset) => {
-      return sum + (asset.price || 0)
+      const price = asset.price || 0
+      const quantity = asset.quantity || 1 // Default to 1 if quantity is null/undefined
+      return sum + (price * quantity)
     }, 0)
     
     if (totalValue === 0) return []
     
-    // Group assets by asset class and calculate current allocation
+    // Group assets by asset_class and calculate current allocation
     const allocationByClass = assets.reduce((acc, asset) => {
-      const assetClass = mapAssetTypeToClass(asset.type)
-      const value = asset.price || 0
+      // Use asset_class from database, normalize it
+      let assetClass = normalizeAssetClass(asset.asset_class)
+      
+      // Fallback: if no asset_class, map from type (for backward compatibility)
+      if (!assetClass) {
+        const typeUpper = asset.type.toUpperCase()
+        if (typeUpper === 'CASH') {
+          assetClass = 'Cash'
+        } else if (typeUpper === 'BOND' || typeUpper.includes('BOND')) {
+          assetClass = 'Bond'
+        } else {
+          assetClass = 'Equity' // Default: Stock, STOCK, ETF, Crypto → Equity
+        }
+      }
+      
+      const price = asset.price || 0
+      const quantity = asset.quantity || 1
+      const value = price * quantity
       
       if (!acc[assetClass]) {
         acc[assetClass] = 0
@@ -129,15 +151,23 @@ export function GovernanceWidget({ assets }: GovernanceWidgetProps) {
     // Create allocation data with targets
     const allocation: AllocationData[] = []
     
+    // Normalize target asset_class names for matching
+    const normalizedTargets = targets.map(target => ({
+      ...target,
+      normalized_class: normalizeAssetClass(target.asset_class) || target.asset_class
+    }))
+    
     // Process each target
-    targets.forEach(target => {
-      const currentValue = allocationByClass[target.asset_class] || 0
+    normalizedTargets.forEach(target => {
+      // Try to match with normalized class name
+      const normalizedClass = target.normalized_class
+      const currentValue = allocationByClass[normalizedClass] || 0
       const currentPct = totalValue > 0 ? (currentValue / totalValue) * 100 : 0
       const drift = currentPct - target.target_pct
       const driftStatus = calculateDriftStatus(drift, target.tolerance_band)
       
       allocation.push({
-        asset_class: target.asset_class,
+        asset_class: normalizedClass,
         current_pct: currentPct,
         target_pct: target.target_pct,
         tolerance_band: target.tolerance_band,
@@ -146,10 +176,9 @@ export function GovernanceWidget({ assets }: GovernanceWidgetProps) {
       })
     })
     
-    // If no targets, show default classes (Equity, Bond, Cash) with current allocation
+    // If no targets, show all asset classes found in the portfolio with current allocation
     if (allocation.length === 0) {
-      const defaultClasses = ['Equity', 'Bond', 'Cash']
-      defaultClasses.forEach(assetClass => {
+      Object.keys(allocationByClass).forEach(assetClass => {
         const currentValue = allocationByClass[assetClass] || 0
         const currentPct = totalValue > 0 ? (currentValue / totalValue) * 100 : 0
         
@@ -203,7 +232,7 @@ export function GovernanceWidget({ assets }: GovernanceWidgetProps) {
             const isPositive = item.drift >= 0
             
             return (
-              <div key={item.asset_class} className="space-y-2">
+              <div key={item.asset_class} className="space-y-2.5">
                 <div className="flex items-center justify-between">
                   <span className="text-xs font-black text-slate-950 dark:text-white uppercase tracking-wider">
                     {item.asset_class}
@@ -225,43 +254,87 @@ export function GovernanceWidget({ assets }: GovernanceWidgetProps) {
                         {item.drift_status === 'BREACH' ? 'Breach' : item.drift_status === 'WARNING' ? 'Warning' : 'OK'}
                       </span>
                     )}
-                    <span className="text-xs font-mono font-black text-slate-950 dark:text-white">
-                      {item.current_pct.toFixed(1)}% / {item.target_pct > 0 ? `${item.target_pct.toFixed(1)}%` : 'N/A'}
-                    </span>
                   </div>
                 </div>
                 
-                {/* Progress Bar */}
-                <div className="relative h-3 w-full bg-slate-200 dark:bg-white/5 rounded-full overflow-hidden">
-                  {/* Target indicator (vertical line) */}
-                  {item.target_pct > 0 && (
-                    <div
-                      className="absolute top-0 h-full w-0.5 bg-slate-400 dark:bg-gray-600 z-10"
-                      style={{ left: `${item.target_pct}%` }}
-                    />
-                  )}
+                {/* Comparison: Current vs Target side-by-side */}
+                <div className="grid grid-cols-2 gap-3">
+                  {/* Current Allocation */}
+                  <div className="space-y-1">
+                    <div className="flex items-center justify-between">
+                      <span className="text-[9px] font-black text-slate-500 dark:text-gray-400 uppercase tracking-wider">
+                        Current
+                      </span>
+                      <span className="text-xs font-mono font-black text-slate-950 dark:text-white">
+                        {item.current_pct.toFixed(1)}%
+                      </span>
+                    </div>
+                    <div className="relative h-2.5 w-full bg-slate-200 dark:bg-white/5 rounded-full overflow-hidden">
+                      <div
+                        className={cn(
+                          "absolute top-0 left-0 h-full transition-all duration-500",
+                          item.target_pct > 0 && item.drift_status === 'OK'
+                            ? "bg-green-500 dark:bg-green-400"
+                            : item.target_pct > 0 && item.drift_status === 'WARNING'
+                            ? "bg-amber-500 dark:bg-amber-400"
+                            : item.target_pct > 0 && item.drift_status === 'BREACH'
+                            ? "bg-red-500 dark:bg-red-400"
+                            : "bg-blue-500 dark:bg-blue-400"
+                        )}
+                        style={{ width: `${Math.min(100, item.current_pct)}%` }}
+                      />
+                    </div>
+                  </div>
                   
-                  {/* Current allocation bar */}
-                  <div
-                    className={cn(
-                      "absolute top-0 left-0 h-full transition-all duration-500",
-                      item.target_pct > 0 && item.drift_status === 'OK'
-                        ? "bg-green-500 dark:bg-green-400"
-                        : item.target_pct > 0 && item.drift_status === 'WARNING'
-                        ? "bg-amber-500 dark:bg-amber-400"
-                        : item.target_pct > 0 && item.drift_status === 'BREACH'
-                        ? "bg-red-500 dark:bg-red-400"
-                        : "bg-blue-500 dark:bg-blue-400"
-                    )}
-                    style={{ width: `${Math.min(100, item.current_pct)}%` }}
-                  />
+                  {/* Target Allocation */}
+                  <div className="space-y-1">
+                    <div className="flex items-center justify-between">
+                      <span className="text-[9px] font-black text-slate-500 dark:text-gray-400 uppercase tracking-wider">
+                        Target
+                      </span>
+                      <span className="text-xs font-mono font-black text-slate-950 dark:text-white">
+                        {item.target_pct > 0 ? `${item.target_pct.toFixed(1)}%` : 'N/A'}
+                      </span>
+                    </div>
+                    <div className="relative h-2.5 w-full bg-slate-200 dark:bg-white/5 rounded-full overflow-hidden">
+                      {item.target_pct > 0 ? (
+                        <>
+                          <div
+                            className="absolute top-0 left-0 h-full bg-slate-400 dark:bg-gray-600 transition-all duration-500"
+                            style={{ width: `${Math.min(100, item.target_pct)}%` }}
+                          />
+                          {/* Tolerance band indicator */}
+                          <div
+                            className="absolute top-0 h-full border-l border-r border-slate-600 dark:border-gray-500 opacity-30"
+                            style={{
+                              left: `${Math.max(0, item.target_pct - item.tolerance_band)}%`,
+                              width: `${Math.min(100, item.tolerance_band * 2)}%`
+                            }}
+                          />
+                        </>
+                      ) : (
+                        <div className="absolute top-0 left-0 h-full w-full flex items-center justify-center">
+                          <span className="text-[8px] text-slate-400 dark:text-gray-500">No target</span>
+                        </div>
+                      )}
+                    </div>
+                  </div>
                 </div>
                 
                 {/* Drift info */}
                 {item.target_pct > 0 && (
-                  <div className="flex items-center justify-between text-[9px] text-slate-500 dark:text-gray-400">
+                  <div className="flex items-center justify-between text-[9px] text-slate-500 dark:text-gray-400 pt-1">
                     <span>
-                      Drift: {isPositive ? '+' : ''}{item.drift.toFixed(2)}%
+                      Drift: <span className={cn(
+                        "font-black",
+                        item.drift_status === 'OK'
+                          ? "text-green-600 dark:text-green-400"
+                          : item.drift_status === 'WARNING'
+                          ? "text-amber-600 dark:text-amber-400"
+                          : "text-red-600 dark:text-red-400"
+                      )}>
+                        {isPositive ? '+' : ''}{item.drift.toFixed(2)}%
+                      </span>
                     </span>
                     <span>
                       Tolerance: ±{item.tolerance_band.toFixed(1)}%

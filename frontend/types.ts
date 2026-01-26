@@ -22,6 +22,8 @@ export interface Asset {
   last_update?: string;
   pe_ratio?: number | null;
   market_cap?: number | null;
+  asset_class?: string | null;
+  quantity?: number | null;
   performance: {
     day: any; // On met any temporairement pour laisser passer le build sur les structures complexes
     week: any;
