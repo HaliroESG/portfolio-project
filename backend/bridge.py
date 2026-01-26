@@ -707,19 +707,37 @@ def run_sync():
         print(f"    Valeur couverte (OK/STALE): {covered_value:,.2f} EUR", flush=True)
         print(f"    Coverage: {coverage_pct:.2f}%", flush=True)
         
+        # Récupérer le premier portfolio_id disponible depuis la table portfolios
+        portfolio_id = None
         try:
-            snapshot_payload = {
-                "snapshot_date": datetime.now().date().isoformat(),
-                "total_value_eur": total_portfolio_value,
-                "covered_value_eur": covered_value,
-                "coverage_pct": coverage_pct,
-                "assets_count": len(assets_processed),
-                "created_at": datetime.now().isoformat()
-            }
-            supabase.table("valuation_snapshots").insert(snapshot_payload).execute()
-            print(f"    ✅ Snapshot enregistré dans valuation_snapshots", flush=True)
+            portfolios_response = supabase.table("portfolios").select("id").limit(1).execute()
+            if portfolios_response.data and len(portfolios_response.data) > 0:
+                portfolio_id = portfolios_response.data[0].get("id")
+                print(f"    ℹ️ Portfolio ID récupéré: {portfolio_id}", flush=True)
+            else:
+                print(f"    ⚠️ Aucun portfolio trouvé dans la table portfolios, snapshot ignoré", flush=True)
         except Exception as e:
-            print(f"    ⚠️ Erreur enregistrement snapshot: {e}", flush=True)
+            print(f"    ⚠️ Erreur lors de la récupération du portfolio_id: {e}", flush=True)
+            print(f"    ⚠️ Snapshot ignoré pour éviter un crash", flush=True)
+        
+        # Insérer le snapshot seulement si un portfolio_id a été trouvé
+        if portfolio_id:
+            try:
+                snapshot_payload = {
+                    "portfolio_id": portfolio_id,
+                    "snapshot_date": datetime.now().date().isoformat(),
+                    "total_value_eur": total_portfolio_value,
+                    "covered_value_eur": covered_value,
+                    "coverage_pct": coverage_pct,
+                    "assets_count": len(assets_processed),
+                    "created_at": datetime.now().isoformat()
+                }
+                supabase.table("valuation_snapshots").insert(snapshot_payload).execute()
+                print(f"    ✅ Snapshot enregistré dans valuation_snapshots (portfolio_id: {portfolio_id})", flush=True)
+            except Exception as e:
+                print(f"    ⚠️ Erreur enregistrement snapshot: {e}", flush=True)
+        else:
+            print(f"    ⚠️ Snapshot non enregistré (portfolio_id manquant)", flush=True)
     else:
         print(f"    ⚠️ Aucune valeur de portefeuille à calculer", flush=True)
 
