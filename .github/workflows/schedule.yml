@@ -2,9 +2,9 @@ name: Financial Data Sync
 
 on:
   schedule:
-    - cron: '0 9-22 * * 1-5'  # Stock and macro sync (hourly during market hours)
-    - cron: '*/15 * * * *'     # News sync (every 15 minutes)
-  workflow_dispatch:
+    - cron: '0 8 * * *'  # Exécution quotidienne à 8h UTC (une fois par jour)
+  workflow_dispatch:  # Déclenchement manuel possible
+  # Note: Déclencheur push supprimé pour économiser les crédits API pendant le développement
 
 jobs:
   build:

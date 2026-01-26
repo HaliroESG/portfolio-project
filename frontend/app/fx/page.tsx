@@ -12,6 +12,7 @@ interface CurrencyData {
   symbol: string
   rate_to_eur: number | null
   change_pct?: number | null
+  last_update?: string | null
 }
 
 export default function FXPage() {
@@ -26,7 +27,7 @@ export default function FXPage() {
         // Récupérer les devises depuis la table currencies
         const { data: currenciesData, error: currenciesError } = await supabase
           .from('currencies')
-          .select('*')
+          .select('id, symbol, rate_to_eur, last_update')
           .order('id', { ascending: true })
         
         if (currenciesError) throw currenciesError
@@ -90,7 +91,18 @@ export default function FXPage() {
           })
           
           setCurrencies(currenciesWithChange)
-          setLastSync(new Date().toLocaleTimeString('fr-FR'))
+          
+          // Type-safe: Calculer le dernier sync time depuis les données currencies
+          const latestUpdate = currenciesData
+            .map((c: any) => c.last_update)
+            .filter((update: string | null | undefined): update is string => !!update)
+            .reduce((max: string, update: string) => {
+              const maxDate = new Date(max)
+              const updateDate = new Date(update)
+              return updateDate > maxDate ? update : max
+            }, currenciesData[0]?.last_update || new Date().toISOString())
+          
+          setLastSync(new Date(latestUpdate).toLocaleTimeString('fr-FR'))
           
           // Générer Market Note dynamique
           const strongCurrencies = currenciesWithChange.filter(c => (c.change_pct || 0) > 0.5)

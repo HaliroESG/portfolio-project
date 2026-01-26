@@ -15,6 +15,16 @@ interface CurrencyPair {
   perf_day_local: number
 }
 
+// Interface pour les données brutes de Supabase
+interface MarketWatchItem {
+  ticker: string | null
+  name: string | null
+  currency: string | null
+  last_price: number | null
+  perf_day_local: number | null
+  last_update: string | null
+}
+
 export default function CurrenciesPage() {
   const [lastSync, setLastSync] = useState("")
   const [currencyPairs, setCurrencyPairs] = useState<CurrencyPair[]>([])
@@ -26,14 +36,17 @@ export default function CurrenciesPage() {
         // Récupérer les actifs de type Forex/Currency ou dont le nom contient "vs" ou "Pair"
         const { data, error } = await supabase
           .from('market_watch')
-          .select('ticker, name, currency, last_price, perf_day_local')
+          .select('ticker, name, currency, last_price, perf_day_local, last_update')
           .not('currency', 'is', null)
         
         if (error) throw error
         
         if (data && data.length > 0) {
+          // Type-safe: Cast data to MarketWatchItem[]
+          const typedData = data as MarketWatchItem[]
+          
           // Filtrer pour n'afficher que les paires de devises
-          const pairs = data.filter((item: any) => {
+          const pairs = typedData.filter((item) => {
             const name = (item.name || '').toLowerCase()
             const ticker = (item.ticker || '').toUpperCase()
             const currency = (item.currency || '').toUpperCase()
@@ -48,7 +61,7 @@ export default function CurrenciesPage() {
               ticker.includes('USD') ||
               ticker.includes('EUR')
             )
-          }).map((item: any) => ({
+          }).map((item) => ({
             ticker: item.ticker || 'N/A',
             name: item.name || 'Unknown',
             currency: item.currency || 'USD',
@@ -58,8 +71,24 @@ export default function CurrenciesPage() {
           
           setCurrencyPairs(pairs)
           
-          const latest = data.reduce((max: any, item: any) => 
-            new Date(item.last_update || max) > new Date(max) ? item.last_update : max, data[0]?.last_update || new Date().toISOString())
+          // Type-safe reduce pour trouver le dernier sync time
+          // Valeur initiale sécurisée : data[0]?.last_update ou ISO string
+          const initialValue = typedData[0]?.last_update || new Date().toISOString()
+          const latest = typedData.reduce((max: string, item: MarketWatchItem) => {
+            const itemUpdate = item.last_update
+            // Gérer les cas où last_update est undefined/null
+            if (!itemUpdate) return max
+            
+            // S'assurer que max est valide avant de créer une Date
+            const maxDate = max ? new Date(max) : new Date(0)
+            const itemDate = new Date(itemUpdate)
+            
+            // Vérifier que la date est valide
+            if (isNaN(itemDate.getTime())) return max
+            
+            return itemDate > maxDate ? itemUpdate : max
+          }, initialValue)
+          
           setLastSync(new Date(latest).toLocaleTimeString('fr-FR'))
         }
       } catch (err) {

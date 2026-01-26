@@ -89,7 +89,7 @@ RSS_SOURCES = [
         "category": "MACRO"
     },
     {
-        "url": "https://www.ecb.europa.eu/press/tvservices/rss/press.xml",
+        "url": "https://www.ecb.europa.eu/press/shared/rss/press.xml",
         "source": "ECB",
         "category": "MACRO"
     }
@@ -320,13 +320,18 @@ def fetch_news_from_marketaux(tickers: list[str]) -> list:
         
     except requests.exceptions.HTTPError as e:
         if e.response and e.response.status_code == 402:
-            print(f"    ⚠️ Erreur 402 (Payment Required) - Limite API Marketaux atteinte pour {len(tickers)} tickers", flush=True)
+            print(f"    ⚠️ Quota Marketaux atteint pour aujourd'hui, passage à la suite.", flush=True)
+            # Retourner une liste vide pour continuer le script sans crash
+            # Le script continuera vers les étapes de nettoyage
+            return []
         else:
             print(f"    ⚠️ Erreur HTTP Marketaux pour {len(tickers)} tickers: {e}", flush=True)
+            # Continuer même en cas d'erreur HTTP
+            return []
     except Exception as e:
         print(f"    ⚠️ Erreur Marketaux pour {len(tickers)} tickers: {e}", flush=True)
-    
-    return news_items
+        # Continuer même en cas d'erreur
+        return []
 
 def cleanup_old_news():
     """Supprime les news de plus de 7 jours."""
@@ -356,7 +361,7 @@ def sync_news():
         news_items = fetch_news_from_rss(rss_config)
         all_news.extend(news_items)
     
-    # 2. Récupérer les tickers depuis market_watch et fetch depuis Marketaux (BATCHING)
+    # 2. Récupérer les tickers depuis market_watch et fetch depuis Marketaux (OPTIMISÉ: 10 tickers max)
     print("--- SOURCE MARKETAUX (TICKERS) ---", flush=True)
     try:
         # Récupérer tous les tickers uniques depuis market_watch
@@ -366,25 +371,22 @@ def sync_news():
             tickers = list(set([item["ticker"] for item in response.data if item.get("ticker")]))
             print(f"    📊 {len(tickers)} tickers trouvés dans market_watch", flush=True)
             
-            # Batching : Grouper les tickers par lots de 10 pour réduire les appels API
-            batch_size = 10
-            ticker_batches = [tickers[i:i + batch_size] for i in range(0, len(tickers), batch_size)]
+            # Optimisation quota : Limiter à 10 tickers seulement pour éviter l'erreur 402
+            limited_tickers = tickers[:10]
+            print(f"    📦 Traitement de {len(limited_tickers)} tickers (limite quota): {', '.join(limited_tickers)}", flush=True)
             
-            print(f"    📦 {len(ticker_batches)} batch(s) de {batch_size} tickers à traiter", flush=True)
+            # Un seul appel batch pour les 10 tickers
+            news_items = fetch_news_from_marketaux(limited_tickers)
+            all_news.extend(news_items)
             
-            for batch_idx, ticker_batch in enumerate(ticker_batches, 1):
-                print(f"    🔄 Traitement batch {batch_idx}/{len(ticker_batches)}: {', '.join(ticker_batch)}", flush=True)
-                news_items = fetch_news_from_marketaux(ticker_batch)
-                all_news.extend(news_items)
-                
-                # Petite pause entre les batches pour éviter les rate limits
-                if batch_idx < len(ticker_batches):
-                    time.sleep(1)
+            if len(tickers) > 10:
+                print(f"    ℹ️ {len(tickers) - 10} tickers ignorés pour respecter le quota API", flush=True)
         else:
             print("    ⚠️ Aucun ticker trouvé dans market_watch", flush=True)
             
     except Exception as e:
         print(f"    ⚠️ Erreur récupération tickers: {e}", flush=True)
+        # Continuer même si la récupération des tickers échoue
     
     # Dédupliquer par URL et upsert dans Supabase
     seen_urls = set()
