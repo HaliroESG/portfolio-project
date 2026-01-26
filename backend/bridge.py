@@ -192,6 +192,101 @@ def update_macro_hub():
         print(f"    ⚠️ Erreur calcul Misery Index: {e}", flush=True)
 
 
+def get_valuation_metrics(ticker):
+    """
+    Récupère les métriques de valorisation (P/E Ratio et Market Cap) avec fallbacks.
+    Returns: dict avec 'pe_ratio' et 'market_cap' (peuvent être None)
+    """
+    pe_ratio = None
+    market_cap = None
+    
+    try:
+        stock = yf.Ticker(ticker)
+        info = stock.info
+        
+        # === P/E RATIO avec fallbacks ===
+        # 1. Essayer trailingPE (P/E basé sur les bénéfices passés)
+        if 'trailingPE' in info and info['trailingPE'] is not None:
+            trailing_pe = float(info['trailingPE'])
+            if trailing_pe > 0:  # Éviter les valeurs négatives ou nulles
+                pe_ratio = trailing_pe
+                print(f"      ✓ P/E (trailingPE): {pe_ratio:.2f}", flush=True)
+        
+        # 2. Fallback: forwardPE (P/E basé sur les bénéfices estimés)
+        if pe_ratio is None and 'forwardPE' in info and info['forwardPE'] is not None:
+            forward_pe = float(info['forwardPE'])
+            if forward_pe > 0:
+                pe_ratio = forward_pe
+                print(f"      ✓ P/E (forwardPE): {pe_ratio:.2f}", flush=True)
+        
+        # 3. Fallback: Calculer depuis earningsPerShare et currentPrice
+        if pe_ratio is None:
+            if 'trailingEps' in info and 'currentPrice' in info:
+                eps = info.get('trailingEps')
+                price = info.get('currentPrice')
+                if eps and price and float(eps) > 0 and float(price) > 0:
+                    pe_ratio = float(price) / float(eps)
+                    print(f"      ✓ P/E (calculé: price/eps): {pe_ratio:.2f}", flush=True)
+            elif 'forwardEps' in info and 'currentPrice' in info:
+                eps = info.get('forwardEps')
+                price = info.get('currentPrice')
+                if eps and price and float(eps) > 0 and float(price) > 0:
+                    pe_ratio = float(price) / float(eps)
+                    print(f"      ✓ P/E (calculé: price/forwardEps): {pe_ratio:.2f}", flush=True)
+        
+        # === MARKET CAP avec fallbacks ===
+        # 1. Essayer marketCap (capitalisation boursière directe)
+        if 'marketCap' in info and info['marketCap'] is not None:
+            mc = float(info['marketCap'])
+            if mc > 0:  # Éviter les valeurs nulles
+                market_cap = mc
+                print(f"      ✓ Market Cap (marketCap): {market_cap:,.0f}", flush=True)
+        
+        # 2. Fallback: enterpriseValue (valeur d'entreprise, proche de market cap)
+        if market_cap is None and 'enterpriseValue' in info and info['enterpriseValue'] is not None:
+            ev = float(info['enterpriseValue'])
+            if ev > 0:
+                market_cap = ev
+                print(f"      ✓ Market Cap (enterpriseValue): {market_cap:,.0f}", flush=True)
+        
+        # 3. Fallback: Calculer depuis regularMarketPrice * sharesOutstanding
+        if market_cap is None:
+            price = None
+            shares = None
+            
+            # Essayer plusieurs clés pour le prix
+            for price_key in ['regularMarketPrice', 'currentPrice', 'previousClose']:
+                if price_key in info and info[price_key] is not None:
+                    price_val = float(info[price_key])
+                    if price_val > 0:
+                        price = price_val
+                        break
+            
+            # Essayer plusieurs clés pour les actions en circulation
+            for shares_key in ['sharesOutstanding', 'impliedSharesOutstanding', 'floatShares']:
+                if shares_key in info and info[shares_key] is not None:
+                    shares_val = float(info[shares_key])
+                    if shares_val > 0:
+                        shares = shares_val
+                        break
+            
+            if price and shares and price > 0 and shares > 0:
+                market_cap = price * shares
+                print(f"      ✓ Market Cap (calculé: price * shares): {market_cap:,.0f}", flush=True)
+        
+        if pe_ratio is None:
+            print(f"      ⚠️ P/E Ratio non disponible pour {ticker}", flush=True)
+        if market_cap is None:
+            print(f"      ⚠️ Market Cap non disponible pour {ticker}", flush=True)
+            
+    except Exception as e:
+        print(f"      ⚠️ Erreur récupération métriques valorisation pour {ticker}: {e}", flush=True)
+    
+    return {
+        "pe_ratio": pe_ratio,
+        "market_cap": market_cap
+    }
+
 def get_financial_data(ticker, currency):
     if not ticker: return None
     print(f"    📊 Analyse financière : {ticker} ({currency})...", flush=True)
@@ -291,6 +386,9 @@ def get_financial_data(ticker, currency):
         except Exception as e:
             print(f"      ⚠️ Erreur calcul volatilité: {e}", flush=True)
 
+        # 4. Métriques de valorisation (P/E Ratio et Market Cap)
+        valuation_metrics = get_valuation_metrics(ticker)
+
         return {
             "last_price": float(df['price'].iloc[-1]),
             "perf_eur": {
@@ -306,7 +404,9 @@ def get_financial_data(ticker, currency):
             "ma200_value": ma200_value,
             "ma200_status": ma200_status,
             "trend_slope": trend_slope,
-            "volatility_30d": volatility_30d
+            "volatility_30d": volatility_30d,
+            "pe_ratio": valuation_metrics.get('pe_ratio'),
+            "market_cap": valuation_metrics.get('market_cap')
         }
     except Exception as e:
         print(f"    ❌ Erreur calculs pour {ticker}: {e}")
@@ -371,6 +471,32 @@ def run_sync():
 
         mkt = get_financial_data(ticker, currency)
         if mkt:
+            # Récupérer les valeurs existantes pour éviter d'écraser des données valides
+            existing_data = None
+            try:
+                existing_response = supabase.table("market_watch").select("pe_ratio, market_cap").eq("ticker", ticker).execute()
+                if existing_response.data and len(existing_response.data) > 0:
+                    existing_data = existing_response.data[0]
+            except Exception as e:
+                print(f"      ⚠️ Impossible de récupérer les données existantes pour {ticker}: {e}", flush=True)
+            
+            # Préserver les valeurs existantes si les nouvelles sont None/0
+            pe_ratio = mkt.get('pe_ratio')
+            market_cap = mkt.get('market_cap')
+            
+            # Si la nouvelle valeur est None/0 et qu'une valeur valide existe déjà, la conserver
+            if (pe_ratio is None or pe_ratio == 0) and existing_data:
+                existing_pe = existing_data.get('pe_ratio')
+                if existing_pe is not None and existing_pe != 0:
+                    pe_ratio = existing_pe
+                    print(f"      ℹ️ Conservation P/E existant: {pe_ratio:.2f}", flush=True)
+            
+            if (market_cap is None or market_cap == 0) and existing_data:
+                existing_mc = existing_data.get('market_cap')
+                if existing_mc is not None and existing_mc != 0:
+                    market_cap = existing_mc
+                    print(f"      ℹ️ Conservation Market Cap existant: {market_cap:,.0f}", flush=True)
+            
             payload = {
                 "ticker": ticker,
                 "name": data_clean.get(name_key, ticker),
@@ -383,17 +509,20 @@ def run_sync():
                 "perf_ytd_local": mkt['perf_local']['ytd'],
                 "perf_ytd_eur": mkt['perf_eur']['ytd'],
                 "geo_coverage": geo_coverage,
-                # Nouveaux champs d'indicateurs techniques
+                # Indicateurs techniques
                 "ma200_value": mkt.get('ma200_value'),
                 "ma200_status": mkt.get('ma200_status'),
                 "trend_slope": mkt.get('trend_slope'),
                 "volatility_30d": mkt.get('volatility_30d'),
+                # Métriques de valorisation (avec préservation des valeurs existantes)
+                "pe_ratio": pe_ratio,
+                "market_cap": market_cap,
                 "last_update": datetime.now().isoformat()
             }
             
             try:
                 supabase.table("market_watch").upsert(payload, on_conflict='ticker').execute()
-                print(f"    ✅ {ticker} synchronisé", flush=True)
+                print(f"    ✅ {ticker} synchronisé (P/E: {pe_ratio or 'N/A'}, Market Cap: {market_cap or 'N/A'})", flush=True)
             except Exception as e:
                 print(f"    ❌ Erreur Supabase {ticker}: {e}", flush=True)
 
