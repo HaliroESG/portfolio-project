@@ -169,16 +169,16 @@ export const mockAssets: Asset[] = [
 ];
 
 export const mockRegions: MarketRegion[] = [
-  { id: 'us', name: 'United States', code: 'US', performance: 12.4, exposure: 4500000, coordinates: [-95.7129, 37.0902] },
-  { id: 'fr', name: 'France', code: 'FR', performance: 5.2, exposure: 1200000, coordinates: [2.2137, 46.2276] },
-  { id: 'jp', name: 'Japan', code: 'JP', performance: -1.8, exposure: 1500000, coordinates: [138.2529, 36.2048] },
-  { id: 'cn', name: 'China', code: 'CN', performance: 3.5, exposure: 1800000, coordinates: [104.1954, 35.8617] },
-  { id: 'gb', name: 'United Kingdom', code: 'GB', performance: 2.1, exposure: 900000, coordinates: [-3.436, 55.3781] },
-  { id: 'de', name: 'Germany', code: 'DE', performance: 4.8, exposure: 1100000, coordinates: [10.4515, 51.1657] },
-  { id: 'in', name: 'India', code: 'IN', performance: 8.5, exposure: 600000, coordinates: [78.9629, 20.5937] },
-  { id: 'br', name: 'Brazil', code: 'BR', performance: -3.2, exposure: 400000, coordinates: [-51.9253, -14.235] },
-  { id: 'au', name: 'Australia', code: 'AU', performance: 1.5, exposure: 750000, coordinates: [133.7751, -25.2744] },
-  { id: 'za', name: 'South Africa', code: 'ZA', performance: -5.4, exposure: 200000, coordinates: [22.9375, -30.5595] }
+  { id: 'us', name: 'United States', code: 'US', value: 100, performance: 12.4, exposure: 4500000, coordinates: [-95.7129, 37.0902] },
+  { id: 'fr', name: 'France', code: 'FR', value: 26.7, performance: 5.2, exposure: 1200000, coordinates: [2.2137, 46.2276] },
+  { id: 'jp', name: 'Japan', code: 'JP', value: 33.3, performance: -1.8, exposure: 1500000, coordinates: [138.2529, 36.2048] },
+  { id: 'cn', name: 'China', code: 'CN', value: 40.0, performance: 3.5, exposure: 1800000, coordinates: [104.1954, 35.8617] },
+  { id: 'gb', name: 'United Kingdom', code: 'GB', value: 20.0, performance: 2.1, exposure: 900000, coordinates: [-3.436, 55.3781] },
+  { id: 'de', name: 'Germany', code: 'DE', value: 24.4, performance: 4.8, exposure: 1100000, coordinates: [10.4515, 51.1657] },
+  { id: 'in', name: 'India', code: 'IN', value: 13.3, performance: 8.5, exposure: 600000, coordinates: [78.9629, 20.5937] },
+  { id: 'br', name: 'Brazil', code: 'BR', value: 8.9, performance: -3.2, exposure: 400000, coordinates: [-51.9253, -14.235] },
+  { id: 'au', name: 'Australia', code: 'AU', value: 16.7, performance: 1.5, exposure: 750000, coordinates: [133.7751, -25.2744] },
+  { id: 'za', name: 'South Africa', code: 'ZA', value: 4.4, performance: -5.4, exposure: 200000, coordinates: [22.9375, -30.5595] }
 ];
 
 export const mockCurrencyPairs: CurrencyPair[] = [
