@@ -54,12 +54,12 @@ interface NewsItem {
 }
 
 export function AssetDetailDrawer({ asset, isOpen, onClose }: AssetDetailDrawerProps) {
-  const [news, setNews] = useState<NewsItem[]>([])
+  // ===== ALL HOOKS MUST BE DECLARED FIRST (before any conditional returns) =====
   
-  // Sécurité totale : si pas d'asset, ne rien afficher (AVANT tout calcul ou state update)
-  if (!asset) return null
+  // Hook 1: useState
+  const [news, setNews] = useState<NewsItem[]>([])
 
-  // Memoize derived data to prevent recalculation on every render
+  // Hook 2: useMemo - Memoize derived data to prevent recalculation on every render
   const geographicData = useMemo(() => {
     if (!asset?.constituents) return []
     
@@ -73,15 +73,15 @@ export function AssetDetailDrawer({ asset, isOpen, onClose }: AssetDetailDrawerP
       .slice(0, 10) // Top 10 regions
   }, [asset?.constituents])
 
+  // Hook 3: useMemo
   const totalExposure = useMemo(() => {
     return geographicData.reduce((sum, item) => sum + item.value, 0)
   }, [geographicData])
 
+  // Hook 4: useMemo
   const dayChange = useMemo(() => asset?.performance?.day?.value || 0, [asset?.performance?.day?.value])
-  const isPositive = dayChange >= 0
-  const hasMissingData = asset?.price === null || asset?.price === 0 || asset?.price === undefined
 
-  // Fetch news for this ticker - sécurisé pour éviter les boucles infinies
+  // Hook 5: useEffect - Fetch news for this ticker
   useEffect(() => {
     // Garde-fou au début de l'effet
     if (!asset?.ticker) return
@@ -111,6 +111,15 @@ export function AssetDetailDrawer({ asset, isOpen, onClose }: AssetDetailDrawerP
     fetchNews()
   }, [asset?.ticker]) // Dépendance : seulement asset?.ticker (pas asset entier)
 
+  // ===== CONDITIONAL RETURN MOVED AFTER ALL HOOKS =====
+  // Sécurité totale : si pas d'asset, ne rien afficher (APRÈS tous les hooks)
+  if (!asset) return null
+
+  // ===== DERIVED VALUES (not hooks, safe to calculate after conditional) =====
+  const isPositive = dayChange >= 0
+  const hasMissingData = asset?.price === null || asset?.price === 0 || asset?.price === undefined
+
+  // ===== EVENT HANDLERS =====
   const handleYahooFinance = () => {
     if (!asset?.ticker) return
     window.open(`https://finance.yahoo.com/quote/${asset?.ticker}`, '_blank')
