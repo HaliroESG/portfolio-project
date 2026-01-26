@@ -192,6 +192,54 @@ def update_macro_hub():
         print(f"    ⚠️ Erreur calcul Misery Index: {e}", flush=True)
 
 
+def calculate_data_status(last_price, last_trade_timestamp=None):
+    """
+    Calcule le statut de qualité des données basé sur le prix et le timestamp.
+    
+    Args:
+        last_price: Prix actuel (peut être None, 0, ou un nombre)
+        last_trade_timestamp: Timestamp du dernier trade (datetime ou None)
+    
+    Returns:
+        'LOW_CONFIDENCE' si prix manquant/0/None
+        'STALE' si dernier trade > 5 jours ouvrés
+        'OK' sinon
+    """
+    # Vérifier si le prix est valide
+    if last_price is None or last_price == 0:
+        return 'LOW_CONFIDENCE'
+    
+    # Vérifier si le timestamp est trop ancien (> 5 jours ouvrés)
+    if last_trade_timestamp is not None:
+        try:
+            # Convertir en datetime si c'est une string ou un Timestamp pandas
+            if isinstance(last_trade_timestamp, str):
+                last_trade_dt = pd.to_datetime(last_trade_timestamp).to_pydatetime()
+            elif hasattr(last_trade_timestamp, 'to_pydatetime'):
+                # Timestamp pandas
+                last_trade_dt = last_trade_timestamp.to_pydatetime()
+            elif isinstance(last_trade_timestamp, pd.Timestamp):
+                last_trade_dt = last_trade_timestamp.to_pydatetime()
+            else:
+                last_trade_dt = last_trade_timestamp
+            
+            # S'assurer que c'est un datetime Python
+            if not isinstance(last_trade_dt, datetime):
+                last_trade_dt = pd.to_datetime(last_trade_dt).to_pydatetime()
+            
+            # Calculer la différence en jours calendaires
+            # 5 jours ouvrés ≈ 7 jours calendaires (en comptant le week-end)
+            days_diff = (datetime.now() - last_trade_dt).days
+            
+            if days_diff > 7:
+                return 'STALE'
+        except Exception as e:
+            # Si erreur de parsing, on considère comme STALE par précaution
+            print(f"      ⚠️ Erreur parsing timestamp: {e}", flush=True)
+            return 'STALE'
+    
+    return 'OK'
+
 def get_valuation_metrics(ticker):
     """
     Récupère les métriques de valorisation (P/E Ratio et Market Cap) avec fallbacks.
@@ -389,8 +437,40 @@ def get_financial_data(ticker, currency):
         # 4. Métriques de valorisation (P/E Ratio et Market Cap)
         valuation_metrics = get_valuation_metrics(ticker)
 
+        # 5. Récupérer le timestamp du dernier trade depuis yfinance
+        last_trade_timestamp = None
+        try:
+            stock = yf.Ticker(ticker)
+            info = stock.info
+            # Essayer plusieurs clés pour le timestamp du dernier trade
+            for ts_key in ['regularMarketTime', 'lastTradeDate', 'quoteTime']:
+                if ts_key in info and info[ts_key] is not None:
+                    try:
+                        last_trade_timestamp = pd.to_datetime(info[ts_key])
+                        break
+                    except:
+                        continue
+        except Exception as e:
+            print(f"      ⚠️ Impossible de récupérer le timestamp du dernier trade: {e}", flush=True)
+
+        # Utiliser le dernier index du DataFrame comme fallback pour le timestamp
+        if last_trade_timestamp is None:
+            try:
+                last_trade_timestamp = df.index[-1].to_pydatetime()
+            except:
+                last_trade_timestamp = datetime.now()
+
+        # 6. Calculer le data_status
+        last_price = float(df['price'].iloc[-1])
+        data_status = calculate_data_status(last_price, last_trade_timestamp)
+        
+        if data_status != 'OK':
+            print(f"      ⚠️ Data Status: {data_status} (prix: {last_price}, timestamp: {last_trade_timestamp})", flush=True)
+
         return {
-            "last_price": float(df['price'].iloc[-1]),
+            "last_price": last_price,
+            "last_trade_timestamp": last_trade_timestamp.isoformat() if isinstance(last_trade_timestamp, datetime) else str(last_trade_timestamp),
+            "data_status": data_status,
             "perf_eur": {
                 "day": calc(now_eur, prev_eur),
                 "week": calc(now_eur, week_eur),
@@ -449,6 +529,11 @@ def run_sync():
         print(f"❌ Erreur ouverture GSheet: {e}", flush=True)
         return
 
+    # Variables pour calculer le coverage
+    total_portfolio_value = 0.0
+    covered_value = 0.0  # Valeur des actifs avec status OK ou STALE
+    assets_processed = []
+
     for asset in assets:
         data_clean = {k.strip().lower(): v for k, v in asset.items()}
         ticker_key = next((k for k in data_clean.keys() if 'ticker' in k), None)
@@ -474,7 +559,7 @@ def run_sync():
             # Récupérer les valeurs existantes pour éviter d'écraser des données valides
             existing_data = None
             try:
-                existing_response = supabase.table("market_watch").select("pe_ratio, market_cap").eq("ticker", ticker).execute()
+                existing_response = supabase.table("market_watch").select("pe_ratio, market_cap, data_status").eq("ticker", ticker).execute()
                 if existing_response.data and len(existing_response.data) > 0:
                     existing_data = existing_response.data[0]
             except Exception as e:
@@ -497,6 +582,42 @@ def run_sync():
                     market_cap = existing_mc
                     print(f"      ℹ️ Conservation Market Cap existant: {market_cap:,.0f}", flush=True)
             
+            # Récupérer le data_status calculé (ou conserver l'existant si nouveau est LOW_CONFIDENCE et existant est OK/STALE)
+            data_status = mkt.get('data_status', 'LOW_CONFIDENCE')
+            if data_status == 'LOW_CONFIDENCE' and existing_data:
+                existing_status = existing_data.get('data_status')
+                # Ne pas dégrader un statut OK/STALE vers LOW_CONFIDENCE si on a déjà des données
+                if existing_status in ['OK', 'STALE']:
+                    data_status = existing_status
+                    print(f"      ℹ️ Conservation data_status existant: {data_status}", flush=True)
+            
+            # Calculer la valeur de l'actif pour le coverage (en EUR)
+            asset_value = mkt.get('last_price', 0)
+            # Convertir en EUR si nécessaire (approximation simple)
+            if currency != "EUR":
+                try:
+                    fx_response = supabase.table("currencies").select("rate_to_eur").eq("id", currency).execute()
+                    if fx_response.data and len(fx_response.data) > 0:
+                        fx_rate = fx_response.data[0].get('rate_to_eur', 1.0)
+                        asset_value_eur = asset_value * fx_rate
+                    else:
+                        asset_value_eur = asset_value  # Fallback: assumer 1:1
+                except:
+                    asset_value_eur = asset_value
+            else:
+                asset_value_eur = asset_value
+            
+            total_portfolio_value += asset_value_eur
+            # Seuls les actifs avec status OK ou STALE comptent dans le coverage
+            if data_status in ['OK', 'STALE']:
+                covered_value += asset_value_eur
+            
+            assets_processed.append({
+                'ticker': ticker,
+                'value': asset_value_eur,
+                'status': data_status
+            })
+            
             payload = {
                 "ticker": ticker,
                 "name": data_clean.get(name_key, ticker),
@@ -517,14 +638,40 @@ def run_sync():
                 # Métriques de valorisation (avec préservation des valeurs existantes)
                 "pe_ratio": pe_ratio,
                 "market_cap": market_cap,
+                # Qualité des données
+                "data_status": data_status,
                 "last_update": datetime.now().isoformat()
             }
             
             try:
                 supabase.table("market_watch").upsert(payload, on_conflict='ticker').execute()
-                print(f"    ✅ {ticker} synchronisé (P/E: {pe_ratio or 'N/A'}, Market Cap: {market_cap or 'N/A'})", flush=True)
+                print(f"    ✅ {ticker} synchronisé (Status: {data_status}, P/E: {pe_ratio or 'N/A'}, Market Cap: {market_cap or 'N/A'})", flush=True)
             except Exception as e:
                 print(f"    ❌ Erreur Supabase {ticker}: {e}", flush=True)
+    
+    # Calculer et enregistrer le coverage_pct dans valuation_snapshots
+    if total_portfolio_value > 0:
+        coverage_pct = (covered_value / total_portfolio_value) * 100
+        print(f"--- 📊 COVERAGE DU PORTEFEUILLE ---", flush=True)
+        print(f"    Valeur totale: {total_portfolio_value:,.2f} EUR", flush=True)
+        print(f"    Valeur couverte (OK/STALE): {covered_value:,.2f} EUR", flush=True)
+        print(f"    Coverage: {coverage_pct:.2f}%", flush=True)
+        
+        try:
+            snapshot_payload = {
+                "snapshot_date": datetime.now().date().isoformat(),
+                "total_value_eur": total_portfolio_value,
+                "covered_value_eur": covered_value,
+                "coverage_pct": coverage_pct,
+                "assets_count": len(assets_processed),
+                "created_at": datetime.now().isoformat()
+            }
+            supabase.table("valuation_snapshots").insert(snapshot_payload).execute()
+            print(f"    ✅ Snapshot enregistré dans valuation_snapshots", flush=True)
+        except Exception as e:
+            print(f"    ⚠️ Erreur enregistrement snapshot: {e}", flush=True)
+    else:
+        print(f"    ⚠️ Aucune valeur de portefeuille à calculer", flush=True)
 
 if __name__ == "__main__":
     print("--- 🚀 DÉMARRAGE DU PIPELINE FINANCIER ---", flush=True)
