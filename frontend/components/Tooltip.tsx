@@ -5,7 +5,7 @@ import { cn } from '../lib/utils'
 
 interface TooltipProps {
   children: React.ReactNode
-  content: string
+  content: React.ReactNode
   side?: 'top' | 'bottom' | 'left' | 'right'
 }
 
@@ -29,7 +29,7 @@ export function Tooltip({ children, content, side = 'top' }: TooltipProps) {
       {isVisible && (
         <div
           className={cn(
-            "absolute z-50 px-2 py-1 text-[9px] font-mono text-white bg-slate-950 dark:bg-slate-800 rounded border border-slate-700 whitespace-nowrap shadow-xl",
+            "absolute z-50 px-3 py-2 text-xs font-sans text-white bg-slate-950 dark:bg-slate-800 rounded-lg border border-slate-700 shadow-xl max-w-xs",
             sideClasses[side]
           )}
         >
