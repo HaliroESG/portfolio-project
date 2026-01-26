@@ -58,7 +58,9 @@ function isRecentSync(lastSync: string): boolean {
 }
 
 export function Header({ lastSync, coveragePct }: HeaderProps) {
-  const showCoverageWarning = coveragePct !== null && coveragePct < 90
+  // Utiliser nullish coalescing pour donner une valeur par défaut de 100 si coveragePct est null/undefined
+  const safeCoveragePct = coveragePct ?? 100
+  const showCoverageWarning = safeCoveragePct < 90
 
   return (
     <>
@@ -68,7 +70,7 @@ export function Header({ lastSync, coveragePct }: HeaderProps) {
           <div className="flex items-center gap-2 text-sm font-bold text-amber-800 dark:text-amber-400">
             <span>⚠️</span>
             <span>
-              Portfolio Coverage: {coveragePct.toFixed(1)}% - Some assets are unpriced
+              Portfolio Coverage: {safeCoveragePct.toFixed(1)}% - Some assets are unpriced
             </span>
           </div>
         </div>
