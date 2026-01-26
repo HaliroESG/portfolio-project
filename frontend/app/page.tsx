@@ -28,49 +28,60 @@ export default function PortfolioDashboard() {
       try {
         const { data, error } = await supabase.from('market_watch').select('*')
         if (error) throw error
-        if (data && data.length > 0) {
-          const latest = data.reduce((max, item) => 
-            new Date(item.last_update) > new Date(max) ? item.last_update : max, data[0].last_update)
-          setLastSync(new Date(latest).toLocaleTimeString('fr-FR'))
-
-          // MAPPING + TRI ALPHABÉTIQUE ROBUSTE
-          const formattedAssets: Asset[] = data
-            .map((item: any) => {
-              // Sécuriser le mapping du type
-              const validTypes = ['Stock', 'STOCK', 'ETF', 'Crypto', 'CRYPTO', 'Cash']
-              const itemType = item.type || 'Stock'
-              const safeType = validTypes.includes(itemType) ? itemType : 'Stock'
-              
-              return {
-                id: item.id || '',
-                name: item.name || 'Unknown',
-                ticker: item.ticker || 'N/A',
-                price: item.last_price || 0,
-                currency: item.currency || 'EUR',
-                type: safeType as any,
-                constituents: item.geo_coverage || {},
-                performance: {
-                  day: { value: (item.perf_day_eur || 0) * 100, currencyImpact: ((item.perf_day_eur || 0) - (item.perf_day_local || 0)) * 100 },
-                  week: { value: (item.perf_week_local || 0) * 100, currencyImpact: 0 },
-                  month: { value: (item.perf_month_local || 0) * 100, currencyImpact: 0 },
-                  ytd: { value: (item.perf_ytd_eur || 0) * 100, currencyImpact: 0 },
-                }
-              }
-            })
-            .sort((a: Asset, b: Asset) => {
-              // Handle null/undefined names gracefully
-              const nameA = (a.name || '').trim().toLowerCase()
-              const nameB = (b.name || '').trim().toLowerCase()
-              
-              if (!nameA && !nameB) return 0
-              if (!nameA) return 1
-              if (!nameB) return -1
-              
-              return nameA.localeCompare(nameB, 'en', { sensitivity: 'base' })
-            })
-          setAssets(formattedAssets)
+        
+        // Early return check BEFORE any state updates
+        if (!data || data.length === 0) {
+          setLoading(false)
+          return
         }
-      } catch (err) { console.error(err) } finally { setLoading(false) }
+        
+        const latest = data.reduce((max, item) => 
+          new Date(item.last_update || 0) > new Date(max || 0) ? item.last_update : max, 
+          data[0]?.last_update || new Date().toISOString()
+        )
+        setLastSync(new Date(latest).toLocaleTimeString('fr-FR'))
+
+        // MAPPING + TRI ALPHABÉTIQUE ROBUSTE
+        const formattedAssets: Asset[] = data
+          .map((item: any) => {
+            // Sécuriser le mapping du type
+            const validTypes = ['Stock', 'STOCK', 'ETF', 'Crypto', 'CRYPTO', 'Cash']
+            const itemType = item.type || 'Stock'
+            const safeType = validTypes.includes(itemType) ? itemType : 'Stock'
+            
+            return {
+              id: item.id || '',
+              name: item.name || 'Unknown',
+              ticker: item.ticker || 'N/A',
+              price: item.last_price || 0,
+              currency: item.currency || 'EUR',
+              type: safeType as any,
+              constituents: item.geo_coverage || {},
+              performance: {
+                day: { value: (item.perf_day_eur || 0) * 100, currencyImpact: ((item.perf_day_eur || 0) - (item.perf_day_local || 0)) * 100 },
+                week: { value: (item.perf_week_local || 0) * 100, currencyImpact: 0 },
+                month: { value: (item.perf_month_local || 0) * 100, currencyImpact: 0 },
+                ytd: { value: (item.perf_ytd_eur || 0) * 100, currencyImpact: 0 },
+              }
+            }
+          })
+          .sort((a: Asset, b: Asset) => {
+            // Handle null/undefined names gracefully
+            const nameA = (a.name || '').trim().toLowerCase()
+            const nameB = (b.name || '').trim().toLowerCase()
+            
+            if (!nameA && !nameB) return 0
+            if (!nameA) return 1
+            if (!nameB) return -1
+            
+            return nameA.localeCompare(nameB, 'en', { sensitivity: 'base' })
+          })
+        setAssets(formattedAssets)
+      } catch (err) { 
+        console.error(err) 
+      } finally { 
+        setLoading(false) 
+      }
     }
     fetchAssets()
   }, [])

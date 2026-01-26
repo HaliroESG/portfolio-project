@@ -1,6 +1,6 @@
 "use client"
 
-import React, { useEffect, useState } from 'react'
+import React, { useEffect, useState, useMemo } from 'react'
 import { supabase } from '../lib/supabase'
 import { CurrencyPair } from '../types' // IMPORT UNIQUE ICI
 
@@ -9,34 +9,45 @@ interface CurrencyWidgetProps {
 }
 
 export function CurrencyWidget({ pairs: initialPairs }: CurrencyWidgetProps) {
+  // Create a stable key from initialPairs to prevent infinite loops
+  // Only recompute if the array reference or content actually changes
+  const pairsKey = useMemo(() => {
+    if (!initialPairs || initialPairs.length === 0) return null
+    // Create a stable key from IDs and first rate to detect real changes
+    return `${initialPairs.length}-${initialPairs[0]?.id}-${initialPairs[0]?.rate_to_eur}`
+  }, [initialPairs?.length, initialPairs?.[0]?.id, initialPairs?.[0]?.rate_to_eur])
+  
   const [currencies, setCurrencies] = useState<CurrencyPair[]>(initialPairs || [])
-  const [loading, setLoading] = useState(!initialPairs)
+  const [loading, setLoading] = useState(!initialPairs || initialPairs.length === 0)
 
   useEffect(() => {
-    // Si on a déjà des pairs (mock data), on ne charge pas Supabase immédiatement
-    if (initialPairs && initialPairs.length > 0) {
-      setLoading(false)
-      return
-    }
-
-    const fetchCurrencies = async () => {
-      try {
-        const { data, error } = await supabase
-          .from('currencies')
-          .select('id, symbol, rate_to_eur')
-          .order('id', { ascending: true })
-        
-        if (error) throw error
-        if (data) setCurrencies(data)
-      } catch (err) {
-        console.error("Erreur Fetch:", err)
-      } finally {
-        setLoading(false)
+    // Early return: if no data needed, exit before any state updates
+    if (!initialPairs || initialPairs.length === 0) {
+      const fetchCurrencies = async () => {
+        try {
+          const { data, error } = await supabase
+            .from('currencies')
+            .select('id, symbol, rate_to_eur')
+            .order('id', { ascending: true })
+          
+          if (error) throw error
+          if (data) setCurrencies(data)
+        } catch (err) {
+          console.error("Erreur Fetch:", err)
+        } finally {
+          setLoading(false)
+        }
       }
-    }
 
-    fetchCurrencies()
-  }, [initialPairs])
+      fetchCurrencies()
+    } else {
+      // Si on a déjà des pairs (mock data), on ne charge pas Supabase immédiatement
+      setCurrencies(initialPairs)
+      setLoading(false)
+    }
+    // Only depend on the stable key to prevent infinite loops
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [pairsKey])
 
   if (loading && currencies.length === 0) return null
 

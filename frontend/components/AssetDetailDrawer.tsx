@@ -1,6 +1,6 @@
 "use client"
 
-import React, { useEffect, useState } from 'react'
+import React, { useEffect, useState, useMemo } from 'react'
 import { Asset } from '../types'
 import { X, ExternalLink, Star, TrendingUp, TrendingDown, Globe2, Activity, Newspaper } from 'lucide-react'
 import { cn } from '../lib/utils'
@@ -56,14 +56,31 @@ interface NewsItem {
 export function AssetDetailDrawer({ asset, isOpen, onClose }: AssetDetailDrawerProps) {
   const [news, setNews] = useState<NewsItem[]>([])
   
-  // Sécurité totale : si pas d'asset, ne rien afficher
+  // Sécurité totale : si pas d'asset, ne rien afficher (AVANT tout calcul ou state update)
   if (!asset) return null
 
-  const dayChange = asset?.performance?.day?.value || 0
+  // Memoize derived data to prevent recalculation on every render
+  const geographicData = useMemo(() => {
+    if (!asset?.constituents) return []
+    
+    return Object.entries(asset.constituents)
+      .map(([code, value]) => ({
+        code: code.toUpperCase(),
+        name: COUNTRY_NAMES[code.toUpperCase()] || code,
+        value: value as number
+      }))
+      .sort((a, b) => b.value - a.value)
+      .slice(0, 10) // Top 10 regions
+  }, [asset?.constituents])
+
+  const totalExposure = useMemo(() => {
+    return geographicData.reduce((sum, item) => sum + item.value, 0)
+  }, [geographicData])
+
+  const dayChange = useMemo(() => asset?.performance?.day?.value || 0, [asset?.performance?.day?.value])
   const isPositive = dayChange >= 0
   const hasMissingData = asset?.price === null || asset?.price === 0 || asset?.price === undefined
 
-  // Fetch news for this ticker - useCallback pour éviter les boucles infinies
   // Fetch news for this ticker - sécurisé pour éviter les boucles infinies
   useEffect(() => {
     // Garde-fou au début de l'effet
@@ -94,20 +111,6 @@ export function AssetDetailDrawer({ asset, isOpen, onClose }: AssetDetailDrawerP
     fetchNews()
   }, [asset?.ticker]) // Dépendance : seulement asset?.ticker (pas asset entier)
 
-  // Prepare geographic breakdown data
-  const geographicData = asset?.constituents 
-    ? Object.entries(asset.constituents)
-        .map(([code, value]) => ({
-          code: code.toUpperCase(),
-          name: COUNTRY_NAMES[code.toUpperCase()] || code,
-          value: value as number
-        }))
-        .sort((a, b) => b.value - a.value)
-        .slice(0, 10) // Top 10 regions
-    : []
-
-  const totalExposure = geographicData.reduce((sum, item) => sum + item.value, 0)
-
   const handleYahooFinance = () => {
     if (!asset?.ticker) return
     window.open(`https://finance.yahoo.com/quote/${asset?.ticker}`, '_blank')
@@ -118,9 +121,6 @@ export function AssetDetailDrawer({ asset, isOpen, onClose }: AssetDetailDrawerP
     if (!asset?.ticker) return
     console.log('Add to watchlist:', asset?.ticker)
   }
-
-  // Sécurité totale : ne rien rendre si pas d'asset
-  if (!asset) return null
 
   return (
     <>
