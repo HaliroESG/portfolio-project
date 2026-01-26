@@ -22,6 +22,7 @@ export default function PortfolioDashboard() {
   const [lastSync, setLastSync] = useState<string>("")
   const [groupByClass, setGroupByClass] = useState(false)
   const [currencyFilter, setCurrencyFilter] = useState<string>("ALL")
+  const [coveragePct, setCoveragePct] = useState<number | null>(null)
 
   useEffect(() => {
     async function fetchAssets() {
@@ -49,6 +50,12 @@ export default function PortfolioDashboard() {
             const itemType = item.type || 'Stock'
             const safeType = validTypes.includes(itemType) ? itemType : 'Stock'
             
+            // Valider data_status
+            const validStatuses = ['OK', 'STALE', 'LOW_CONFIDENCE', 'PARTIAL']
+            const dataStatus = item.data_status && validStatuses.includes(item.data_status) 
+              ? item.data_status 
+              : undefined
+            
             return {
               id: item.id || '',
               name: item.name || 'Unknown',
@@ -57,6 +64,8 @@ export default function PortfolioDashboard() {
               currency: item.currency || 'EUR',
               type: safeType as any,
               constituents: item.geo_coverage || {},
+              data_status: dataStatus,
+              last_update: item.last_update || undefined,
               performance: {
                 day: { value: (item.perf_day_eur || 0) * 100, currencyImpact: ((item.perf_day_eur || 0) - (item.perf_day_local || 0)) * 100 },
                 week: { value: (item.perf_week_local || 0) * 100, currencyImpact: 0 },
@@ -84,13 +93,33 @@ export default function PortfolioDashboard() {
       }
     }
     fetchAssets()
+    
+    // Fetch latest coverage from valuation_snapshots
+    async function fetchCoverage() {
+      try {
+        const { data, error } = await supabase
+          .from('valuation_snapshots')
+          .select('coverage_pct')
+          .order('created_at', { ascending: false })
+          .limit(1)
+          .single()
+        
+        if (error) throw error
+        if (data && data.coverage_pct !== null) {
+          setCoveragePct(data.coverage_pct)
+        }
+      } catch (err) {
+        console.error('Error fetching coverage:', err)
+      }
+    }
+    fetchCoverage()
   }, [])
 
   return (
     <div className="flex h-screen bg-slate-100 dark:bg-[#080A0F] text-slate-950 dark:text-gray-300 transition-colors duration-500">
       <Sidebar />
       <div className="flex-1 flex flex-col min-w-0">
-        <Header lastSync={lastSync} />
+        <Header lastSync={lastSync} coveragePct={coveragePct} />
         <HotNewsTickerTape />
         <MacroStrip />
         <main className="flex-1 p-6 overflow-hidden flex flex-col gap-6">

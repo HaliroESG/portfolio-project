@@ -4,6 +4,7 @@ import React, { useMemo } from 'react';
 import { Asset } from '../types';
 import { PerformanceCell } from './PerformanceCell';
 import { AlertCircle } from 'lucide-react';
+import { DataTrustBadge } from './DataTrustBadge';
 import { cn } from '../lib/utils';
 
 interface AssetTableProps {
@@ -128,6 +129,8 @@ export function AssetTable({ assets, onHoverAsset, onSelectAsset, selectedAssetI
                             Check Ticker
                           </span>
                         )}
+                        {/* Data Trust Badge */}
+                        <DataTrustBadge status={asset.data_status} lastUpdate={asset.last_update} />
                       </div>
                       <span className="text-[10px] font-mono font-bold text-slate-500 dark:text-gray-500 flex-shrink-0">{asset.ticker}</span>
                     </div>

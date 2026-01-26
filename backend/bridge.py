@@ -202,14 +202,14 @@ def calculate_data_status(last_price, last_trade_timestamp=None):
     
     Returns:
         'LOW_CONFIDENCE' si prix manquant/0/None
-        'STALE' si dernier trade > 5 jours ouvrés
+        'STALE' si dernier trade > 5 jours ouvrés mais < 10 ans (date vraiment ancienne)
         'OK' sinon
     """
     # Vérifier si le prix est valide
     if last_price is None or last_price == 0:
         return 'LOW_CONFIDENCE'
     
-    # Vérifier si le timestamp est trop ancien (> 5 jours ouvrés)
+    # Vérifier si le timestamp est trop ancien (> 5 jours ouvrés mais < 10 ans)
     if last_trade_timestamp is not None:
         try:
             # Convertir en datetime si c'est une string ou un Timestamp pandas
@@ -227,16 +227,25 @@ def calculate_data_status(last_price, last_trade_timestamp=None):
             if not isinstance(last_trade_dt, datetime):
                 last_trade_dt = pd.to_datetime(last_trade_dt).to_pydatetime()
             
+            # Vérifier si le timestamp est invalide (année < 2024 = probablement epoch 0 ou 1970)
+            if last_trade_dt.year < 2024:
+                # Timestamp invalide détecté, mais si on a un prix valide, on considère comme OK
+                # (le timestamp sera corrigé dans get_financial_data)
+                return 'OK'
+            
             # Calculer la différence en jours calendaires
             # 5 jours ouvrés ≈ 7 jours calendaires (en comptant le week-end)
             days_diff = (datetime.now() - last_trade_dt).days
             
-            if days_diff > 7:
+            # STALE seulement si > 5 jours mais < 10 ans (date vraiment ancienne mais pas invalide)
+            if 7 < days_diff < (10 * 365):
                 return 'STALE'
         except Exception as e:
-            # Si erreur de parsing, on considère comme STALE par précaution
+            # Si erreur de parsing, on ne considère pas comme STALE si on a un prix valide
+            # (le timestamp sera corrigé dans get_financial_data)
             print(f"      ⚠️ Erreur parsing timestamp: {e}", flush=True)
-            return 'STALE'
+            # Si prix valide, on retourne OK (le timestamp sera corrigé)
+            return 'OK'
     
     return 'OK'
 
@@ -446,8 +455,20 @@ def get_financial_data(ticker, currency):
             for ts_key in ['regularMarketTime', 'lastTradeDate', 'quoteTime']:
                 if ts_key in info and info[ts_key] is not None:
                     try:
-                        last_trade_timestamp = pd.to_datetime(info[ts_key])
-                        break
+                        parsed_ts = pd.to_datetime(info[ts_key])
+                        # Convertir en datetime Python pour vérification
+                        if hasattr(parsed_ts, 'to_pydatetime'):
+                            parsed_dt = parsed_ts.to_pydatetime()
+                        else:
+                            parsed_dt = parsed_ts
+                        
+                        # Vérifier si le timestamp est valide (année >= 2024)
+                        if parsed_dt.year >= 2024:
+                            last_trade_timestamp = parsed_ts
+                            break
+                        else:
+                            # Timestamp invalide (année < 2024, probablement epoch 0 ou 1970)
+                            print(f"      ⚠️ Timestamp invalide détecté ({parsed_dt.year}) pour {ticker}, sera corrigé", flush=True)
                     except:
                         continue
         except Exception as e:
@@ -456,12 +477,41 @@ def get_financial_data(ticker, currency):
         # Utiliser le dernier index du DataFrame comme fallback pour le timestamp
         if last_trade_timestamp is None:
             try:
-                last_trade_timestamp = df.index[-1].to_pydatetime()
+                df_timestamp = df.index[-1].to_pydatetime()
+                # Vérifier que le timestamp du DataFrame est valide
+                if df_timestamp.year >= 2024:
+                    last_trade_timestamp = df.index[-1]
+                else:
+                    # Timestamp du DataFrame aussi invalide, utiliser maintenant
+                    print(f"      ⚠️ Timestamp du DataFrame invalide ({df_timestamp.year}) pour {ticker}, utilisation de datetime.now()", flush=True)
+                    last_trade_timestamp = datetime.now()
             except:
                 last_trade_timestamp = datetime.now()
 
-        # 6. Calculer le data_status
+        # 6. Validation finale : Si timestamp invalide mais prix valide, forcer timestamp à maintenant
         last_price = float(df['price'].iloc[-1])
+        if last_price > 0:
+            # Vérifier si le timestamp final est invalide
+            try:
+                if hasattr(last_trade_timestamp, 'to_pydatetime'):
+                    ts_dt = last_trade_timestamp.to_pydatetime()
+                elif isinstance(last_trade_timestamp, pd.Timestamp):
+                    ts_dt = last_trade_timestamp.to_pydatetime()
+                elif isinstance(last_trade_timestamp, datetime):
+                    ts_dt = last_trade_timestamp
+                else:
+                    ts_dt = pd.to_datetime(last_trade_timestamp).to_pydatetime()
+                
+                # Si timestamp invalide (année < 2024) mais prix valide, forcer à maintenant
+                if ts_dt.year < 2024:
+                    print(f"      ℹ️ Timestamp invalide ({ts_dt.year}) mais prix valide ({last_price}), correction à datetime.now()", flush=True)
+                    last_trade_timestamp = datetime.now()
+            except:
+                # En cas d'erreur, si prix valide, utiliser maintenant
+                if last_price > 0:
+                    last_trade_timestamp = datetime.now()
+
+        # 7. Calculer le data_status avec le timestamp corrigé
         data_status = calculate_data_status(last_price, last_trade_timestamp)
         
         if data_status != 'OK':

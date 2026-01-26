@@ -82,6 +82,7 @@ except Exception as e:
     exit(1)
 
 # === CONFIGURATION DES SOURCES RSS ===
+# Note: Si l'URL ECB échoue, le script continuera avec Fed uniquement grâce au try/except
 RSS_SOURCES = [
     {
         "url": "https://www.federalreserve.gov/feeds/press_all.xml",
@@ -89,7 +90,7 @@ RSS_SOURCES = [
         "category": "MACRO"
     },
     {
-        "url": "https://www.ecb.europa.eu/press/shared/rss/press.xml",
+        "url": "https://www.ecb.europa.eu/home/html/rss.en.html",
         "source": "ECB",
         "category": "MACRO"
     }
@@ -164,7 +165,10 @@ def extract_ticker_from_text(text: str) -> str | None:
     return None
 
 def fetch_news_from_rss(rss_config: dict) -> list:
-    """Récupère les actualités depuis un flux RSS."""
+    """
+    Récupère les actualités depuis un flux RSS.
+    Retourne TOUJOURS une liste (jamais None) pour éviter les erreurs d'itération.
+    """
     news_items = []
     
     try:
@@ -229,22 +233,26 @@ def fetch_news_from_rss(rss_config: dict) -> list:
         
     except Exception as e:
         print(f"    ❌ Erreur RSS {rss_config['source']}: {e}", flush=True)
+        # Retourner une liste vide au lieu de None en cas d'erreur
+        return []
     
-    return news_items
+    # S'assurer qu'on retourne toujours une liste (jamais None)
+    return news_items if news_items else []
 
 def fetch_news_from_marketaux(tickers: list[str]) -> list:
     """
     Récupère les actualités depuis l'API Marketaux pour une liste de tickers (batching).
     Limite à 10 tickers par requête pour respecter les limites API.
+    Retourne TOUJOURS une liste (jamais None) pour éviter les erreurs d'itération.
     """
     news_items = []
     
     if not MARKETAUX_API_KEY:
         print(f"    ⚠️ MARKETAUX_API_KEY non configurée, skip pour {len(tickers)} tickers", flush=True)
-        return news_items
+        return []  # Retourner explicitement une liste vide
     
     if not tickers:
-        return news_items
+        return []  # Retourner explicitement une liste vide
     
     try:
         # API Marketaux: https://marketaux.com/documentation
@@ -318,6 +326,9 @@ def fetch_news_from_marketaux(tickers: list[str]) -> list:
         
         print(f"    ✅ Marketaux (batch de {len(tickers[:10])} tickers): {len(news_items)} articles récupérés", flush=True)
         
+        # Retourner explicitement la liste (jamais None)
+        return news_items if news_items else []
+        
     except requests.exceptions.HTTPError as e:
         if e.response and e.response.status_code == 402:
             print(f"    ⚠️ Quota Marketaux atteint pour aujourd'hui, passage à la suite.", flush=True)
@@ -358,8 +369,17 @@ def sync_news():
     # 1. Récupérer les actualités depuis les sources RSS (Macro)
     print("--- SOURCES RSS (MACRO) ---", flush=True)
     for rss_config in RSS_SOURCES:
-        news_items = fetch_news_from_rss(rss_config)
-        all_news.extend(news_items)
+        try:
+            news_items = fetch_news_from_rss(rss_config)
+            # Vérifier que news_items n'est pas None et est une liste avant d'étendre
+            if news_items and isinstance(news_items, list):
+                all_news.extend(news_items)
+            else:
+                print(f"    ⚠️ Aucune news récupérée depuis {rss_config['source']}", flush=True)
+        except Exception as e:
+            print(f"    ⚠️ Erreur lors de la récupération RSS {rss_config['source']}: {e}", flush=True)
+            # Continuer avec les autres sources même si une échoue
+            continue
     
     # 2. Récupérer les tickers depuis market_watch et fetch depuis Marketaux (OPTIMISÉ: 10 tickers max)
     print("--- SOURCE MARKETAUX (TICKERS) ---", flush=True)
@@ -377,7 +397,11 @@ def sync_news():
             
             # Un seul appel batch pour les 10 tickers
             news_items = fetch_news_from_marketaux(limited_tickers)
-            all_news.extend(news_items)
+            # Vérifier que news_items n'est pas None et n'est pas vide avant d'étendre
+            if news_items and isinstance(news_items, list):
+                all_news.extend(news_items)
+            else:
+                print(f"    ⚠️ Aucune news récupérée pour le batch de {len(limited_tickers)} tickers", flush=True)
             
             if len(tickers) > 10:
                 print(f"    ℹ️ {len(tickers) - 10} tickers ignorés pour respecter le quota API", flush=True)

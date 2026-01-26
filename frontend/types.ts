@@ -1,14 +1,14 @@
 // Dans types.ts
 export type Period = '1D' | '1W' | '1M' | 'YTD';
-// ... garde le reste de tes interfaces (Asset, etc.) en dessous
+
+// Data Status Enum
+export type DataStatus = 'OK' | 'STALE' | 'LOW_CONFIDENCE' | 'PARTIAL';
+
 export interface PerformanceData {
   value: number // Percentage
   currencyImpact: number // Percentage impact of FX
 }
 
-// Dans /types.ts
-
-// Dans /types.ts
 export interface Asset {
   id: string;
   name: string;
@@ -18,6 +18,8 @@ export interface Asset {
   // On accepte les majuscules et les minuscules pour être tranquille
   type: 'Stock' | 'STOCK' | 'ETF' | 'Crypto' | 'CRYPTO'; 
   constituents?: Record<string, number>; 
+  data_status?: DataStatus;
+  last_update?: string;
   performance: {
     day: any; // On met any temporairement pour laisser passer le build sur les structures complexes
     week: any;
