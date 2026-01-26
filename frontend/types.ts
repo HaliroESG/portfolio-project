@@ -20,6 +20,8 @@ export interface Asset {
   constituents?: Record<string, number>; 
   data_status?: DataStatus;
   last_update?: string;
+  pe_ratio?: number | null;
+  market_cap?: number | null;
   performance: {
     day: any; // On met any temporairement pour laisser passer le build sur les structures complexes
     week: any;

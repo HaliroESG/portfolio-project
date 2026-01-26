@@ -7,6 +7,35 @@ import { cn } from '../lib/utils'
 import { supabase } from '../lib/supabase'
 import { Tooltip } from './Tooltip'
 
+// Helper function to format Market Cap (e.g., 2,500,000,000 -> "2.5B")
+function formatMarketCap(marketCap: number | null | undefined): string {
+  if (marketCap === null || marketCap === undefined || marketCap === 0) {
+    return 'N/A'
+  }
+  
+  const absValue = Math.abs(marketCap)
+  
+  if (absValue >= 1_000_000_000_000) {
+    return `${(marketCap / 1_000_000_000_000).toFixed(2)}T`
+  } else if (absValue >= 1_000_000_000) {
+    return `${(marketCap / 1_000_000_000).toFixed(2)}B`
+  } else if (absValue >= 1_000_000) {
+    return `${(marketCap / 1_000_000).toFixed(2)}M`
+  } else if (absValue >= 1_000) {
+    return `${(marketCap / 1_000).toFixed(2)}K`
+  } else {
+    return marketCap.toFixed(2)
+  }
+}
+
+// Helper function to format P/E Ratio (2 decimal places)
+function formatPERatio(peRatio: number | null | undefined): string {
+  if (peRatio === null || peRatio === undefined || peRatio === 0) {
+    return 'N/A'
+  }
+  return peRatio.toFixed(2)
+}
+
 interface AssetDetailDrawerProps {
   asset: Asset | null
   isOpen: boolean
@@ -272,7 +301,7 @@ export function AssetDetailDrawer({ asset, isOpen, onClose }: AssetDetailDrawerP
                     P/E Ratio
                   </span>
                   <div className="text-lg font-mono font-black text-slate-950 dark:text-white">
-                    N/A
+                    {formatPERatio(asset?.pe_ratio)}
                   </div>
                 </div>
                 <div className="space-y-1">
@@ -280,7 +309,7 @@ export function AssetDetailDrawer({ asset, isOpen, onClose }: AssetDetailDrawerP
                     Market Cap
                   </span>
                   <div className="text-lg font-mono font-black text-slate-950 dark:text-white">
-                    N/A
+                    {formatMarketCap(asset?.market_cap)}
                   </div>
                 </div>
                 <div className="space-y-1">
