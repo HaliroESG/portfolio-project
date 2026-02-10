@@ -138,9 +138,12 @@ export default function GeoPage() {
         const typedData = (data ?? []) as MarketWatchGeoRow[]
         
         if (typedData.length > 0) {
-          const latest = typedData.reduce((max, item) => 
-            new Date(item.last_update || 0) > new Date(max || 0) ? item.last_update : max, typedData[0].last_update)
-          setLastSync(new Date(latest).toLocaleTimeString('fr-FR'))
+          const latestUpdate = typedData.reduce((max: string, item) => {
+            const itemUpdate = item.last_update
+            if (!itemUpdate) return max
+            return new Date(itemUpdate) > new Date(max) ? itemUpdate : max
+          }, typedData[0]?.last_update ?? new Date().toISOString())
+          setLastSync(new Date(latestUpdate).toLocaleTimeString('fr-FR'))
 
           // Grouper par pays et calculer la performance moyenne et l'exposition
           const countryMap = new Map<string, { total: number; count: number; totalExposure: number }>()

@@ -30,6 +30,11 @@ interface TrendPoint {
   trendChanged: boolean
 }
 
+interface NormalizedPoint {
+  date: string
+  value: number
+}
+
 function formatDate(value: string): string {
   const date = new Date(value)
   if (Number.isNaN(date.getTime())) return value
@@ -67,14 +72,17 @@ export function PortfolioTrendPanel() {
   }, [])
 
   const points = useMemo(() => {
-    const normalized = rows
-      .filter((row): row is Required<SnapshotRow> => {
+    const normalized: NormalizedPoint[] = rows
+      .filter((row) => {
         return Boolean(row.created_at && row.total_value_eur !== null && row.total_value_eur > 0)
       })
       .map((row) => ({
-        date: row.snapshot_date || row.created_at,
-        value: row.total_value_eur,
+        date: row.snapshot_date ?? row.created_at ?? '',
+        value: row.total_value_eur ?? 0,
       }))
+      .filter((row): row is NormalizedPoint => {
+        return row.date.length > 0 && Number.isFinite(row.value) && row.value > 0
+      })
       .sort((a, b) => new Date(a.date).getTime() - new Date(b.date).getTime())
 
     const values = normalized.map((item) => item.value)

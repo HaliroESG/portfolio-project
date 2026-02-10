@@ -72,11 +72,12 @@ export default function PortfolioDashboard() {
           return
         }
         
-        const latest = typedData.reduce((max, item) => 
-          new Date(item.last_update || 0) > new Date(max || 0) ? item.last_update : max, 
-          typedData[0]?.last_update || new Date().toISOString()
-        )
-        setLastSync(new Date(latest).toLocaleTimeString('fr-FR'))
+        const latestUpdate = typedData.reduce((max: string, item) => {
+          const itemUpdate = item.last_update
+          if (!itemUpdate) return max
+          return new Date(itemUpdate) > new Date(max) ? itemUpdate : max
+        }, typedData[0]?.last_update ?? new Date().toISOString())
+        setLastSync(new Date(latestUpdate).toLocaleTimeString('fr-FR'))
 
         // MAPPING + TRI ALPHABÉTIQUE ROBUSTE
         const formattedAssets: Asset[] = typedData
