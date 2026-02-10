@@ -1,7 +1,7 @@
 "use client"
 
 import React, { useMemo } from 'react'
-import { ComposableMap, Geographies, Geography, ZoomableGroup } from 'react-simple-maps'
+import { ComposableMap, Geographies, Geography, Marker, ZoomableGroup } from 'react-simple-maps'
 import { scaleLinear } from 'd3-scale'
 import { Asset, MarketRegion } from '../types'
 
@@ -20,9 +20,11 @@ const ISO_MAP: { [key: string]: string } = {
 interface GeographicMapProps {
   regions: MarketRegion[]
   hoveredAsset: Asset | null
+  showBubbles?: boolean
+  viewLabel?: string
 }
 
-export function GeographicMap({ regions, hoveredAsset }: GeographicMapProps) {
+export function GeographicMap({ regions, hoveredAsset, showBubbles = false, viewLabel }: GeographicMapProps) {
   // Échelle de couleur pour la heatmap globale
   const colorScale = useMemo(() => 
     scaleLinear<string>()
@@ -38,6 +40,14 @@ export function GeographicMap({ regions, hoveredAsset }: GeographicMapProps) {
     return map
   }, [regions])
 
+  const bubbleRegions = useMemo(() => {
+    return [...regions].sort((left, right) => right.exposure - left.exposure).slice(0, 18)
+  }, [regions])
+
+  const maxBubbleExposure = useMemo(() => {
+    return Math.max(...bubbleRegions.map((region) => region.exposure), 1)
+  }, [bubbleRegions])
+
   return (
     <div className="bg-white dark:bg-[#080A0F] h-full w-full flex flex-col relative overflow-hidden shadow-inner dark:shadow-2xl">
       
@@ -45,7 +55,7 @@ export function GeographicMap({ regions, hoveredAsset }: GeographicMapProps) {
       <div className="absolute top-4 left-4 z-20 p-2 bg-white/90 dark:bg-black/50 rounded border border-slate-300 dark:border-white/10 backdrop-blur-sm shadow-lg">
         <div className="text-[10px] text-slate-500 dark:text-gray-500 uppercase font-mono tracking-tighter">View Mode</div>
         <div className={`text-xs font-bold ${hoveredAsset ? 'text-blue-600 dark:text-[#00FF88]' : 'text-slate-700 dark:text-orange-500'}`}>
-          {hoveredAsset ? `FOCUS: ${hoveredAsset.ticker}` : 'MARKET HEATMAP'}
+          {hoveredAsset ? `FOCUS: ${hoveredAsset.ticker}` : viewLabel ?? 'MARKET HEATMAP'}
         </div>
       </div>
 
@@ -114,6 +124,39 @@ export function GeographicMap({ regions, hoveredAsset }: GeographicMapProps) {
                 })
               }
             </Geographies>
+
+            {showBubbles &&
+              !hoveredAsset &&
+              bubbleRegions.map((region) => {
+                if (region.coordinates[0] === 0 && region.coordinates[1] === 0) return null
+
+                const bubbleRadius = 2.5 + Math.sqrt(region.exposure / maxBubbleExposure) * 10
+                const label = `${region.code} ${region.performance >= 0 ? '+' : ''}${region.performance.toFixed(1)}%`
+                const color = colorScale(region.performance)
+
+                return (
+                  <Marker
+                    key={`bubble-${region.id}`}
+                    coordinates={[region.coordinates[1], region.coordinates[0]]}
+                  >
+                    <circle
+                      r={bubbleRadius}
+                      fill={color}
+                      fillOpacity={0.75}
+                      stroke="rgba(255,255,255,0.7)"
+                      strokeWidth={0.6}
+                    />
+                    <text
+                      y={bubbleRadius + 8}
+                      textAnchor="middle"
+                      fill="rgba(148, 163, 184, 0.9)"
+                      style={{ fontSize: '7px', fontWeight: 700, letterSpacing: '0.02em' }}
+                    >
+                      {label}
+                    </text>
+                  </Marker>
+                )
+              })}
           </ZoomableGroup>
         </ComposableMap>
       </div>

@@ -105,8 +105,14 @@ export function AssetTable({ assets, onHoverAsset, onSelectAsset, selectedAssetI
             const missingData = hasMissingData(asset);
             const isSelected = selectedAssetId === asset.id;
             const volatility = asset.technical?.volatility_30d ?? calculateVolatility(asset);
-            const trendState = asset.technical?.trend_state ?? 'NEUTRAL'
+            const trendState = asset.technical?.trend_state ?? 'UNKNOWN'
             const trendChanged = asset.technical?.trend_changed ?? false
+            const quantityCurrent = asset.quantity_current ?? asset.quantity ?? null
+            const targetWeight = asset.target_weight_pct
+            const hasPortfolioBookData =
+              quantityCurrent !== null ||
+              asset.pru !== null ||
+              targetWeight !== null
             
             return (
               <tr 
@@ -138,11 +144,27 @@ export function AssetTable({ assets, onHoverAsset, onSelectAsset, selectedAssetI
                       <span className="text-[10px] font-mono font-bold text-slate-500 dark:text-gray-500 flex-shrink-0">{asset.ticker}</span>
                     </div>
                     <div className="flex justify-between items-baseline mt-1">
-                      <span className="text-[9px] font-black text-slate-500 dark:text-gray-500 uppercase tracking-widest">{asset.type}</span>
+                      <span className="text-[9px] font-black text-slate-500 dark:text-gray-500 uppercase tracking-widest">
+                        {asset.type}
+                        {asset.portfolio_ids && asset.portfolio_ids.length > 1 ? ` · ${asset.portfolio_ids.length}PF` : ''}
+                      </span>
                       <span className={`text-xs font-mono font-black ${missingData ? 'text-amber-600 dark:text-amber-500' : 'text-slate-950 dark:text-gray-200'}`}>
                         {missingData ? 'N/A' : (asset.price ?? 0).toLocaleString('fr-FR')} <span className="text-[9px] font-bold text-slate-500 dark:text-gray-500">{asset.currency}</span>
                       </span>
                     </div>
+                    {hasPortfolioBookData && (
+                      <div className="mt-1 text-[9px] font-mono text-slate-500 dark:text-gray-500 flex items-center justify-between gap-2">
+                        <span>
+                          QTY {quantityCurrent !== null ? quantityCurrent.toLocaleString('fr-FR', { maximumFractionDigits: 4 }) : '--'}
+                        </span>
+                        <span>
+                          PRU {asset.pru !== null && asset.pru !== undefined ? asset.pru.toLocaleString('fr-FR', { minimumFractionDigits: 2, maximumFractionDigits: 2 }) : '--'}
+                        </span>
+                        <span>
+                          TG {targetWeight !== null && targetWeight !== undefined ? `${targetWeight.toFixed(1)}%` : '--'}
+                        </span>
+                      </div>
+                    )}
                   </div>
                 </td>
                 <td className="p-0 border-r border-slate-200 dark:border-[#1a1d24] w-28"><PerformanceCell data={asset.performance.day} /></td>
@@ -167,6 +189,8 @@ export function AssetTable({ assets, onHoverAsset, onSelectAsset, selectedAssetI
                         ? "bg-green-100 text-green-700 border-green-300 dark:bg-green-950/30 dark:text-green-400 dark:border-green-800/60"
                         : trendState === 'BEARISH'
                         ? "bg-red-100 text-red-700 border-red-300 dark:bg-red-950/30 dark:text-red-400 dark:border-red-800/60"
+                        : trendState === 'UNKNOWN'
+                        ? "bg-amber-100 text-amber-700 border-amber-300 dark:bg-amber-950/30 dark:text-amber-400 dark:border-amber-800/60"
                         : "bg-slate-100 text-slate-600 border-slate-300 dark:bg-slate-800/40 dark:text-gray-400 dark:border-slate-700"
                     )}>
                       {trendState}

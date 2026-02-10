@@ -55,6 +55,17 @@ function formatPERatio(peRatio: number | null | undefined): string {
   return peRatio.toFixed(2)
 }
 
+function formatAmount(value: number | null | undefined, currency = 'EUR'): string {
+  if (value === null || value === undefined || Number.isNaN(value)) {
+    return 'N/A'
+  }
+
+  return `${value.toLocaleString('fr-FR', {
+    minimumFractionDigits: 2,
+    maximumFractionDigits: 2,
+  })} ${currency}`
+}
+
 interface AssetDetailDrawerProps {
   asset: Asset | null
   isOpen: boolean
@@ -180,6 +191,15 @@ export function AssetDetailDrawer({ asset, isOpen, onClose }: AssetDetailDrawerP
   const macdSignal = asset?.technical?.macd_signal ?? null
   const macdHist = asset?.technical?.macd_hist ?? null
   const momentum20 = asset?.technical?.momentum_20 ?? null
+  const trendState = asset?.technical?.trend_state ?? 'UNKNOWN'
+  const quantityCurrent = asset?.quantity_current ?? asset?.quantity ?? null
+  const quantityBuy = asset?.quantity_buy ?? null
+  const targetWeight = asset?.target_weight_pct ?? null
+  const marketValueEur = asset?.market_value_eur ?? null
+  const investedValueEur = asset?.invested_value_eur ?? null
+  const pnlEur = asset?.pnl_eur ?? null
+  const pnlPct = asset?.pnl_pct ?? null
+  const hasTechnicalHistory = trendState !== 'UNKNOWN'
 
   // ===== EVENT HANDLERS =====
   const handleYahooFinance = () => {
@@ -380,6 +400,90 @@ export function AssetDetailDrawer({ asset, isOpen, onClose }: AssetDetailDrawerP
               </div>
             </div>
 
+            {/* Portfolio Definition */}
+            <div className="bg-slate-50 dark:bg-[#080A0F] rounded-2xl border-2 border-slate-200 dark:border-white/5 p-6 shadow-xl">
+              <h3 className="text-sm font-black text-slate-950 dark:text-white uppercase tracking-tighter mb-4">
+                Portfolio Definition
+              </h3>
+              <div className="grid grid-cols-2 gap-4">
+                <div className="space-y-1">
+                  <span className="text-[10px] font-black text-slate-400 dark:text-gray-500 uppercase tracking-wider">
+                    Quantity Buy
+                  </span>
+                  <div className="text-lg font-mono font-black text-slate-950 dark:text-white">
+                    {quantityBuy !== null && quantityBuy !== undefined
+                      ? quantityBuy.toLocaleString('fr-FR', { maximumFractionDigits: 4 })
+                      : '--'}
+                  </div>
+                </div>
+                <div className="space-y-1">
+                  <span className="text-[10px] font-black text-slate-400 dark:text-gray-500 uppercase tracking-wider">
+                    Quantity Current
+                  </span>
+                  <div className="text-lg font-mono font-black text-slate-950 dark:text-white">
+                    {quantityCurrent !== null && quantityCurrent !== undefined
+                      ? quantityCurrent.toLocaleString('fr-FR', { maximumFractionDigits: 4 })
+                      : '--'}
+                  </div>
+                </div>
+                <div className="space-y-1">
+                  <span className="text-[10px] font-black text-slate-400 dark:text-gray-500 uppercase tracking-wider">
+                    PRU
+                  </span>
+                  <div className="text-lg font-mono font-black text-slate-950 dark:text-white">
+                    {asset?.pru !== null && asset?.pru !== undefined
+                      ? formatAmount(asset.pru, asset.currency)
+                      : 'N/A'}
+                  </div>
+                </div>
+                <div className="space-y-1">
+                  <span className="text-[10px] font-black text-slate-400 dark:text-gray-500 uppercase tracking-wider">
+                    Target Weight
+                  </span>
+                  <div className="text-lg font-mono font-black text-slate-950 dark:text-white">
+                    {targetWeight !== null && targetWeight !== undefined ? `${targetWeight.toFixed(2)}%` : '--'}
+                  </div>
+                </div>
+                <div className="space-y-1">
+                  <span className="text-[10px] font-black text-slate-400 dark:text-gray-500 uppercase tracking-wider">
+                    Market Value (EUR)
+                  </span>
+                  <div className="text-lg font-mono font-black text-slate-950 dark:text-white">
+                    {formatAmount(marketValueEur, 'EUR')}
+                  </div>
+                </div>
+                <div className="space-y-1">
+                  <span className="text-[10px] font-black text-slate-400 dark:text-gray-500 uppercase tracking-wider">
+                    Unrealized PnL
+                  </span>
+                  <div
+                    className={cn(
+                      'text-lg font-mono font-black',
+                      pnlEur === null || pnlEur === undefined
+                        ? 'text-slate-950 dark:text-white'
+                        : pnlEur >= 0
+                        ? 'text-green-600 dark:text-green-400'
+                        : 'text-red-600 dark:text-red-400'
+                    )}
+                  >
+                    {pnlEur === null || pnlEur === undefined
+                      ? 'N/A'
+                      : `${pnlEur >= 0 ? '+' : ''}${formatAmount(pnlEur, 'EUR')} (${pnlPct !== null && pnlPct !== undefined ? `${pnlPct >= 0 ? '+' : ''}${pnlPct.toFixed(2)}%` : '--'})`}
+                  </div>
+                  {investedValueEur !== null && investedValueEur !== undefined && (
+                    <div className="text-[10px] font-mono text-slate-500 dark:text-gray-500">
+                      Invested: {formatAmount(investedValueEur, 'EUR')}
+                    </div>
+                  )}
+                </div>
+              </div>
+              {asset.portfolio_names && asset.portfolio_names.length > 1 && (
+                <div className="mt-4 pt-3 border-t border-slate-200 dark:border-white/10 text-[10px] font-mono text-slate-500 dark:text-gray-400">
+                  Aggregated from: {asset.portfolio_names.join(' · ')}
+                </div>
+              )}
+            </div>
+
             {/* Technical Indicators */}
             <div className="bg-slate-50 dark:bg-[#080A0F] rounded-2xl border-2 border-slate-200 dark:border-white/5 p-6 shadow-xl">
               <div className="flex items-center gap-2 mb-4">
@@ -388,7 +492,35 @@ export function AssetDetailDrawer({ asset, isOpen, onClose }: AssetDetailDrawerP
                   Technical Indicators
                 </h3>
               </div>
+              {!hasTechnicalHistory && (
+                <div className="mb-4 p-3 rounded-lg bg-amber-50 dark:bg-amber-950/20 border border-amber-200 dark:border-amber-800/50 text-[11px] font-bold text-amber-700 dark:text-amber-300">
+                  Insufficient history: MACD / RSI / Momentum are currently unavailable for this instrument.
+                </div>
+              )}
               <div className="space-y-4">
+                <div className="flex items-center justify-between p-3 bg-white dark:bg-[#0A0D12] rounded-xl border border-slate-200 dark:border-white/5">
+                  <div className="flex flex-col">
+                    <span className="text-[10px] font-black text-slate-400 dark:text-gray-500 uppercase tracking-wider">
+                      Trend Regime
+                    </span>
+                    <span className="text-xs font-mono text-slate-600 dark:text-gray-400 mt-1">
+                      MACD + RSI(60) + Momentum(20)
+                    </span>
+                  </div>
+                  <span className={cn(
+                    'px-3 py-1.5 rounded-lg text-xs font-black uppercase tracking-tighter border',
+                    trendState === 'BULLISH'
+                      ? 'bg-green-100 dark:bg-green-950/30 text-green-700 dark:text-green-400 border-green-300 dark:border-green-800/50'
+                      : trendState === 'BEARISH'
+                      ? 'bg-red-100 dark:bg-red-950/30 text-red-700 dark:text-red-400 border-red-300 dark:border-red-800/50'
+                      : trendState === 'UNKNOWN'
+                      ? 'bg-amber-100 dark:bg-amber-950/30 text-amber-700 dark:text-amber-400 border-amber-300 dark:border-amber-800/50'
+                      : 'bg-slate-100 dark:bg-slate-800/50 text-slate-600 dark:text-gray-400 border-slate-300 dark:border-slate-700'
+                  )}>
+                    {trendState}
+                  </span>
+                </div>
+
                 {/* MA200 Status */}
                 <div className="flex items-center justify-between p-3 bg-white dark:bg-[#0A0D12] rounded-xl border border-slate-200 dark:border-white/5">
                   <div className="flex flex-col">
@@ -454,10 +586,12 @@ export function AssetDetailDrawer({ asset, isOpen, onClose }: AssetDetailDrawerP
                       <div className="w-1/5 bg-amber-500 dark:bg-amber-500/50"></div>
                       <div className="w-2/5 bg-green-500 dark:bg-green-500/50"></div>
                     </div>
-                    <div 
-                      className="absolute top-0 h-full w-1 bg-slate-950 dark:bg-white transition-all duration-500"
-                      style={{ left: `${Math.max(0, Math.min(100, rsi14 ?? 0))}%` }}
-                    />
+                    {rsi14 !== null && (
+                      <div
+                        className="absolute top-0 h-full w-1 bg-slate-950 dark:bg-white transition-all duration-500"
+                        style={{ left: `${Math.max(0, Math.min(100, rsi14))}%` }}
+                      />
+                    )}
                     <div
                       className="absolute top-0 h-full w-0.5 bg-blue-700/70 dark:bg-blue-300/70"
                       style={{ left: '60%' }}
@@ -488,7 +622,11 @@ export function AssetDetailDrawer({ asset, isOpen, onClose }: AssetDetailDrawerP
                       <div className="flex justify-between">
                         <span className="text-slate-500 dark:text-gray-500">Hist</span>
                         <span className={cn(
-                          macdHist !== null && macdHist >= 0 ? "text-green-600 dark:text-green-400" : "text-red-600 dark:text-red-400"
+                          macdHist === null
+                            ? 'text-slate-500 dark:text-gray-500'
+                            : macdHist >= 0
+                            ? 'text-green-600 dark:text-green-400'
+                            : 'text-red-600 dark:text-red-400'
                         )}>
                           {macdHist !== null ? macdHist.toFixed(3) : '--'}
                         </span>
@@ -501,12 +639,16 @@ export function AssetDetailDrawer({ asset, isOpen, onClose }: AssetDetailDrawerP
                     </span>
                     <div className={cn(
                       "mt-2 text-lg font-mono font-black",
-                      (momentum20 ?? 0) >= 0 ? "text-green-600 dark:text-green-400" : "text-red-600 dark:text-red-400"
+                      momentum20 === null
+                        ? 'text-slate-900 dark:text-gray-100'
+                        : momentum20 >= 0
+                        ? 'text-green-600 dark:text-green-400'
+                        : 'text-red-600 dark:text-red-400'
                     )}>
-                      {(momentum20 ?? 0) >= 0 ? '+' : ''}{momentum20 !== null ? momentum20.toFixed(2) : '--'}%
+                      {momentum20 === null ? '--' : `${momentum20 >= 0 ? '+' : ''}${momentum20.toFixed(2)}%`}
                     </div>
                     <div className="mt-1 text-[10px] font-bold text-slate-500 dark:text-gray-500 uppercase tracking-wider">
-                      {(momentum20 ?? 0) > 0 ? 'Positive Impulse' : 'Negative Impulse'}
+                      {momentum20 === null ? 'Insufficient history' : momentum20 > 0 ? 'Positive Impulse' : 'Negative Impulse'}
                     </div>
                   </div>
                 </div>

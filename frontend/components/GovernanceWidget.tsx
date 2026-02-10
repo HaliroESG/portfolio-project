@@ -25,6 +25,7 @@ interface AllocationData {
 
 interface GovernanceWidgetProps {
   assets: Asset[]
+  selectedPortfolioId?: string
 }
 
 // Normalize asset_class to standard format (EQUITY -> Equity)
@@ -67,7 +68,7 @@ function calculateDriftStatus(drift: number, toleranceBand: number): 'OK' | 'WAR
   }
 }
 
-export function GovernanceWidget({ assets }: GovernanceWidgetProps) {
+export function GovernanceWidget({ assets, selectedPortfolioId = 'ALL' }: GovernanceWidgetProps) {
   const [targets, setTargets] = useState<GovernanceTarget[]>([])
   const [loading, setLoading] = useState(true)
 
@@ -75,20 +76,24 @@ export function GovernanceWidget({ assets }: GovernanceWidgetProps) {
   useEffect(() => {
     async function fetchTargets() {
       try {
-        // First, get the first available portfolio_id
-        const portfoliosResponse = await supabase
-          .from('portfolios')
-          .select('id')
-          .limit(1)
-          .single()
-        
-        if (portfoliosResponse.error || !portfoliosResponse.data) {
-          console.warn('No portfolio found, skipping governance targets fetch')
-          setLoading(false)
-          return
+        let portfolioId = selectedPortfolioId
+
+        if (portfolioId === 'ALL') {
+          const portfoliosResponse = await supabase
+            .from('portfolios')
+            .select('id')
+            .limit(1)
+            .single()
+
+          if (portfoliosResponse.error || !portfoliosResponse.data) {
+            console.warn('No portfolio found, skipping governance targets fetch')
+            setTargets([])
+            setLoading(false)
+            return
+          }
+
+          portfolioId = portfoliosResponse.data.id
         }
-        
-        const portfolioId = portfoliosResponse.data.id
         
         // Fetch governance targets for this portfolio
         const { data, error } = await supabase
@@ -109,7 +114,7 @@ export function GovernanceWidget({ assets }: GovernanceWidgetProps) {
     }
     
     fetchTargets()
-  }, [])
+  }, [selectedPortfolioId])
 
   // Calculate current allocation based on assets (PRD Step 2)
   const { allocationData, hasBreach, totalTargetPct, unknownPct } = useMemo(() => {

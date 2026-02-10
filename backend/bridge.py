@@ -92,14 +92,52 @@ def classify_trend_state(macd_line, macd_signal, rsi_14, momentum_20):
     Classification de tendance:
     - BULLISH: MACD > signal, RSI >= 60, momentum > 0
     - BEARISH: MACD < signal, RSI < 40, momentum < 0
-    - sinon NEUTRAL
+    - NEUTRAL: indicateurs présents mais sans alignement
+    - UNKNOWN: indicateurs incomplets (historique insuffisant)
     """
-    if None not in (macd_line, macd_signal, rsi_14, momentum_20):
-        if macd_line > macd_signal and rsi_14 >= 60 and momentum_20 > 0:
-            return "BULLISH"
-        if macd_line < macd_signal and rsi_14 < 40 and momentum_20 < 0:
-            return "BEARISH"
+    if None in (macd_line, macd_signal, rsi_14, momentum_20):
+        return "UNKNOWN"
+
+    if macd_line > macd_signal and rsi_14 >= 60 and momentum_20 > 0:
+        return "BULLISH"
+    if macd_line < macd_signal and rsi_14 < 40 and momentum_20 < 0:
+        return "BEARISH"
     return "NEUTRAL"
+
+
+def parse_numeric(value):
+    """
+    Parse robuste de champs numériques (quantités, PRU, target, etc.).
+    Accepte int/float/string avec virgule, symbole %, devise.
+    """
+    if value is None:
+        return None
+
+    if isinstance(value, (int, float, np.integer, np.floating)):
+        try:
+            if np.isnan(value):
+                return None
+        except Exception:
+            pass
+        return float(value)
+
+    if isinstance(value, str):
+        cleaned = (
+            value.strip()
+            .replace("€", "")
+            .replace("$", "")
+            .replace("%", "")
+            .replace(" ", "")
+            .replace(",", ".")
+        )
+        if cleaned == "":
+            return None
+        try:
+            return float(cleaned)
+        except Exception:
+            return None
+
+    return None
 
 def update_macro_hub():
     # Liste des indicateurs : Ticker Yahoo -> [Nom, Catégorie]
@@ -692,7 +730,8 @@ def update_currencies():
 
 def run_sync():
     client = get_gspread_client()
-    if not client: return
+    if not client:
+        return
 
     sheet_name = os.environ.get("GSHEET_NAME")
     try:
@@ -703,6 +742,16 @@ def run_sync():
         print(f"❌ Erreur ouverture GSheet: {e}", flush=True)
         return
 
+    # Portfolio par défaut (fallback si la feuille ne fournit pas portfolio_id)
+    default_portfolio_id = None
+    try:
+        portfolios_response = supabase.table("portfolios").select("id").limit(1).execute()
+        if portfolios_response.data and len(portfolios_response.data) > 0:
+            default_portfolio_id = portfolios_response.data[0].get("id")
+            print(f"ℹ️ Portfolio par défaut: {default_portfolio_id}", flush=True)
+    except Exception as e:
+        print(f"⚠️ Impossible de récupérer le portfolio par défaut: {e}", flush=True)
+
     # Variables pour calculer le coverage
     total_portfolio_value = 0.0
     covered_value = 0.0  # Valeur des actifs avec status OK ou STALE
@@ -710,23 +759,93 @@ def run_sync():
 
     for asset in assets:
         data_clean = {k.strip().lower(): v for k, v in asset.items()}
-        ticker_key = next((k for k in data_clean.keys() if 'ticker' in k), None)
-        name_key = next((k for k in data_clean.keys() if 'nom' in k or 'name' in k), 'nom')
-        currency_key = next((k for k in data_clean.keys() if 'devise' in k or 'curr' in k), 'devise')
-        geo_key = next((k for k in data_clean.keys() if 'poids' in k or 'geo' in k), None)
-        
-        if not ticker_key: continue
-        ticker = data_clean[ticker_key]
-        currency = data_clean.get(currency_key, "EUR").strip().upper()
-        if not ticker: continue
+        keys = list(data_clean.keys())
+
+        ticker_key = next((k for k in keys if 'ticker' in k), None)
+        name_key = next((k for k in keys if 'nom' in k or 'name' in k), None)
+        currency_key = next((k for k in keys if 'devise' in k or 'curr' in k or 'currency' in k), None)
+        portfolio_key = next((k for k in keys if 'portfolio_id' in k or k == 'portfolio' or 'portfolio' in k), None)
+        type_key = next((k for k in keys if k == 'type' or 'instrument' in k), None)
+        asset_class_key = next((k for k in keys if 'asset_class' in k or 'classe' in k), None)
+        quantity_buy_key = next((k for k in keys if ('quantity_buy' in k or 'qty_buy' in k or 'achat' in k or 'buy' in k)), None)
+        quantity_current_key = next((
+            k for k in keys
+            if (
+                'quantity_current' in k or
+                'qty_current' in k or
+                ('quantity' in k and 'buy' not in k and 'achat' not in k) or
+                ('quantite' in k and 'achat' not in k) or
+                'holding' in k or
+                'position' in k
+            )
+        ), None)
+        pru_key = next((k for k in keys if 'pru' in k or 'average_cost' in k or 'avg_cost' in k), None)
+        target_key = next((
+            k for k in keys
+            if ('target' in k or 'cible' in k) and 'geo' not in k and 'country' not in k and 'pays' not in k
+        ), None)
+        geo_key = next((
+            k for k in keys
+            if ('geo' in k or 'pays' in k or ('poids' in k and 'target' not in k and 'cible' not in k))
+        ), None)
+
+        if not ticker_key:
+            continue
+
+        raw_ticker = data_clean.get(ticker_key)
+        ticker = str(raw_ticker).strip().upper() if raw_ticker is not None else ""
+        if ticker == "":
+            continue
+
+        raw_currency = data_clean.get(currency_key, "EUR") if currency_key else "EUR"
+        currency = str(raw_currency).strip().upper() if raw_currency is not None else "EUR"
+        if currency == "":
+            currency = "EUR"
+
+        raw_portfolio = data_clean.get(portfolio_key) if portfolio_key else None
+        row_portfolio_id = str(raw_portfolio).strip() if raw_portfolio not in [None, ""] else default_portfolio_id
+        if row_portfolio_id == "":
+            row_portfolio_id = default_portfolio_id
+
+        quantity_buy = parse_numeric(data_clean.get(quantity_buy_key)) if quantity_buy_key else None
+        quantity_current = parse_numeric(data_clean.get(quantity_current_key)) if quantity_current_key else None
+        if quantity_current is None:
+            quantity_current = parse_numeric(data_clean.get("quantity"))
+        if quantity_current is None or quantity_current <= 0:
+            quantity_current = 1.0
+
+        if quantity_buy is None or quantity_buy <= 0:
+            quantity_buy = quantity_current
+
+        pru = parse_numeric(data_clean.get(pru_key)) if pru_key else None
+        if pru is not None and pru <= 0:
+            pru = None
+
+        target_weight_pct = parse_numeric(data_clean.get(target_key)) if target_key else None
+        if target_weight_pct is not None:
+            if 0 < target_weight_pct <= 1:
+                target_weight_pct = target_weight_pct * 100
+            if target_weight_pct < 0:
+                target_weight_pct = None
 
         geo_coverage = {}
         if geo_key:
             raw_geo = data_clean[geo_key]
-            if isinstance(raw_geo, str) and "{" in raw_geo:
+            if isinstance(raw_geo, dict):
+                for country_code, weight in raw_geo.items():
+                    parsed_weight = parse_numeric(weight)
+                    if parsed_weight is not None and parsed_weight > 0:
+                        geo_coverage[str(country_code).upper()] = parsed_weight
+            elif isinstance(raw_geo, str) and "{" in raw_geo:
                 try:
-                    geo_coverage = json.loads(raw_geo.replace("'", '"'))
-                except: pass
+                    parsed_geo = json.loads(raw_geo.replace("'", '"'))
+                    if isinstance(parsed_geo, dict):
+                        for country_code, weight in parsed_geo.items():
+                            parsed_weight = parse_numeric(weight)
+                            if parsed_weight is not None and parsed_weight > 0:
+                                geo_coverage[str(country_code).upper()] = parsed_weight
+                except Exception:
+                    pass
 
         mkt = get_financial_data(ticker, currency)
         if mkt:
@@ -771,11 +890,19 @@ def run_sync():
             trend_changed = (
                 previous_trend_state is not None and
                 current_trend_state is not None and
+                previous_trend_state != 'UNKNOWN' and
+                current_trend_state != 'UNKNOWN' and
                 previous_trend_state != current_trend_state
             )
-            
-            # Calculer la valeur de l'actif pour le coverage (en EUR)
-            asset_value = mkt.get('last_price', 0)
+
+            # Type / classe depuis la feuille (si présents)
+            raw_type = data_clean.get(type_key) if type_key else None
+            asset_type = str(raw_type).strip().upper() if raw_type not in [None, ""] else None
+            raw_asset_class = data_clean.get(asset_class_key) if asset_class_key else None
+            asset_class = str(raw_asset_class).strip() if raw_asset_class not in [None, ""] else None
+
+            # Calculer la valeur de la position pour le coverage (en EUR)
+            asset_value = mkt.get('last_price', 0) * quantity_current
             # Convertir en EUR si nécessaire (approximation simple)
             if currency != "EUR":
                 try:
@@ -789,7 +916,7 @@ def run_sync():
                     asset_value_eur = asset_value
             else:
                 asset_value_eur = asset_value
-            
+
             total_portfolio_value += asset_value_eur
             # Seuls les actifs avec status OK ou STALE comptent dans le coverage
             if data_status in ['OK', 'STALE']:
@@ -800,12 +927,21 @@ def run_sync():
                 'value': asset_value_eur,
                 'status': data_status
             })
-            
+
+            asset_name_raw = data_clean.get(name_key, ticker) if name_key else ticker
+            asset_name = str(asset_name_raw).strip() if asset_name_raw is not None else ticker
+            if asset_name == "":
+                asset_name = ticker
+
             payload = {
                 "ticker": ticker,
-                "name": data_clean.get(name_key, ticker),
+                "name": asset_name,
                 "last_price": mkt['last_price'],
                 "currency": currency,
+                "quantity": quantity_current,
+                "quantity_buy": quantity_buy,
+                "pru": pru,
+                "target_weight_pct": target_weight_pct,
                 "perf_day_local": mkt['perf_local']['day'],
                 "perf_day_eur": mkt['perf_eur']['day'],
                 "perf_week_local": mkt['perf_eur']['week'],
@@ -832,6 +968,13 @@ def run_sync():
                 "data_status": data_status,
                 "last_update": datetime.now().isoformat()
             }
+
+            if row_portfolio_id is not None:
+                payload["portfolio_id"] = row_portfolio_id
+            if asset_type is not None:
+                payload["type"] = asset_type
+            if asset_class is not None:
+                payload["asset_class"] = asset_class
             
             try:
                 supabase.table("market_watch").upsert(payload, on_conflict='ticker').execute()
@@ -848,11 +991,35 @@ def run_sync():
                         "momentum_20",
                         "trend_state",
                         "trend_changed",
+                        "quantity_buy",
+                        "pru",
+                        "target_weight_pct",
+                        "portfolio_id",
                     ]}
                     supabase.table("market_watch").upsert(fallback_payload, on_conflict='ticker').execute()
                     print(f"    ✅ {ticker} synchronisé en mode compatibilité schéma", flush=True)
                 except Exception as fallback_error:
                     print(f"    ❌ Erreur Supabase {ticker} (fallback): {fallback_error}", flush=True)
+
+            # Upsert des positions détaillées (multi-portefeuille)
+            if row_portfolio_id is not None:
+                position_payload = {
+                    "portfolio_id": row_portfolio_id,
+                    "ticker": ticker,
+                    "name": asset_name,
+                    "instrument_type": asset_type if asset_type is not None else "STOCK",
+                    "currency": currency,
+                    "quantity_buy": quantity_buy,
+                    "quantity_current": quantity_current,
+                    "pru": pru,
+                    "target_weight_pct": target_weight_pct,
+                    "geo_coverage": geo_coverage,
+                    "updated_at": datetime.now().isoformat(),
+                }
+                try:
+                    supabase.table("portfolio_positions").upsert(position_payload, on_conflict='portfolio_id,ticker').execute()
+                except Exception as position_error:
+                    print(f"    ⚠️ Positions non synchronisées pour {ticker} (table absente ou schéma incomplet): {position_error}", flush=True)
     
     # Calculer et enregistrer le coverage_pct dans valuation_snapshots
     if total_portfolio_value > 0:
@@ -863,17 +1030,18 @@ def run_sync():
         print(f"    Coverage: {coverage_pct:.2f}%", flush=True)
         
         # Récupérer le premier portfolio_id disponible depuis la table portfolios
-        portfolio_id = None
-        try:
-            portfolios_response = supabase.table("portfolios").select("id").limit(1).execute()
-            if portfolios_response.data and len(portfolios_response.data) > 0:
-                portfolio_id = portfolios_response.data[0].get("id")
-                print(f"    ℹ️ Portfolio ID récupéré: {portfolio_id}", flush=True)
-            else:
-                print(f"    ⚠️ Aucun portfolio trouvé dans la table portfolios, snapshot ignoré", flush=True)
-        except Exception as e:
-            print(f"    ⚠️ Erreur lors de la récupération du portfolio_id: {e}", flush=True)
-            print(f"    ⚠️ Snapshot ignoré pour éviter un crash", flush=True)
+        portfolio_id = default_portfolio_id
+        if portfolio_id is None:
+            try:
+                portfolios_response = supabase.table("portfolios").select("id").limit(1).execute()
+                if portfolios_response.data and len(portfolios_response.data) > 0:
+                    portfolio_id = portfolios_response.data[0].get("id")
+                    print(f"    ℹ️ Portfolio ID récupéré: {portfolio_id}", flush=True)
+                else:
+                    print(f"    ⚠️ Aucun portfolio trouvé dans la table portfolios, snapshot ignoré", flush=True)
+            except Exception as e:
+                print(f"    ⚠️ Erreur lors de la récupération du portfolio_id: {e}", flush=True)
+                print(f"    ⚠️ Snapshot ignoré pour éviter un crash", flush=True)
         
         # Insérer le snapshot seulement si un portfolio_id a été trouvé
         if portfolio_id:

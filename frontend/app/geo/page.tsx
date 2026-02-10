@@ -1,218 +1,59 @@
 "use client"
 
-import React, { useState, useEffect } from 'react'
+import React, { useEffect, useMemo, useState } from 'react'
 import { Sidebar } from '../../components/Sidebar'
 import { Header } from '../../components/Header'
 import { GeographicMap } from '../../components/GeographicMap'
 import { supabase } from '../../lib/supabase'
 import { Globe, Loader2 } from 'lucide-react'
 import { cn } from '../../lib/utils'
-import { MarketRegion } from '../../types'
+import { Asset, CountryPerformance, GeoTimeframe, PortfolioOption } from '../../types'
+import { buildGeographicPerformance, loadPortfolioAggregation } from '../../lib/portfolioData'
 
-interface CountryPerformance {
-  code: string
-  name: string
-  avgPerformance: number
-  assetCount: number
-  totalExposure: number
-}
-
-interface MarketWatchGeoRow {
-  ticker: string | null
-  perf_day_eur: number | null
-  perf_ytd_eur: number | null
-  perf_ytd_local: number | null
-  last_price: number | null
-  last_update: string | null
-}
-
-// Coordonnées GPS pour chaque pays (format [latitude, longitude])
-const COUNTRY_COORDS: Record<string, [number, number]> = {
-  'US': [37, -95], // États-Unis (centre)
-  'FR': [46, 2], // France
-  'GB': [55, -3], // Royaume-Uni
-  'DE': [51, 10], // Allemagne
-  'JP': [36, 138], // Japon
-  'CN': [35, 104], // Chine
-  'CH': [46, 8], // Suisse
-  'CA': [56, -106], // Canada
-  'AU': [-25, 133], // Australie
-  'IT': [41, 12], // Italie
-  'ES': [40, -3], // Espagne
-  'NL': [52, 5], // Pays-Bas
-  'SE': [60, 18], // Suède
-  'NO': [60, 8], // Norvège
-  'DK': [56, 9], // Danemark
-  'FI': [61, 25], // Finlande
-  'IE': [53, -8], // Irlande
-  'BE': [50, 4], // Belgique
-}
-
-// Mapping des suffixes de ticker vers codes pays
-const TICKER_SUFFIX_TO_COUNTRY: Record<string, string> = {
-  '.PA': 'FR', // France
-  '.US': 'US', // USA
-  '.DE': 'DE', // Germany
-  '.UK': 'GB', // UK
-  '.JP': 'JP', // Japan
-  '.CN': 'CN', // China
-  '.CH': 'CH', // Switzerland
-  '.SW': 'CH', // Switzerland (alternative)
-  '.CA': 'CA', // Canada
-  '.AU': 'AU', // Australia
-  '.IT': 'IT', // Italy
-  '.MI': 'IT', // Italy (Milan)
-  '.ES': 'ES', // Spain
-  '.MC': 'ES', // Spain (Madrid)
-  '.AS': 'NL', // Netherlands (Amsterdam)
-  '.NL': 'NL', // Netherlands
-  '.SE': 'SE', // Sweden
-  '.NO': 'NO', // Norway
-  '.DK': 'DK', // Denmark
-  '.FI': 'FI', // Finland
-  '.IE': 'IE', // Ireland
-  '.BE': 'BE', // Belgium
-}
-
-const COUNTRY_NAMES: Record<string, string> = {
-  'US': 'United States',
-  'FR': 'France',
-  'GB': 'United Kingdom',
-  'DE': 'Germany',
-  'JP': 'Japan',
-  'CN': 'China',
-  'CH': 'Switzerland',
-  'CA': 'Canada',
-  'AU': 'Australia',
-  'IT': 'Italy',
-  'ES': 'Spain',
-  'NL': 'Netherlands',
-  'SE': 'Sweden',
-  'NO': 'Norway',
-  'DK': 'Denmark',
-  'FI': 'Finland',
-  'IE': 'Ireland',
-  'BE': 'Belgium',
-}
-
-function getCountryFromTicker(ticker: string): string | null {
-  if (!ticker) return null
-  
-  // Cherche le suffixe dans le ticker
-  for (const [suffix, countryCode] of Object.entries(TICKER_SUFFIX_TO_COUNTRY)) {
-    if (ticker.endsWith(suffix)) {
-      return countryCode
-    }
-  }
-  
-  // Si pas de suffixe, essaie de détecter par préfixe ou autres patterns
-  if (ticker.startsWith('^') || ticker.includes('=')) {
-    return null // Indices ou FX, on ignore
-  }
-  
-  // Tickers US communs sans suffixe (ORCL, EL, etc.)
-  const usTickers = ['ORCL', 'EL', 'AAPL', 'MSFT', 'GOOGL', 'AMZN', 'TSLA', 'META', 'NVDA']
-  if (usTickers.includes(ticker.toUpperCase())) {
-    return 'US'
-  }
-  
-  // Par défaut, si c'est un ticker US simple (3-5 lettres sans suffixe), on assume US
-  if (/^[A-Z]{3,5}$/.test(ticker)) {
-    return 'US'
-  }
-  
-  return null
+function getDisplayedPerformance(country: CountryPerformance, timeframe: GeoTimeframe): number {
+  if (timeframe === 'day') return country.performanceDay
+  if (timeframe === 'month') return country.performanceMonth
+  return country.performanceYtd
 }
 
 export default function GeoPage() {
-  const [lastSync, setLastSync] = useState("")
-  const [countryPerformance, setCountryPerformance] = useState<CountryPerformance[]>([])
-  const [regions, setRegions] = useState<MarketRegion[]>([])
+  const [lastSync, setLastSync] = useState('')
+  const [assetsByPortfolio, setAssetsByPortfolio] = useState<Record<string, Asset[]>>({ ALL: [] })
+  const [portfolioOptions, setPortfolioOptions] = useState<PortfolioOption[]>([])
+  const [selectedPortfolioId, setSelectedPortfolioId] = useState<string>('ALL')
+  const [timeframe, setTimeframe] = useState<GeoTimeframe>('day')
   const [loading, setLoading] = useState(true)
+
+  const assets = useMemo(() => {
+    return assetsByPortfolio[selectedPortfolioId] ?? assetsByPortfolio.ALL ?? []
+  }, [assetsByPortfolio, selectedPortfolioId])
+
+  const { regions, countries } = useMemo(() => {
+    return buildGeographicPerformance(assets, timeframe)
+  }, [assets, timeframe])
 
   useEffect(() => {
     async function fetchData() {
       try {
-        const { data, error } = await supabase.from('market_watch').select('*')
-        if (error) throw error
-        const typedData = (data ?? []) as MarketWatchGeoRow[]
-        
-        if (typedData.length > 0) {
-          const latestUpdate = typedData.reduce((max: string, item) => {
-            const itemUpdate = item.last_update
-            if (!itemUpdate) return max
-            return new Date(itemUpdate) > new Date(max) ? itemUpdate : max
-          }, typedData[0]?.last_update ?? new Date().toISOString())
-          setLastSync(new Date(latestUpdate).toLocaleTimeString('fr-FR'))
+        const bundle = await loadPortfolioAggregation(supabase)
+        setAssetsByPortfolio(bundle.assetsByPortfolio)
+        setPortfolioOptions(bundle.portfolioOptions)
+        setLastSync(bundle.lastSync)
 
-          // Grouper par pays et calculer la performance moyenne et l'exposition
-          const countryMap = new Map<string, { total: number; count: number; totalExposure: number }>()
-          
-          typedData.forEach((item) => {
-            const ticker = item.ticker || ''
-            const countryCode = getCountryFromTicker(ticker)
-            
-            if (countryCode) {
-              // Utiliser perf_day_eur pour la performance quotidienne
-              const perf = (item.perf_day_eur || item.perf_ytd_eur || item.perf_ytd_local || 0) * 100
-              const exposure = item.last_price || 0 // Utiliser le prix comme proxy d'exposition
-              
-              if (!countryMap.has(countryCode)) {
-                countryMap.set(countryCode, { total: 0, count: 0, totalExposure: 0 })
-              }
-              
-              const entry = countryMap.get(countryCode)!
-              entry.total += perf
-              entry.count += 1
-              entry.totalExposure += exposure
-            }
-          })
-
-          // Convertir en array et calculer les moyennes
-          const performance: CountryPerformance[] = Array.from(countryMap.entries())
-            .map(([code, { total, count, totalExposure }]) => ({
-              code,
-              name: COUNTRY_NAMES[code] || code,
-              avgPerformance: total / count,
-              assetCount: count,
-              totalExposure
-            }))
-            .sort((a, b) => b.avgPerformance - a.avgPerformance)
-
-          setCountryPerformance(performance)
-
-          // Préparer les régions pour la carte selon l'interface MarketRegion
-          const totalGlobalExposure = performance.reduce((sum, p) => sum + p.totalExposure, 0) || 1
-          const maxPerf = Math.max(...performance.map(p => Math.abs(p.avgPerformance)), 1) || 1
-          
-          const regionsData: MarketRegion[] = performance.map((p, index) => {
-            const coords = COUNTRY_COORDS[p.code] || [0, 0] as [number, number] // Fallback si pays non trouvé
-            const exposurePct = (p.totalExposure / totalGlobalExposure) * 100
-            const normalizedValue = Math.max(0, (p.avgPerformance / maxPerf) * 100) // Normaliser pour l'affichage
-            
-            return {
-              id: `region-${p.code}-${index}`,
-              code: p.code,
-              name: p.name,
-              value: normalizedValue,
-              performance: p.avgPerformance,
-              exposure: exposurePct,
-              coordinates: coords
-            }
-          })
-          
-          setRegions(regionsData)
-          setLoading(false)
-        } else {
-          setLoading(false)
+        if (selectedPortfolioId !== 'ALL' && !bundle.assetsByPortfolio[selectedPortfolioId]) {
+          setSelectedPortfolioId('ALL')
         }
-      } catch (err) {
-        console.error('Error fetching geographic data:', err)
+      } catch (error) {
+        console.error('Error fetching geographic data:', error)
+      } finally {
         setLoading(false)
       }
     }
+
     fetchData()
-  }, [])
+    const interval = setInterval(fetchData, 300000)
+    return () => clearInterval(interval)
+  }, [selectedPortfolioId])
 
   return (
     <div className="flex h-screen bg-slate-100 dark:bg-[#080A0F] text-slate-900 transition-colors duration-500">
@@ -220,11 +61,53 @@ export default function GeoPage() {
       <div className="flex-1 flex flex-col min-w-0">
         <Header lastSync={lastSync} />
         <main className="flex-1 p-8 flex flex-col gap-8">
-          <div className="flex justify-between items-center">
+          <div className="flex justify-between items-center gap-4">
             <h1 className="text-4xl font-black uppercase tracking-tighter text-slate-950 dark:text-white">
               Global <span className="text-[#00FF88]">Exposure</span>
             </h1>
+
+            <div className="flex items-center gap-3">
+              <div className="flex items-center gap-2 rounded-lg bg-slate-200/70 dark:bg-white/10 px-2 py-1">
+                <span className="text-[9px] font-black uppercase tracking-wider text-slate-500 dark:text-gray-400">Portfolio</span>
+                <select
+                  value={selectedPortfolioId}
+                  onChange={(event) => setSelectedPortfolioId(event.target.value)}
+                  className="bg-transparent text-[10px] font-black text-slate-900 dark:text-white outline-none"
+                >
+                  <option value="ALL">All Portfolios</option>
+                  {portfolioOptions.map((portfolio) => (
+                    <option key={portfolio.id} value={portfolio.id}>
+                      {portfolio.name}
+                    </option>
+                  ))}
+                </select>
+              </div>
+
+              <div className="flex items-center gap-1">
+                {(
+                  [
+                    { key: 'day', label: 'Daily' },
+                    { key: 'month', label: 'Monthly' },
+                    { key: 'ytd', label: 'YTD' },
+                  ] as const
+                ).map((option) => (
+                  <button
+                    key={option.key}
+                    onClick={() => setTimeframe(option.key)}
+                    className={cn(
+                      'px-3 py-1 rounded-lg text-[10px] font-black uppercase tracking-wider transition-colors',
+                      timeframe === option.key
+                        ? 'bg-slate-950 text-white dark:bg-[#00FF88] dark:text-black'
+                        : 'bg-slate-200 text-slate-600 dark:bg-white/10 dark:text-gray-400 hover:bg-slate-300 dark:hover:bg-white/20'
+                    )}
+                  >
+                    {option.label}
+                  </button>
+                ))}
+              </div>
+            </div>
           </div>
+
           <div className="flex-1 grid grid-cols-12 gap-8">
             <div className="col-span-9 bg-white dark:bg-black/20 rounded-3xl border-2 border-slate-200 dark:border-white/5 shadow-2xl dark:shadow-inner p-4 relative overflow-hidden">
               <div className="w-full h-full rounded-2xl bg-white dark:bg-transparent transition-colors scale-100">
@@ -240,45 +123,68 @@ export default function GeoPage() {
                     </div>
                   </div>
                 ) : (
-                  <GeographicMap regions={regions} hoveredAsset={null} />
+                  <GeographicMap
+                    regions={regions}
+                    hoveredAsset={null}
+                    showBubbles
+                    viewLabel={`WEIGHTED ${timeframe.toUpperCase()} PERFORMANCE`}
+                  />
                 )}
               </div>
             </div>
+
             <div className="col-span-3 space-y-6">
               <div className="p-6 bg-white dark:bg-[#0D1117]/50 rounded-3xl border-2 border-slate-200 dark:border-white/5 shadow-xl">
                 <h3 className="text-sm font-black uppercase mb-6 text-slate-950 dark:text-white">Regional Performance</h3>
                 <div className="space-y-4">
-                  {countryPerformance.map((country) => (
-                    <div key={country.code} className="space-y-1">
-                      <div className="flex justify-between items-center">
-                        <span className="text-[10px] font-bold uppercase text-slate-500 dark:text-gray-400">
-                          {country.name}
-                        </span>
-                        <span className={cn(
-                          "text-[10px] font-mono font-black",
-                          country.avgPerformance >= 0
-                            ? "text-green-600 dark:text-green-400"
-                            : "text-red-600 dark:text-red-400"
-                        )}>
-                          {country.avgPerformance >= 0 ? '+' : ''}{country.avgPerformance.toFixed(2)}%
-                        </span>
+                  {countries.map((country) => {
+                    const displayed = getDisplayedPerformance(country, timeframe)
+                    return (
+                      <div key={country.code} className="space-y-2">
+                        <div className="flex justify-between items-start gap-2">
+                          <div className="min-w-0">
+                            <span className="text-[10px] font-bold uppercase text-slate-500 dark:text-gray-400 block truncate">
+                              {country.name}
+                            </span>
+                            <span className="text-[9px] text-slate-400 dark:text-gray-500">
+                              {country.exposurePct.toFixed(1)}% weight · {country.assetCount} asset{country.assetCount > 1 ? 's' : ''}
+                            </span>
+                          </div>
+                          <span
+                            className={cn(
+                              'text-[10px] font-mono font-black',
+                              displayed >= 0 ? 'text-green-600 dark:text-green-400' : 'text-red-600 dark:text-red-400'
+                            )}
+                          >
+                            {displayed >= 0 ? '+' : ''}
+                            {displayed.toFixed(2)}%
+                          </span>
+                        </div>
+
+                        <div className="h-1.5 w-full bg-slate-100 dark:bg-white/5 rounded-full overflow-hidden">
+                          <div
+                            className={cn(
+                              'h-full transition-all duration-500',
+                              displayed >= 0 ? 'bg-green-500 dark:bg-green-400' : 'bg-red-500 dark:bg-red-400'
+                            )}
+                            style={{ width: `${Math.min(100, country.exposurePct)}%` }}
+                          />
+                        </div>
+
+                        <div className="grid grid-cols-3 gap-1 text-[8px] font-mono">
+                          <span className={cn(country.performanceDay >= 0 ? 'text-green-600 dark:text-green-400' : 'text-red-600 dark:text-red-400')}>
+                            D {country.performanceDay >= 0 ? '+' : ''}{country.performanceDay.toFixed(1)}%
+                          </span>
+                          <span className={cn(country.performanceMonth >= 0 ? 'text-green-600 dark:text-green-400' : 'text-red-600 dark:text-red-400')}>
+                            M {country.performanceMonth >= 0 ? '+' : ''}{country.performanceMonth.toFixed(1)}%
+                          </span>
+                          <span className={cn(country.performanceYtd >= 0 ? 'text-green-600 dark:text-green-400' : 'text-red-600 dark:text-red-400')}>
+                            YTD {country.performanceYtd >= 0 ? '+' : ''}{country.performanceYtd.toFixed(1)}%
+                          </span>
+                        </div>
                       </div>
-                      <div className="h-1.5 w-full bg-slate-100 dark:bg-white/5 rounded-full overflow-hidden">
-                        <div 
-                          className={cn(
-                            "h-full transition-all duration-500",
-                            country.avgPerformance >= 0
-                              ? "bg-green-500 dark:bg-green-400"
-                              : "bg-red-500 dark:bg-red-400"
-                          )}
-                          style={{ width: `${Math.min(100, Math.abs(country.avgPerformance) * 10)}%` }}
-                        />
-                      </div>
-                      <div className="text-[8px] text-slate-400 dark:text-gray-500">
-                        {country.assetCount} asset{country.assetCount > 1 ? 's' : ''}
-                      </div>
-                    </div>
-                  ))}
+                    )
+                  })}
                 </div>
               </div>
             </div>
