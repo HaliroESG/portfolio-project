@@ -2,7 +2,7 @@
 
 import React, { useEffect, useState, useCallback } from 'react'
 import { supabase } from '../lib/supabase'
-import { AlertTriangle, ShieldCheck, Zap, Activity, TrendingUp, TrendingDown, Bell } from 'lucide-react'
+import { AlertTriangle, ShieldCheck, Zap, Activity, Bell } from 'lucide-react'
 
 interface MacroIndicator {
   id: string;

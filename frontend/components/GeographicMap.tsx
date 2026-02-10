@@ -1,6 +1,6 @@
 "use client"
 
-import React, { useMemo, useState, useEffect } from 'react'
+import React, { useMemo } from 'react'
 import { ComposableMap, Geographies, Geography, ZoomableGroup } from 'react-simple-maps'
 import { scaleLinear } from 'd3-scale'
 import { Asset, MarketRegion } from '../types'
@@ -23,34 +23,6 @@ interface GeographicMapProps {
 }
 
 export function GeographicMap({ regions, hoveredAsset }: GeographicMapProps) {
-  const [mounted, setMounted] = useState(false)
-  const [isDark, setIsDark] = useState(false)
-
-  // Évite les erreurs d'hydratation Next.js et détecte le thème
-  useEffect(() => {
-    setMounted(true)
-    // Check initial theme
-    const checkTheme = () => {
-      if (typeof window !== 'undefined') {
-        const isDarkMode = document.documentElement.classList.contains('dark') ||
-          window.matchMedia('(prefers-color-scheme: dark)').matches
-        setIsDark(isDarkMode)
-      }
-    }
-    checkTheme()
-    
-    // Watch for theme changes
-    const observer = new MutationObserver(checkTheme)
-    if (typeof window !== 'undefined') {
-      observer.observe(document.documentElement, {
-        attributes: true,
-        attributeFilter: ['class']
-      })
-    }
-    
-    return () => observer.disconnect()
-  }, [])
-
   // Échelle de couleur pour la heatmap globale
   const colorScale = useMemo(() => 
     scaleLinear<string>()
@@ -65,8 +37,6 @@ export function GeographicMap({ regions, hoveredAsset }: GeographicMapProps) {
     regions.forEach((r) => map.set(r.code.toUpperCase(), r.performance))
     return map
   }, [regions])
-
-  if (!mounted) return <div className="h-full w-full bg-white dark:bg-[#080A0F]" />
 
   return (
     <div className="bg-white dark:bg-[#080A0F] h-full w-full flex flex-col relative overflow-hidden shadow-inner dark:shadow-2xl">
@@ -97,9 +67,9 @@ export function GeographicMap({ regions, hoveredAsset }: GeographicMapProps) {
                   const perf = performanceMap.get(countryCode);
                   
                   // Base colors: light gray in light mode, dark gray in dark mode
-                  let fill = isDark ? 'rgba(30, 41, 59, 0.5)' : 'rgb(241, 245, 249)'; // slate-800/50 or slate-100
+                  let fill = 'rgb(241, 245, 249)'; // slate-100
                   let opacity = 1;
-                  let stroke = isDark ? 'rgb(51, 65, 85)' : 'rgb(203, 213, 225)'; // slate-700 or slate-300
+                  let stroke = 'rgb(203, 213, 225)'; // slate-300
                   let strokeWidth = 0.5;
 
                   // --- OVERRIDE SI SURVOL (Look-through) ---

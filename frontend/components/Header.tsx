@@ -26,8 +26,8 @@ function isRecentSync(lastSync: string): boolean {
     syncTime.setHours(hours, minutes, 0, 0)
     
     // Calculate difference in hours
-    let diffMs = now.getTime() - syncTime.getTime()
-    let diffHours = diffMs / (1000 * 60 * 60)
+    const diffMs = now.getTime() - syncTime.getTime()
+    const diffHours = diffMs / (1000 * 60 * 60)
     
     // If sync time appears to be in the future (same day, later time), it's recent
     if (diffMs < 0) {

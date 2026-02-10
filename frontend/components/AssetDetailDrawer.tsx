@@ -7,6 +7,25 @@ import { cn } from '../lib/utils'
 import { supabase } from '../lib/supabase'
 import { Tooltip } from './Tooltip'
 
+const WATCHLIST_STORAGE_KEY = 'portfolio_watchlist_tickers'
+
+function readWatchlist(): string[] {
+  if (typeof window === 'undefined') return []
+  try {
+    const raw = window.localStorage.getItem(WATCHLIST_STORAGE_KEY)
+    if (!raw) return []
+    const parsed = JSON.parse(raw)
+    return Array.isArray(parsed) ? parsed.filter((value) => typeof value === 'string') : []
+  } catch {
+    return []
+  }
+}
+
+function writeWatchlist(tickers: string[]): void {
+  if (typeof window === 'undefined') return
+  window.localStorage.setItem(WATCHLIST_STORAGE_KEY, JSON.stringify(tickers))
+}
+
 // Helper function to format Market Cap (e.g., 2,500,000,000 -> "2.5B")
 function formatMarketCap(marketCap: number | null | undefined): string {
   if (marketCap === null || marketCap === undefined || marketCap === 0) {
@@ -87,6 +106,7 @@ export function AssetDetailDrawer({ asset, isOpen, onClose }: AssetDetailDrawerP
   
   // Hook 1: useState
   const [news, setNews] = useState<NewsItem[]>([])
+  const [watchlistEntries, setWatchlistEntries] = useState<string[]>(() => readWatchlist())
 
   // Hook 2: useMemo - Memoize derived data to prevent recalculation on every render
   const geographicData = useMemo(() => {
@@ -110,7 +130,13 @@ export function AssetDetailDrawer({ asset, isOpen, onClose }: AssetDetailDrawerP
   // Hook 4: useMemo
   const dayChange = useMemo(() => asset?.performance?.day?.value || 0, [asset?.performance?.day?.value])
 
-  // Hook 5: useEffect - Fetch news for this ticker
+  // Hook 5: useMemo - Watchlist status from localStorage
+  const isInWatchlist = useMemo(() => {
+    if (!asset?.ticker) return false
+    return watchlistEntries.includes(asset.ticker)
+  }, [asset?.ticker, watchlistEntries])
+
+  // Hook 6: useEffect - Fetch news for this ticker
   useEffect(() => {
     // Garde-fou au début de l'effet
     if (!asset?.ticker) return
@@ -147,6 +173,13 @@ export function AssetDetailDrawer({ asset, isOpen, onClose }: AssetDetailDrawerP
   // ===== DERIVED VALUES (not hooks, safe to calculate after conditional) =====
   const isPositive = dayChange >= 0
   const hasMissingData = asset?.price === null || asset?.price === 0 || asset?.price === undefined
+  const ma200Status = asset?.technical?.ma200_status ?? null
+  const trendSlope = asset?.technical?.trend_slope ?? null
+  const rsi14 = asset?.technical?.rsi_14 ?? null
+  const macdLine = asset?.technical?.macd_line ?? null
+  const macdSignal = asset?.technical?.macd_signal ?? null
+  const macdHist = asset?.technical?.macd_hist ?? null
+  const momentum20 = asset?.technical?.momentum_20 ?? null
 
   // ===== EVENT HANDLERS =====
   const handleYahooFinance = () => {
@@ -155,9 +188,13 @@ export function AssetDetailDrawer({ asset, isOpen, onClose }: AssetDetailDrawerP
   }
 
   const handleWatchlist = () => {
-    // TODO: Implement watchlist functionality
     if (!asset?.ticker) return
-    console.log('Add to watchlist:', asset?.ticker)
+    const exists = watchlistEntries.includes(asset.ticker)
+    const next = exists
+      ? watchlistEntries.filter((ticker) => ticker !== asset.ticker)
+      : [...watchlistEntries, asset.ticker]
+    writeWatchlist(next)
+    setWatchlistEntries(next)
   }
 
   return (
@@ -364,9 +401,13 @@ export function AssetDetailDrawer({ asset, isOpen, onClose }: AssetDetailDrawerP
                   </div>
                   <span className={cn(
                     "px-3 py-1.5 rounded-lg text-xs font-black uppercase tracking-tighter",
-                    "bg-green-100 dark:bg-green-950/30 text-green-700 dark:text-green-400 border border-green-300 dark:border-green-800/50"
+                    ma200Status === 'above'
+                      ? "bg-green-100 dark:bg-green-950/30 text-green-700 dark:text-green-400 border border-green-300 dark:border-green-800/50"
+                      : ma200Status === 'below'
+                      ? "bg-red-100 dark:bg-red-950/30 text-red-700 dark:text-red-400 border border-red-300 dark:border-red-800/50"
+                      : "bg-slate-100 dark:bg-slate-800/50 text-slate-600 dark:text-gray-400 border border-slate-300 dark:border-slate-700"
                   )}>
-                    Above MA200
+                    {ma200Status === 'above' ? 'Above MA200' : ma200Status === 'below' ? 'Below MA200' : 'N/A'}
                   </span>
                 </div>
 
@@ -382,10 +423,17 @@ export function AssetDetailDrawer({ asset, isOpen, onClose }: AssetDetailDrawerP
                   </div>
                   <div className="text-right">
                     <div className="text-sm font-mono font-black text-slate-950 dark:text-white">
-                      +0.042
+                      {trendSlope !== null ? `${trendSlope >= 0 ? '+' : ''}${trendSlope.toFixed(4)}` : '--'}
                     </div>
-                    <div className="text-[9px] font-bold text-green-600 dark:text-green-400 uppercase">
-                      Bullish
+                    <div className={cn(
+                      "text-[9px] font-bold uppercase",
+                      trendSlope === null
+                        ? "text-slate-500 dark:text-gray-500"
+                        : trendSlope >= 0
+                        ? "text-green-600 dark:text-green-400"
+                        : "text-red-600 dark:text-red-400"
+                    )}>
+                      {trendSlope === null ? 'N/A' : trendSlope >= 0 ? 'Bullish' : 'Bearish'}
                     </div>
                   </div>
                 </div>
@@ -394,27 +442,72 @@ export function AssetDetailDrawer({ asset, isOpen, onClose }: AssetDetailDrawerP
                 <div className="p-3 bg-white dark:bg-[#0A0D12] rounded-xl border border-slate-200 dark:border-white/5">
                   <div className="flex items-center justify-between mb-3">
                     <span className="text-[10px] font-black text-slate-400 dark:text-gray-500 uppercase tracking-wider">
-                      Relative Strength Index (RSI)
+                      Relative Strength Index (RSI 14)
                     </span>
                     <span className="text-sm font-mono font-black text-slate-950 dark:text-white">
-                      58.3
+                      {rsi14 !== null ? rsi14.toFixed(1) : '--'}
                     </span>
                   </div>
                   <div className="relative h-3 w-full bg-slate-200 dark:bg-white/5 rounded-full overflow-hidden">
                     <div className="absolute inset-0 flex">
-                      <div className="w-1/3 bg-red-500 dark:bg-red-500/50"></div>
-                      <div className="w-1/3 bg-yellow-500 dark:bg-yellow-500/50"></div>
-                      <div className="w-1/3 bg-green-500 dark:bg-green-500/50"></div>
+                      <div className="w-2/5 bg-red-500 dark:bg-red-500/50"></div>
+                      <div className="w-1/5 bg-amber-500 dark:bg-amber-500/50"></div>
+                      <div className="w-2/5 bg-green-500 dark:bg-green-500/50"></div>
                     </div>
                     <div 
                       className="absolute top-0 h-full w-1 bg-slate-950 dark:bg-white transition-all duration-500"
-                      style={{ left: '58.3%' }}
+                      style={{ left: `${Math.max(0, Math.min(100, rsi14 ?? 0))}%` }}
+                    />
+                    <div
+                      className="absolute top-0 h-full w-0.5 bg-blue-700/70 dark:bg-blue-300/70"
+                      style={{ left: '60%' }}
                     />
                   </div>
                   <div className="flex justify-between mt-1 text-[8px] font-bold text-slate-500 dark:text-gray-500">
                     <span>Oversold</span>
-                    <span>Neutral</span>
-                    <span>Overbought</span>
+                    <span>Threshold 60</span>
+                    <span>Strong</span>
+                  </div>
+                </div>
+
+                {/* MACD + Momentum */}
+                <div className="grid grid-cols-2 gap-3">
+                  <div className="p-3 bg-white dark:bg-[#0A0D12] rounded-xl border border-slate-200 dark:border-white/5">
+                    <span className="text-[10px] font-black text-slate-400 dark:text-gray-500 uppercase tracking-wider">
+                      MACD
+                    </span>
+                    <div className="mt-2 space-y-1 text-xs font-mono font-bold">
+                      <div className="flex justify-between">
+                        <span className="text-slate-500 dark:text-gray-500">Line</span>
+                        <span className="text-slate-900 dark:text-gray-100">{macdLine !== null ? macdLine.toFixed(3) : '--'}</span>
+                      </div>
+                      <div className="flex justify-between">
+                        <span className="text-slate-500 dark:text-gray-500">Signal</span>
+                        <span className="text-slate-900 dark:text-gray-100">{macdSignal !== null ? macdSignal.toFixed(3) : '--'}</span>
+                      </div>
+                      <div className="flex justify-between">
+                        <span className="text-slate-500 dark:text-gray-500">Hist</span>
+                        <span className={cn(
+                          macdHist !== null && macdHist >= 0 ? "text-green-600 dark:text-green-400" : "text-red-600 dark:text-red-400"
+                        )}>
+                          {macdHist !== null ? macdHist.toFixed(3) : '--'}
+                        </span>
+                      </div>
+                    </div>
+                  </div>
+                  <div className="p-3 bg-white dark:bg-[#0A0D12] rounded-xl border border-slate-200 dark:border-white/5">
+                    <span className="text-[10px] font-black text-slate-400 dark:text-gray-500 uppercase tracking-wider">
+                      Momentum 20d
+                    </span>
+                    <div className={cn(
+                      "mt-2 text-lg font-mono font-black",
+                      (momentum20 ?? 0) >= 0 ? "text-green-600 dark:text-green-400" : "text-red-600 dark:text-red-400"
+                    )}>
+                      {(momentum20 ?? 0) >= 0 ? '+' : ''}{momentum20 !== null ? momentum20.toFixed(2) : '--'}%
+                    </div>
+                    <div className="mt-1 text-[10px] font-bold text-slate-500 dark:text-gray-500 uppercase tracking-wider">
+                      {(momentum20 ?? 0) > 0 ? 'Positive Impulse' : 'Negative Impulse'}
+                    </div>
                   </div>
                 </div>
               </div>
@@ -491,7 +584,7 @@ export function AssetDetailDrawer({ asset, isOpen, onClose }: AssetDetailDrawerP
                   className="flex items-center justify-center gap-2 px-4 py-3 bg-slate-200 dark:bg-white/10 text-slate-950 dark:text-white rounded-xl font-black uppercase tracking-tighter text-sm hover:bg-slate-300 dark:hover:bg-white/20 transition-colors border-2 border-slate-300 dark:border-white/10"
                 >
                   <Star className="w-4 h-4" />
-                  Add to Watchlist
+                  {isInWatchlist ? 'Remove from Watchlist' : 'Add to Watchlist'}
                 </button>
               </div>
             </div>

@@ -4,7 +4,6 @@ import React from 'react'
 import { CheckCircle2, Clock, AlertTriangle } from 'lucide-react'
 import { DataStatus } from '../types'
 import { Tooltip } from './Tooltip'
-import { cn } from '../lib/utils'
 
 interface DataTrustBadgeProps {
   status?: DataStatus | null

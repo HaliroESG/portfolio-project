@@ -47,9 +47,6 @@ const MACRO_CONFIG: Record<string, {
 
 export function MacroStrip() {
   const [indicators, setIndicators] = useState<MacroIndicator[]>([])
-  const [twoYearRate, setTwoYearRate] = useState<number | null>(null)
-  const [jpyVolatility, setJpyVolatility] = useState<number | null>(null)
-  const [miseryIndex, setMiseryIndex] = useState<number | null>(null)
 
   // Define getIndicator function first to avoid hoisting issues
   const getIndicator = (id: string): MacroIndicator | undefined => {
@@ -62,18 +59,11 @@ export function MacroStrip() {
         const { data, error } = await supabase
           .from('macro_indicators')
           .select('*')
-          .in('id', ['^VIX', 'DX-Y.NYB', '^MOVE', '^TNX', '^IRX'])
+          .in('id', ['^VIX', 'DX-Y.NYB', '^MOVE', '^TNX', 'SPREAD_10Y_2Y', 'MISERY_INDEX', 'JPY_VOLATILITY'])
         
         if (error) throw error
         if (data) {
           setIndicators(data)
-          // Get 2Y rate (^IRX is 3-month, using placeholder for 2Y)
-          // TODO: Fetch actual 2Y rate when available
-          const tenYear = data.find(i => i.id === '^TNX')
-          // Placeholder: Assume 2Y is ~0.5% below 10Y
-          if (tenYear?.value) {
-            setTwoYearRate(tenYear.value - 0.5)
-          }
         }
       } catch (err) {
         console.error('Error fetching macro indicators:', err)
@@ -87,29 +77,10 @@ export function MacroStrip() {
 
   // Calculate Yield Spread (10Y - 2Y)
   const yieldSpread = (() => {
-    const tenYear = getIndicator('^TNX')
-    if (tenYear?.value && twoYearRate) {
-      return tenYear.value - twoYearRate
-    }
-    return null
+    return getIndicator('SPREAD_10Y_2Y')?.value ?? null
   })()
-
-  // Calculate Misery Index (Inflation + Unemployment)
-  // Placeholder: Using CPI and Unemployment estimates
-  useEffect(() => {
-    // TODO: Fetch actual inflation and unemployment data
-    // For now, using placeholder calculation
-    const inflation = 3.2 // Placeholder
-    const unemployment = 3.7 // Placeholder
-    setMiseryIndex(inflation + unemployment)
-  }, [])
-
-  // JPY/USD Volatility (Carry Trade Risk)
-  useEffect(() => {
-    // TODO: Calculate actual JPY/USD volatility
-    // Placeholder: Random value between 0.5-2.0%
-    setJpyVolatility(1.2)
-  }, [])
+  const miseryIndex = getIndicator('MISERY_INDEX')?.value ?? null
+  const jpyVolatility = getIndicator('JPY_VOLATILITY')?.value ?? null
 
   const getTrendColor = (indicator: MacroIndicator | undefined, config: typeof MACRO_CONFIG[string]): string => {
     if (!indicator || indicator.value === null) return 'text-slate-400'

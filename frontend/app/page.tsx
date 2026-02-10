@@ -11,9 +11,42 @@ import { MacroStrip } from '../components/MacroStrip'
 import { AssetDetailDrawer } from '../components/AssetDetailDrawer'
 import { HotNewsTickerTape } from '../components/HotNewsTickerTape'
 import { GovernanceWidget } from '../components/GovernanceWidget'
+import { PortfolioTrendPanel } from '../components/PortfolioTrendPanel'
 import { mockRegions, mockCurrencyPairs } from '../utils/mockData'
-import { Asset } from '../types'
+import { Asset, AssetType, DataStatus } from '../types'
 import { cn } from '../lib/utils'
+
+interface MarketWatchRow {
+  id: string | null
+  name: string | null
+  ticker: string | null
+  last_price: number | null
+  currency: string | null
+  type: string | null
+  geo_coverage: Record<string, number> | null
+  data_status: DataStatus | null
+  last_update: string | null
+  pe_ratio: number | null
+  market_cap: number | null
+  asset_class: string | null
+  quantity: number | null
+  perf_day_eur: number | null
+  perf_day_local: number | null
+  perf_week_local: number | null
+  perf_month_local: number | null
+  perf_ytd_eur: number | null
+  ma200_value: number | null
+  ma200_status: 'above' | 'below' | null
+  trend_slope: number | null
+  volatility_30d: number | null
+  rsi_14: number | null
+  macd_line: number | null
+  macd_signal: number | null
+  macd_hist: number | null
+  momentum_20: number | null
+  trend_state: 'BULLISH' | 'BEARISH' | 'NEUTRAL' | null
+  trend_changed: boolean | null
+}
 
 export default function PortfolioDashboard() {
   const [hoveredAsset, setHoveredAsset] = useState<Asset | null>(null)
@@ -30,29 +63,31 @@ export default function PortfolioDashboard() {
       try {
         const { data, error } = await supabase.from('market_watch').select('*')
         if (error) throw error
+
+        const typedData = (data ?? []) as MarketWatchRow[]
         
         // Early return check BEFORE any state updates
-        if (!data || data.length === 0) {
+        if (typedData.length === 0) {
           setLoading(false)
           return
         }
         
-        const latest = data.reduce((max, item) => 
+        const latest = typedData.reduce((max, item) => 
           new Date(item.last_update || 0) > new Date(max || 0) ? item.last_update : max, 
-          data[0]?.last_update || new Date().toISOString()
+          typedData[0]?.last_update || new Date().toISOString()
         )
         setLastSync(new Date(latest).toLocaleTimeString('fr-FR'))
 
         // MAPPING + TRI ALPHABÉTIQUE ROBUSTE
-        const formattedAssets: Asset[] = data
-          .map((item: any) => {
+        const formattedAssets: Asset[] = typedData
+          .map((item) => {
             // Sécuriser le mapping du type
-            const validTypes = ['Stock', 'STOCK', 'ETF', 'Crypto', 'CRYPTO', 'Cash']
+            const validTypes: AssetType[] = ['Stock', 'STOCK', 'ETF', 'Crypto', 'CRYPTO', 'Cash', 'Forex', 'Currency']
             const itemType = item.type || 'Stock'
-            const safeType = validTypes.includes(itemType) ? itemType : 'Stock'
+            const safeType: AssetType = validTypes.includes(itemType as AssetType) ? (itemType as AssetType) : 'Stock'
             
             // Valider data_status
-            const validStatuses = ['OK', 'STALE', 'LOW_CONFIDENCE', 'PARTIAL']
+            const validStatuses: DataStatus[] = ['OK', 'STALE', 'LOW_CONFIDENCE', 'PARTIAL']
             const dataStatus = item.data_status && validStatuses.includes(item.data_status) 
               ? item.data_status 
               : undefined
@@ -63,7 +98,7 @@ export default function PortfolioDashboard() {
               ticker: item.ticker || 'N/A',
               price: item.last_price || 0,
               currency: item.currency || 'EUR',
-              type: safeType as any,
+              type: safeType,
               constituents: item.geo_coverage || {},
               data_status: dataStatus,
               last_update: item.last_update || undefined,
@@ -71,6 +106,19 @@ export default function PortfolioDashboard() {
               market_cap: item.market_cap ?? null,
               asset_class: item.asset_class ?? null,
               quantity: item.quantity ?? null,
+              technical: {
+                ma200_value: item.ma200_value ?? null,
+                ma200_status: item.ma200_status ?? null,
+                trend_slope: item.trend_slope ?? null,
+                volatility_30d: item.volatility_30d ?? null,
+                rsi_14: item.rsi_14 ?? null,
+                macd_line: item.macd_line ?? null,
+                macd_signal: item.macd_signal ?? null,
+                macd_hist: item.macd_hist ?? null,
+                momentum_20: item.momentum_20 ?? null,
+                trend_state: item.trend_state ?? null,
+                trend_changed: item.trend_changed ?? false,
+              },
               performance: {
                 day: { value: (item.perf_day_eur || 0) * 100, currencyImpact: ((item.perf_day_eur || 0) - (item.perf_day_local || 0)) * 100 },
                 week: { value: (item.perf_week_local || 0) * 100, currencyImpact: 0 },
@@ -166,14 +214,20 @@ export default function PortfolioDashboard() {
                 </div>
               </div>
               <div className="flex-1 bg-white dark:bg-[#0D1117]/50 rounded-3xl border-2 border-slate-200 dark:border-white/5 shadow-2xl overflow-hidden">
-                <AssetTable 
-                  assets={assets} 
-                  onHoverAsset={setHoveredAsset}
-                  onSelectAsset={setSelectedAsset}
-                  selectedAssetId={selectedAsset?.id || null}
-                  groupByClass={groupByClass}
-                  currencyFilter={currencyFilter}
-                />
+                {loading ? (
+                  <div className="h-full w-full flex items-center justify-center text-sm font-mono text-slate-500 dark:text-gray-400">
+                    Loading portfolio matrix...
+                  </div>
+                ) : (
+                  <AssetTable 
+                    assets={assets} 
+                    onHoverAsset={setHoveredAsset}
+                    onSelectAsset={setSelectedAsset}
+                    selectedAssetId={selectedAsset?.id || null}
+                    groupByClass={groupByClass}
+                    currencyFilter={currencyFilter}
+                  />
+                )}
               </div>
             </div>
             {/* Map Mini View */}
@@ -187,6 +241,8 @@ export default function PortfolioDashboard() {
                 </div>
               </div>
               
+              <PortfolioTrendPanel />
+
               {/* Governance Widget */}
               <GovernanceWidget assets={assets} />
             </div>

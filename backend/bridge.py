@@ -1,9 +1,11 @@
 import os
 import json
+import io
 import gspread
 import yfinance as yf
 import pandas as pd
 import numpy as np
+import requests
 from datetime import datetime, timedelta
 from supabase import create_client
 from oauth2client.service_account import ServiceAccountCredentials
@@ -49,6 +51,55 @@ def get_gspread_client():
         return None
 
 # --- MOTEUR DE CALCUL FINANCIER (TOTAL RETURN EUR) ---
+
+def fetch_fred_series(series_id):
+    """
+    Récupère une série FRED publique via l'endpoint CSV (pas de clé requise).
+    Retourne un DataFrame trié par date, colonnes: DATE, VALUE.
+    """
+    url = f"https://fred.stlouisfed.org/graph/fredgraph.csv?id={series_id}"
+    response = requests.get(url, timeout=15)
+    response.raise_for_status()
+
+    df = pd.read_csv(io.StringIO(response.text))
+    if 'DATE' not in df.columns or series_id not in df.columns:
+        return pd.DataFrame(columns=['DATE', 'VALUE'])
+
+    df['DATE'] = pd.to_datetime(df['DATE'], errors='coerce')
+    df['VALUE'] = pd.to_numeric(df[series_id], errors='coerce')
+    df = df.dropna(subset=['DATE', 'VALUE']).sort_values('DATE').reset_index(drop=True)
+    return df[['DATE', 'VALUE']]
+
+
+def calculate_rsi_series(prices, period=14):
+    """
+    RSI standard (Wilder smoothing) à partir d'une série de prix.
+    """
+    delta = prices.diff()
+    gains = delta.where(delta > 0, 0.0)
+    losses = -delta.where(delta < 0, 0.0)
+
+    avg_gain = gains.ewm(alpha=1 / period, min_periods=period, adjust=False).mean()
+    avg_loss = losses.ewm(alpha=1 / period, min_periods=period, adjust=False).mean()
+
+    rs = avg_gain / avg_loss.replace(0, np.nan)
+    rsi = 100 - (100 / (1 + rs))
+    return rsi
+
+
+def classify_trend_state(macd_line, macd_signal, rsi_14, momentum_20):
+    """
+    Classification de tendance:
+    - BULLISH: MACD > signal, RSI >= 60, momentum > 0
+    - BEARISH: MACD < signal, RSI < 40, momentum < 0
+    - sinon NEUTRAL
+    """
+    if None not in (macd_line, macd_signal, rsi_14, momentum_20):
+        if macd_line > macd_signal and rsi_14 >= 60 and momentum_20 > 0:
+            return "BULLISH"
+        if macd_line < macd_signal and rsi_14 < 40 and momentum_20 < 0:
+            return "BEARISH"
+    return "NEUTRAL"
 
 def update_macro_hub():
     # Liste des indicateurs : Ticker Yahoo -> [Nom, Catégorie]
@@ -170,12 +221,31 @@ def update_macro_hub():
     # 3. Misery Index (Inflation + Unemployment)
     misery_index = None
     try:
-        # Placeholder: Utiliser des valeurs constantes ou essayer de récupérer depuis une API
-        # Pour l'instant, utiliser des valeurs estimées basées sur les données US récentes
-        # TODO: Intégrer une API réelle (ex: FRED API pour inflation et chômage US)
-        inflation_estimate = 3.2  # Placeholder - remplacer par API réelle
-        unemployment_estimate = 3.7  # Placeholder - remplacer par API réelle
-        misery_index = inflation_estimate + unemployment_estimate
+        # Source FRED publique (CSV, sans clé)
+        # Inflation YoY via CPIAUCSL, chômage via UNRATE
+        cpi_df = fetch_fred_series("CPIAUCSL")
+        unrate_df = fetch_fred_series("UNRATE")
+
+        inflation_estimate = None
+        unemployment_estimate = None
+
+        if len(cpi_df) >= 13:
+            latest_cpi = float(cpi_df.iloc[-1]['VALUE'])
+            cpi_12m_ago = float(cpi_df.iloc[-13]['VALUE'])
+            if cpi_12m_ago > 0:
+                inflation_estimate = ((latest_cpi / cpi_12m_ago) - 1) * 100
+
+        if len(unrate_df) >= 1:
+            unemployment_estimate = float(unrate_df.iloc[-1]['VALUE'])
+
+        if inflation_estimate is not None and unemployment_estimate is not None:
+            misery_index = inflation_estimate + unemployment_estimate
+        else:
+            # Fallback conservateur si FRED indisponible/incomplet
+            inflation_estimate = inflation_estimate if inflation_estimate is not None else 3.2
+            unemployment_estimate = unemployment_estimate if unemployment_estimate is not None else 3.7
+            misery_index = inflation_estimate + unemployment_estimate
+            print("    ⚠️ Misery Index calculé en mode dégradé (données partielles FRED)", flush=True)
         
         # Sauvegarder dans macro_indicators
         payload_misery = {
@@ -443,10 +513,58 @@ def get_financial_data(ticker, currency):
         except Exception as e:
             print(f"      ⚠️ Erreur calcul volatilité: {e}", flush=True)
 
-        # 4. Métriques de valorisation (P/E Ratio et Market Cap)
+        # 4. MACD (12,26,9)
+        macd_line = None
+        macd_signal = None
+        macd_hist = None
+        try:
+            if len(df) >= 35:
+                ema_12 = df['price'].ewm(span=12, adjust=False).mean()
+                ema_26 = df['price'].ewm(span=26, adjust=False).mean()
+                macd_series = ema_12 - ema_26
+                signal_series = macd_series.ewm(span=9, adjust=False).mean()
+                hist_series = macd_series - signal_series
+
+                macd_line = float(macd_series.iloc[-1])
+                macd_signal = float(signal_series.iloc[-1])
+                macd_hist = float(hist_series.iloc[-1])
+            else:
+                print(f"      ⚠️ Pas assez de données pour MACD ({len(df)} jours)", flush=True)
+        except Exception as e:
+            print(f"      ⚠️ Erreur calcul MACD: {e}", flush=True)
+
+        # 5. RSI 14
+        rsi_14 = None
+        try:
+            if len(df) >= 15:
+                rsi_series = calculate_rsi_series(df['price'], period=14)
+                if pd.notna(rsi_series.iloc[-1]):
+                    rsi_14 = float(rsi_series.iloc[-1])
+            else:
+                print(f"      ⚠️ Pas assez de données pour RSI ({len(df)} jours)", flush=True)
+        except Exception as e:
+            print(f"      ⚠️ Erreur calcul RSI: {e}", flush=True)
+
+        # 6. Momentum 20 jours (%)
+        momentum_20 = None
+        try:
+            if len(df) >= 21:
+                previous_price = df['price'].iloc[-21]
+                current_price = df['price'].iloc[-1]
+                if previous_price and previous_price != 0:
+                    momentum_20 = float(((current_price / previous_price) - 1) * 100)
+            else:
+                print(f"      ⚠️ Pas assez de données pour Momentum20 ({len(df)} jours)", flush=True)
+        except Exception as e:
+            print(f"      ⚠️ Erreur calcul Momentum20: {e}", flush=True)
+
+        # 7. État de tendance
+        trend_state = classify_trend_state(macd_line, macd_signal, rsi_14, momentum_20)
+
+        # 8. Métriques de valorisation (P/E Ratio et Market Cap)
         valuation_metrics = get_valuation_metrics(ticker)
 
-        # 5. Récupérer le timestamp du dernier trade depuis yfinance
+        # 9. Récupérer le timestamp du dernier trade depuis yfinance
         last_trade_timestamp = None
         try:
             stock = yf.Ticker(ticker)
@@ -535,6 +653,12 @@ def get_financial_data(ticker, currency):
             "ma200_status": ma200_status,
             "trend_slope": trend_slope,
             "volatility_30d": volatility_30d,
+            "macd_line": macd_line,
+            "macd_signal": macd_signal,
+            "macd_hist": macd_hist,
+            "rsi_14": rsi_14,
+            "momentum_20": momentum_20,
+            "trend_state": trend_state,
             "pe_ratio": valuation_metrics.get('pe_ratio'),
             "market_cap": valuation_metrics.get('market_cap')
         }
@@ -609,7 +733,7 @@ def run_sync():
             # Récupérer les valeurs existantes pour éviter d'écraser des données valides
             existing_data = None
             try:
-                existing_response = supabase.table("market_watch").select("pe_ratio, market_cap, data_status").eq("ticker", ticker).execute()
+                existing_response = supabase.table("market_watch").select("pe_ratio, market_cap, data_status, trend_state").eq("ticker", ticker).execute()
                 if existing_response.data and len(existing_response.data) > 0:
                     existing_data = existing_response.data[0]
             except Exception as e:
@@ -640,6 +764,15 @@ def run_sync():
                 if existing_status in ['OK', 'STALE']:
                     data_status = existing_status
                     print(f"      ℹ️ Conservation data_status existant: {data_status}", flush=True)
+
+            # Détecter les changements de tendance
+            previous_trend_state = existing_data.get('trend_state') if existing_data else None
+            current_trend_state = mkt.get('trend_state')
+            trend_changed = (
+                previous_trend_state is not None and
+                current_trend_state is not None and
+                previous_trend_state != current_trend_state
+            )
             
             # Calculer la valeur de l'actif pour le coverage (en EUR)
             asset_value = mkt.get('last_price', 0)
@@ -685,6 +818,13 @@ def run_sync():
                 "ma200_status": mkt.get('ma200_status'),
                 "trend_slope": mkt.get('trend_slope'),
                 "volatility_30d": mkt.get('volatility_30d'),
+                "macd_line": mkt.get('macd_line'),
+                "macd_signal": mkt.get('macd_signal'),
+                "macd_hist": mkt.get('macd_hist'),
+                "rsi_14": mkt.get('rsi_14'),
+                "momentum_20": mkt.get('momentum_20'),
+                "trend_state": current_trend_state,
+                "trend_changed": trend_changed,
                 # Métriques de valorisation (avec préservation des valeurs existantes)
                 "pe_ratio": pe_ratio,
                 "market_cap": market_cap,
@@ -697,7 +837,22 @@ def run_sync():
                 supabase.table("market_watch").upsert(payload, on_conflict='ticker').execute()
                 print(f"    ✅ {ticker} synchronisé (Status: {data_status}, P/E: {pe_ratio or 'N/A'}, Market Cap: {market_cap or 'N/A'})", flush=True)
             except Exception as e:
-                print(f"    ❌ Erreur Supabase {ticker}: {e}", flush=True)
+                print(f"    ⚠️ Erreur Supabase {ticker} (payload complet): {e}", flush=True)
+                # Fallback compatibilité schéma: retry sans les nouvelles colonnes phase 2
+                try:
+                    fallback_payload = {k: v for k, v in payload.items() if k not in [
+                        "macd_line",
+                        "macd_signal",
+                        "macd_hist",
+                        "rsi_14",
+                        "momentum_20",
+                        "trend_state",
+                        "trend_changed",
+                    ]}
+                    supabase.table("market_watch").upsert(fallback_payload, on_conflict='ticker').execute()
+                    print(f"    ✅ {ticker} synchronisé en mode compatibilité schéma", flush=True)
+                except Exception as fallback_error:
+                    print(f"    ❌ Erreur Supabase {ticker} (fallback): {fallback_error}", flush=True)
     
     # Calculer et enregistrer le coverage_pct dans valuation_snapshots
     if total_portfolio_value > 0:

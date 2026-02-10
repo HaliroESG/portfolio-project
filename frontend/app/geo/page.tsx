@@ -17,6 +17,15 @@ interface CountryPerformance {
   totalExposure: number
 }
 
+interface MarketWatchGeoRow {
+  ticker: string | null
+  perf_day_eur: number | null
+  perf_ytd_eur: number | null
+  perf_ytd_local: number | null
+  last_price: number | null
+  last_update: string | null
+}
+
 // Coordonnées GPS pour chaque pays (format [latitude, longitude])
 const COUNTRY_COORDS: Record<string, [number, number]> = {
   'US': [37, -95], // États-Unis (centre)
@@ -126,16 +135,17 @@ export default function GeoPage() {
       try {
         const { data, error } = await supabase.from('market_watch').select('*')
         if (error) throw error
+        const typedData = (data ?? []) as MarketWatchGeoRow[]
         
-        if (data && data.length > 0) {
-          const latest = data.reduce((max, item) => 
-            new Date(item.last_update) > new Date(max) ? item.last_update : max, data[0].last_update)
+        if (typedData.length > 0) {
+          const latest = typedData.reduce((max, item) => 
+            new Date(item.last_update || 0) > new Date(max || 0) ? item.last_update : max, typedData[0].last_update)
           setLastSync(new Date(latest).toLocaleTimeString('fr-FR'))
 
           // Grouper par pays et calculer la performance moyenne et l'exposition
           const countryMap = new Map<string, { total: number; count: number; totalExposure: number }>()
           
-          data.forEach((item: any) => {
+          typedData.forEach((item) => {
             const ticker = item.ticker || ''
             const countryCode = getCountryFromTicker(ticker)
             

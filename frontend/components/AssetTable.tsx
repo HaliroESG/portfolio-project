@@ -83,15 +83,16 @@ export function AssetTable({ assets, onHoverAsset, onSelectAsset, selectedAssetI
             <th className="p-4 text-[10px] font-black text-slate-950 dark:text-gray-500 uppercase tracking-widest text-center border-l border-slate-200 dark:border-[#1a1d24]">Month</th>
             <th className="p-4 text-[10px] font-black text-slate-950 dark:text-gray-500 uppercase tracking-widest text-center border-l border-slate-200 dark:border-[#1a1d24]">YTD</th>
             <th className="p-4 text-[10px] font-black text-slate-950 dark:text-gray-500 uppercase tracking-widest text-center border-l border-slate-200 dark:border-[#1a1d24]">Volatility</th>
+            <th className="p-4 text-[10px] font-black text-slate-950 dark:text-gray-500 uppercase tracking-widest text-center border-l border-slate-200 dark:border-[#1a1d24]">Trend</th>
           </tr>
         </thead>
         <tbody className="divide-y divide-slate-200 dark:divide-[#1a1d24]">
-          {processedAssets.map((item, index) => {
+          {processedAssets.map((item) => {
             // Handle group headers
             if ('isHeader' in item && item.isHeader) {
               return (
                 <tr key={`header-${item.type}`} className="bg-slate-100 dark:bg-[#0D1117]">
-                  <td colSpan={6} className="p-3 border-b-2 border-slate-300 dark:border-[#1a1d24]">
+                  <td colSpan={7} className="p-3 border-b-2 border-slate-300 dark:border-[#1a1d24]">
                     <span className="text-[10px] font-black text-slate-950 dark:text-white uppercase tracking-widest">
                       {item.type}
                     </span>
@@ -103,7 +104,9 @@ export function AssetTable({ assets, onHoverAsset, onSelectAsset, selectedAssetI
             const asset = item as Asset
             const missingData = hasMissingData(asset);
             const isSelected = selectedAssetId === asset.id;
-            const volatility = calculateVolatility(asset);
+            const volatility = asset.technical?.volatility_30d ?? calculateVolatility(asset);
+            const trendState = asset.technical?.trend_state ?? 'NEUTRAL'
+            const trendChanged = asset.technical?.trend_changed ?? false
             
             return (
               <tr 
@@ -155,6 +158,25 @@ export function AssetTable({ assets, onHoverAsset, onSelectAsset, selectedAssetI
                   )}>
                     {volatility > 0 ? `${volatility.toFixed(1)}%` : 'N/A'}
                   </span>
+                </td>
+                <td className="p-4 text-center border-l border-slate-200 dark:border-[#1a1d24]">
+                  <div className="flex flex-col items-center gap-1">
+                    <span className={cn(
+                      "px-2 py-0.5 rounded text-[9px] font-black uppercase tracking-wider border",
+                      trendState === 'BULLISH'
+                        ? "bg-green-100 text-green-700 border-green-300 dark:bg-green-950/30 dark:text-green-400 dark:border-green-800/60"
+                        : trendState === 'BEARISH'
+                        ? "bg-red-100 text-red-700 border-red-300 dark:bg-red-950/30 dark:text-red-400 dark:border-red-800/60"
+                        : "bg-slate-100 text-slate-600 border-slate-300 dark:bg-slate-800/40 dark:text-gray-400 dark:border-slate-700"
+                    )}>
+                      {trendState}
+                    </span>
+                    {trendChanged && (
+                      <span className="text-[9px] font-black text-amber-600 dark:text-amber-400 uppercase tracking-wider">
+                        Change
+                      </span>
+                    )}
+                  </div>
                 </td>
               </tr>
             );

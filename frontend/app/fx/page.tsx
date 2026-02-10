@@ -15,6 +15,22 @@ interface CurrencyData {
   last_update?: string | null
 }
 
+interface CurrencyRow {
+  id: string
+  symbol: string
+  rate_to_eur: number | null
+  last_update: string | null
+}
+
+interface MarketWatchAssetRow {
+  ticker: string | null
+  currency: string | null
+  perf_day_eur: number | null
+  perf_week_local: number | null
+  perf_month_local: number | null
+  type: string | null
+}
+
 export default function FXPage() {
   const [lastSync, setLastSync] = useState("")
   const [currencies, setCurrencies] = useState<CurrencyData[]>([])
@@ -39,21 +55,24 @@ export default function FXPage() {
           .not('currency', 'is', null)
           .or('type.eq.Forex,type.eq.Currency,ticker.like.*=X')
         
+        const typedCurrencies = (currenciesData ?? []) as CurrencyRow[]
+        const typedAssets = (assetsData ?? []) as MarketWatchAssetRow[]
+        
         // Filtrer aussi les tickers qui sont des paires de devises (EURUSD=X, GBPUSD=X, etc.)
-        const forexAssets = assetsData?.filter((asset: any) => {
+        const forexAssets = typedAssets.filter((asset) => {
           const ticker = (asset.ticker || '').toUpperCase()
           const type = (asset.type || '').toUpperCase()
           return type === 'FOREX' || type === 'CURRENCY' || ticker.includes('=X')
-        }) || []
+        })
         
         if (assetsError) throw assetsError
         
-        if (currenciesData && currenciesData.length > 0) {
+        if (typedCurrencies.length > 0) {
           // Calculer les variations basées sur les performances des actifs Forex/Currency par devise
           const currencyPerformance = new Map<string, number[]>()
           
           if (forexAssets && forexAssets.length > 0) {
-            forexAssets.forEach((asset: any) => {
+            forexAssets.forEach((asset) => {
               const curr = asset.currency
               if (curr && asset.perf_day_eur !== null) {
                 if (!currencyPerformance.has(curr)) {
@@ -65,8 +84,8 @@ export default function FXPage() {
           }
           
           // Si pas de données Forex, utiliser tous les actifs comme fallback
-          if (currencyPerformance.size === 0 && assetsData) {
-            assetsData.forEach((asset: any) => {
+          if (currencyPerformance.size === 0 && typedAssets.length > 0) {
+            typedAssets.forEach((asset) => {
               const curr = asset.currency
               if (curr && asset.perf_day_eur !== null) {
                 if (!currencyPerformance.has(curr)) {
@@ -78,11 +97,11 @@ export default function FXPage() {
           }
           
           // Calculer la moyenne de performance par devise
-          const currenciesWithChange = currenciesData.map((curr: any) => {
+          const currenciesWithChange: CurrencyData[] = typedCurrencies.map((curr) => {
             const perfs = currencyPerformance.get(curr.id) || []
             const avgChange = perfs.length > 0 
               ? perfs.reduce((sum, p) => sum + p, 0) / perfs.length 
-              : (Math.random() * 2 - 1) // Fallback si pas de données
+              : 0
             
             return {
               ...curr,
@@ -93,14 +112,14 @@ export default function FXPage() {
           setCurrencies(currenciesWithChange)
           
           // Type-safe: Calculer le dernier sync time depuis les données currencies
-          const latestUpdate = currenciesData
-            .map((c: any) => c.last_update)
+          const latestUpdate = typedCurrencies
+            .map((c) => c.last_update)
             .filter((update: string | null | undefined): update is string => !!update)
             .reduce((max: string, update: string) => {
               const maxDate = new Date(max)
               const updateDate = new Date(update)
               return updateDate > maxDate ? update : max
-            }, currenciesData[0]?.last_update || new Date().toISOString())
+            }, typedCurrencies[0]?.last_update || new Date().toISOString())
           
           setLastSync(new Date(latestUpdate).toLocaleTimeString('fr-FR'))
           

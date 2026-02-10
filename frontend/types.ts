@@ -3,6 +3,8 @@ export type Period = '1D' | '1W' | '1M' | 'YTD';
 
 // Data Status Enum
 export type DataStatus = 'OK' | 'STALE' | 'LOW_CONFIDENCE' | 'PARTIAL';
+export type AssetType = 'Stock' | 'STOCK' | 'ETF' | 'Crypto' | 'CRYPTO' | 'Cash' | 'Forex' | 'Currency';
+export type TrendState = 'BULLISH' | 'BEARISH' | 'NEUTRAL';
 
 export interface PerformanceData {
   value: number // Percentage
@@ -15,8 +17,7 @@ export interface Asset {
   ticker: string;
   price: number;
   currency: string;
-  // On accepte les majuscules et les minuscules pour être tranquille
-  type: 'Stock' | 'STOCK' | 'ETF' | 'Crypto' | 'CRYPTO'; 
+  type: AssetType;
   constituents?: Record<string, number>; 
   data_status?: DataStatus;
   last_update?: string;
@@ -24,11 +25,24 @@ export interface Asset {
   market_cap?: number | null;
   asset_class?: string | null;
   quantity?: number | null;
+  technical?: {
+    ma200_value?: number | null;
+    ma200_status?: 'above' | 'below' | null;
+    trend_slope?: number | null;
+    volatility_30d?: number | null;
+    rsi_14?: number | null;
+    macd_line?: number | null;
+    macd_signal?: number | null;
+    macd_hist?: number | null;
+    momentum_20?: number | null;
+    trend_state?: TrendState | null;
+    trend_changed?: boolean | null;
+  };
   performance: {
-    day: any; // On met any temporairement pour laisser passer le build sur les structures complexes
-    week: any;
-    month: any;
-    ytd: any;
+    day: PerformanceData;
+    week: PerformanceData;
+    month: PerformanceData;
+    ytd: PerformanceData;
   };
 }
 
