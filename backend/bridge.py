@@ -139,6 +139,106 @@ def parse_numeric(value):
 
     return None
 
+
+def normalize_isin(value):
+    """
+    Normalise un ISIN (12 caractères alphanumériques).
+    """
+    if value is None:
+        return None
+
+    isin = str(value).strip().upper().replace(" ", "")
+    if len(isin) != 12:
+        return None
+    if not isin.isalnum():
+        return None
+    return isin
+
+
+def get_cached_ticker_from_isin(isin):
+    """
+    Lit le mapping ISIN -> ticker depuis Supabase.
+    """
+    try:
+        response = (
+            supabase
+            .table("instrument_identifier_map")
+            .select("ticker")
+            .eq("isin", isin)
+            .limit(1)
+            .execute()
+        )
+        if response.data and len(response.data) > 0:
+            cached_ticker = response.data[0].get("ticker")
+            if cached_ticker:
+                return str(cached_ticker).strip().upper()
+    except Exception as e:
+        print(f"      ⚠️ Cache ISIN indisponible pour {isin}: {e}", flush=True)
+    return None
+
+
+def save_isin_mapping(isin, ticker, source="YAHOO_SEARCH", confidence=0.8):
+    """
+    Sauvegarde le mapping ISIN -> ticker en base.
+    """
+    try:
+        payload = {
+            "isin": isin,
+            "ticker": ticker,
+            "source": source,
+            "confidence": confidence,
+            "updated_at": datetime.now().isoformat(),
+        }
+        supabase.table("instrument_identifier_map").upsert(payload, on_conflict="isin").execute()
+    except Exception as e:
+        print(f"      ⚠️ Impossible de sauvegarder le mapping ISIN {isin}: {e}", flush=True)
+
+
+def resolve_ticker_from_isin(isin):
+    """
+    Résout un ticker exploitable Yahoo à partir d'un ISIN.
+    Étapes:
+    1) cache Supabase
+    2) Yahoo finance search endpoint
+    """
+    if not isin:
+        return None
+
+    cached = get_cached_ticker_from_isin(isin)
+    if cached:
+        return cached
+
+    search_url = "https://query1.finance.yahoo.com/v1/finance/search"
+    try:
+        response = requests.get(
+            search_url,
+            params={"q": isin, "quotesCount": 10, "newsCount": 0},
+            timeout=15,
+        )
+        response.raise_for_status()
+        payload = response.json()
+        quotes = payload.get("quotes", []) if isinstance(payload, dict) else []
+
+        for quote in quotes:
+            symbol = quote.get("symbol")
+            quote_type = (quote.get("quoteType") or "").upper()
+            if not symbol:
+                continue
+            if quote_type in ["EQUITY", "ETF", "MUTUALFUND", "INDEX"]:
+                resolved = str(symbol).strip().upper()
+                save_isin_mapping(isin, resolved, source="YAHOO_SEARCH", confidence=0.7)
+                return resolved
+
+        # fallback: prendre le premier symbole si rien de mieux
+        if len(quotes) > 0 and quotes[0].get("symbol"):
+            resolved = str(quotes[0].get("symbol")).strip().upper()
+            save_isin_mapping(isin, resolved, source="YAHOO_SEARCH_FALLBACK", confidence=0.5)
+            return resolved
+    except Exception as e:
+        print(f"      ⚠️ Résolution ISIN échouée ({isin}): {e}", flush=True)
+
+    return None
+
 def update_macro_hub():
     # Liste des indicateurs : Ticker Yahoo -> [Nom, Catégorie]
     indicators = {
@@ -756,12 +856,14 @@ def run_sync():
     total_portfolio_value = 0.0
     covered_value = 0.0  # Valeur des actifs avec status OK ou STALE
     assets_processed = []
+    unresolved_isins = []
 
     for asset in assets:
         data_clean = {k.strip().lower(): v for k, v in asset.items()}
         keys = list(data_clean.keys())
 
         ticker_key = next((k for k in keys if 'ticker' in k), None)
+        isin_key = next((k for k in keys if 'isin' in k), None)
         name_key = next((k for k in keys if 'nom' in k or 'name' in k), None)
         currency_key = next((k for k in keys if 'devise' in k or 'curr' in k or 'currency' in k), None)
         portfolio_key = next((k for k in keys if 'portfolio_id' in k or k == 'portfolio' or 'portfolio' in k), None)
@@ -789,11 +891,21 @@ def run_sync():
             if ('geo' in k or 'pays' in k or ('poids' in k and 'target' not in k and 'cible' not in k))
         ), None)
 
-        if not ticker_key:
-            continue
-
-        raw_ticker = data_clean.get(ticker_key)
+        raw_ticker = data_clean.get(ticker_key) if ticker_key else None
         ticker = str(raw_ticker).strip().upper() if raw_ticker is not None else ""
+
+        isin = normalize_isin(data_clean.get(isin_key)) if isin_key else None
+        if ticker == "" and isin is not None:
+            print(f"    🔎 Résolution ticker via ISIN {isin}...", flush=True)
+            resolved_ticker = resolve_ticker_from_isin(isin)
+            if resolved_ticker:
+                ticker = resolved_ticker
+                print(f"      ✅ ISIN {isin} -> {ticker}", flush=True)
+            else:
+                unresolved_isins.append(isin)
+                print(f"      ⚠️ ISIN {isin} non résolu, ligne ignorée", flush=True)
+                continue
+
         if ticker == "":
             continue
 
@@ -849,6 +961,9 @@ def run_sync():
 
         mkt = get_financial_data(ticker, currency)
         if mkt:
+            if isin is not None:
+                save_isin_mapping(isin, ticker, source="SHEET_OR_RESOLVER", confidence=0.9)
+
             # Récupérer les valeurs existantes pour éviter d'écraser des données valides
             existing_data = None
             try:
@@ -1021,6 +1136,12 @@ def run_sync():
                 except Exception as position_error:
                     print(f"    ⚠️ Positions non synchronisées pour {ticker} (table absente ou schéma incomplet): {position_error}", flush=True)
     
+    if len(unresolved_isins) > 0:
+        unresolved_unique = sorted(list(set(unresolved_isins)))
+        print(f"--- ⚠️ ISIN NON RÉSOLUS ({len(unresolved_unique)}) ---", flush=True)
+        for unresolved in unresolved_unique:
+            print(f"    - {unresolved}", flush=True)
+
     # Calculer et enregistrer le coverage_pct dans valuation_snapshots
     if total_portfolio_value > 0:
         coverage_pct = (covered_value / total_portfolio_value) * 100
