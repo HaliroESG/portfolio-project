@@ -34,7 +34,9 @@ interface MarketWatchRow {
   perf_day_eur: number | null
   perf_day_local: number | null
   perf_week_local: number | null
+  perf_week_eur: number | null
   perf_month_local: number | null
+  perf_month_eur: number | null
   perf_ytd_eur: number | null
   ma200_value: number | null
   ma200_status: 'above' | 'below' | null
@@ -325,7 +327,9 @@ function parseMarketWatchRow(raw: JsonRecord): MarketWatchRow {
     perf_day_eur: readNumber(raw.perf_day_eur),
     perf_day_local: readNumber(raw.perf_day_local),
     perf_week_local: readNumber(raw.perf_week_local),
+    perf_week_eur: readNumber(raw.perf_week_eur),
     perf_month_local: readNumber(raw.perf_month_local),
+    perf_month_eur: readNumber(raw.perf_month_eur),
     perf_ytd_eur: readNumber(raw.perf_ytd_eur),
     ma200_value: readNumber(raw.ma200_value),
     ma200_status: ma200Status,
@@ -404,10 +408,10 @@ async function fetchMarketWatchRows(supabase: SupabaseClient): Promise<MarketWat
     supabase,
     'market_watch',
     [
-      'id,name,ticker,last_price,currency,type,geo_coverage,data_status,last_update,pe_ratio,market_cap,asset_class,quantity,quantity_buy,pru,target_weight_pct,portfolio_id,perf_day_eur,perf_day_local,perf_week_local,perf_month_local,perf_ytd_eur,ma200_value,ma200_status,trend_slope,volatility_30d,rsi_14,macd_line,macd_signal,macd_hist,momentum_20,trend_state,trend_changed',
+      'id,name,ticker,last_price,currency,type,geo_coverage,data_status,last_update,pe_ratio,market_cap,asset_class,quantity,quantity_buy,pru,target_weight_pct,portfolio_id,perf_day_eur,perf_day_local,perf_week_local,perf_week_eur,perf_month_local,perf_month_eur,perf_ytd_eur,ma200_value,ma200_status,trend_slope,volatility_30d,rsi_14,macd_line,macd_signal,macd_hist,momentum_20,trend_state,trend_changed',
       // Schema without technicals or type column
-      'id,name,ticker,last_price,currency,geo_coverage,data_status,last_update,pe_ratio,market_cap,asset_class,quantity,quantity_buy,pru,target_weight_pct,portfolio_id,perf_day_eur,perf_day_local,perf_week_local,perf_month_local,perf_ytd_eur,ma200_value,ma200_status,trend_slope,volatility_30d',
-      'id,name,ticker,last_price,currency,geo_coverage,data_status,last_update,pe_ratio,market_cap,asset_class,quantity,perf_day_eur,perf_day_local,perf_week_local,perf_month_local,perf_ytd_eur',
+      'id,name,ticker,last_price,currency,geo_coverage,data_status,last_update,pe_ratio,market_cap,asset_class,quantity,quantity_buy,pru,target_weight_pct,portfolio_id,perf_day_eur,perf_day_local,perf_week_local,perf_week_eur,perf_month_local,perf_month_eur,perf_ytd_eur,ma200_value,ma200_status,trend_slope,volatility_30d',
+      'id,name,ticker,last_price,currency,geo_coverage,data_status,last_update,pe_ratio,market_cap,asset_class,quantity,perf_day_eur,perf_day_local,perf_week_local,perf_week_eur,perf_month_local,perf_month_eur,perf_ytd_eur',
     ]
   )
   return rows.map(parseMarketWatchRow)
@@ -618,12 +622,18 @@ function aggregateByTicker(
           currencyImpact: ((market?.perf_day_eur ?? 0) - (market?.perf_day_local ?? 0)) * 100,
         },
         week: {
-          value: (market?.perf_week_local ?? 0) * 100,
-          currencyImpact: 0,
+          value: ((market?.perf_week_eur ?? market?.perf_week_local) ?? 0) * 100,
+          currencyImpact:
+            market?.perf_week_eur !== null && market?.perf_week_local !== null
+              ? (market.perf_week_eur - market.perf_week_local) * 100
+              : 0,
         },
         month: {
-          value: (market?.perf_month_local ?? 0) * 100,
-          currencyImpact: 0,
+          value: ((market?.perf_month_eur ?? market?.perf_month_local) ?? 0) * 100,
+          currencyImpact:
+            market?.perf_month_eur !== null && market?.perf_month_local !== null
+              ? (market.perf_month_eur - market.perf_month_local) * 100
+              : 0,
         },
         ytd: {
           value: (market?.perf_ytd_eur ?? 0) * 100,

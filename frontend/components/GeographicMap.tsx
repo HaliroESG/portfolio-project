@@ -1,6 +1,6 @@
 "use client"
 
-import React, { useMemo } from 'react'
+import React, { useMemo, useState } from 'react'
 import { ComposableMap, Geographies, Geography, Marker, ZoomableGroup } from 'react-simple-maps'
 import { scaleLinear } from 'd3-scale'
 import { Asset, MarketRegion } from '../types'
@@ -48,6 +48,8 @@ export function GeographicMap({ regions, hoveredAsset, showBubbles = false, view
     return Math.max(...bubbleRegions.map((region) => region.exposure), 1)
   }, [bubbleRegions])
 
+  const [position, setPosition] = useState({ coordinates: [0, 20] as [number, number], zoom: 1 })
+
   return (
     <div className="bg-white dark:bg-[#080A0F] h-full w-full flex flex-col relative overflow-hidden shadow-inner dark:shadow-2xl">
       
@@ -61,7 +63,13 @@ export function GeographicMap({ regions, hoveredAsset, showBubbles = false, view
 
       <div className="flex-1 w-full h-full">
         <ComposableMap projectionConfig={{ scale: 145, center: [0, 20] }}>
-          <ZoomableGroup zoom={1} minZoom={1} maxZoom={4}>
+          <ZoomableGroup
+            zoom={position.zoom}
+            center={position.coordinates}
+            minZoom={1}
+            maxZoom={4}
+            onMoveEnd={(next) => setPosition({ coordinates: next.coordinates, zoom: next.zoom })}
+          >
             <Geographies geography={GEO_URL}>
               {({ geographies }) =>
                 geographies.map((geo) => {

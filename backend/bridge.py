@@ -915,7 +915,13 @@ def run_sync() -> dict:
         pru_key = next((k for k in keys if 'pru' in k or 'average_cost' in k or 'avg_cost' in k), None)
         target_key = next((
             k for k in keys
-            if ('target' in k or 'cible' in k) and 'geo' not in k and 'country' not in k and 'pays' not in k
+            if (
+                'target' in k or
+                'cible' in k or
+                'allocation' in k or
+                ('weight' in k and 'geo' not in k and 'country' not in k and 'pays' not in k)
+            )
+            and 'geo' not in k and 'country' not in k and 'pays' not in k
         ), None)
         geo_key = next((
             k for k in keys
