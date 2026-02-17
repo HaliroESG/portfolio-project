@@ -191,9 +191,11 @@ export function AssetTable({ assets, onHoverAsset, onSelectAsset, selectedAssetI
                         ? "bg-red-100 text-red-700 border-red-300 dark:bg-red-950/30 dark:text-red-400 dark:border-red-800/60"
                         : trendState === 'UNKNOWN'
                         ? "bg-amber-100 text-amber-700 border-amber-300 dark:bg-amber-950/30 dark:text-amber-400 dark:border-amber-800/60"
+                        : trendState === 'INSUFFICIENT_HISTORY'
+                        ? "bg-orange-100 text-orange-700 border-orange-300 dark:bg-orange-950/30 dark:text-orange-400 dark:border-orange-800/60"
                         : "bg-slate-100 text-slate-600 border-slate-300 dark:bg-slate-800/40 dark:text-gray-400 dark:border-slate-700"
                     )}>
-                      {trendState}
+                      {trendState === 'INSUFFICIENT_HISTORY' ? 'NO HISTORY' : trendState}
                     </span>
                     {trendChanged && (
                       <span className="text-[9px] font-black text-amber-600 dark:text-amber-400 uppercase tracking-wider">

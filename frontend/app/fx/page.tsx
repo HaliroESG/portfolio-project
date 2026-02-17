@@ -1,6 +1,7 @@
 "use client"
 
 import React, { useEffect, useMemo, useState } from 'react'
+import useSWR from 'swr'
 import { Sidebar } from '../../components/Sidebar'
 import { Header } from '../../components/Header'
 import { supabase } from '../../lib/supabase'
@@ -76,25 +77,36 @@ export default function FXPage() {
   const [marketNote, setMarketNote] = useState('')
   const [fxState, setFxState] = useState<FxState>('EMPTY')
 
+  const { data, isLoading } = useSWR(
+    'fx-data',
+    async () => {
+      const [{ data: currenciesData, error: currenciesError }, { data: assetsData, error: assetsError }] = await Promise.all([
+        supabase
+          .from('currencies')
+          .select('id, symbol, rate_to_eur, last_update')
+          .order('id', { ascending: true }),
+        supabase
+          .from('market_watch')
+          .select('ticker, currency, perf_day_eur, perf_week_local, perf_month_local, last_price, type')
+          .not('currency', 'is', null),
+      ])
+
+      if (currenciesError) throw currenciesError
+      if (assetsError) throw assetsError
+
+      return {
+        currencies: (currenciesData ?? []) as CurrencyRow[],
+        assets: (assetsData ?? []) as MarketWatchAssetRow[],
+      }
+    },
+    { refreshInterval: 300000, revalidateOnFocus: false }
+  )
+
   useEffect(() => {
-    async function fetchCurrencies() {
+    async function computeCurrencies() {
       try {
-        const [{ data: currenciesData, error: currenciesError }, { data: assetsData, error: assetsError }] = await Promise.all([
-          supabase
-            .from('currencies')
-            .select('id, symbol, rate_to_eur, last_update')
-            .order('id', { ascending: true }),
-          supabase
-            .from('market_watch')
-            .select('ticker, currency, perf_day_eur, perf_week_local, perf_month_local, last_price, type')
-            .not('currency', 'is', null),
-        ])
-
-        if (currenciesError) throw currenciesError
-        if (assetsError) throw assetsError
-
-        const typedCurrencies = (currenciesData ?? []) as CurrencyRow[]
-        const typedAssets = (assetsData ?? []) as MarketWatchAssetRow[]
+        const typedCurrencies = data?.currencies ?? []
+        const typedAssets = data?.assets ?? []
 
         const forexAssets = typedAssets.filter((asset) => {
           const ticker = (asset.ticker || '').toUpperCase()
@@ -213,15 +225,11 @@ export default function FXPage() {
           setFxState('EMPTY')
         }
       } finally {
-        setLoading(false)
+        setLoading(isLoading)
       }
     }
-
-    fetchCurrencies()
-
-    const interval = setInterval(fetchCurrencies, 300000)
-    return () => clearInterval(interval)
-  }, [])
+    computeCurrencies()
+  }, [data, isLoading])
 
   const stateLabel = useMemo(() => {
     if (fxState === 'LIVE') return { text: 'Live', color: 'text-green-400', dot: 'bg-green-400' }

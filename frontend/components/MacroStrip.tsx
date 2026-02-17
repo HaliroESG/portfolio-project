@@ -1,6 +1,7 @@
 "use client"
 
-import React, { useEffect, useState } from 'react'
+import React from 'react'
+import useSWR from 'swr'
 import { supabase } from '../lib/supabase'
 import { TrendingUp, TrendingDown, AlertCircle, HelpCircle } from 'lucide-react'
 import { Tooltip } from './Tooltip'
@@ -46,34 +47,25 @@ const MACRO_CONFIG: Record<string, {
 }
 
 export function MacroStrip() {
-  const [indicators, setIndicators] = useState<MacroIndicator[]>([])
+  const { data } = useSWR(
+    'macro-indicators',
+    async () => {
+      const { data: rows, error } = await supabase
+        .from('macro_indicators')
+        .select('*')
+        .in('id', ['^VIX', 'DX-Y.NYB', '^MOVE', '^TNX', 'SPREAD_10Y_2Y', 'MISERY_INDEX', 'JPY_VOLATILITY'])
+      if (error) throw error
+      return (rows ?? []) as MacroIndicator[]
+    },
+    { refreshInterval: 60000, revalidateOnFocus: false }
+  )
+
+  const indicators = data ?? []
 
   // Define getIndicator function first to avoid hoisting issues
   const getIndicator = (id: string): MacroIndicator | undefined => {
     return indicators.find(i => i.id === id)
   }
-
-  useEffect(() => {
-    async function fetchMacro() {
-      try {
-        const { data, error } = await supabase
-          .from('macro_indicators')
-          .select('*')
-          .in('id', ['^VIX', 'DX-Y.NYB', '^MOVE', '^TNX', 'SPREAD_10Y_2Y', 'MISERY_INDEX', 'JPY_VOLATILITY'])
-        
-        if (error) throw error
-        if (data) {
-          setIndicators(data)
-        }
-      } catch (err) {
-        console.error('Error fetching macro indicators:', err)
-      }
-    }
-
-    fetchMacro()
-    const interval = setInterval(fetchMacro, 60000) // Refresh every minute
-    return () => clearInterval(interval)
-  }, [])
 
   // Calculate Yield Spread (10Y - 2Y)
   const yieldSpread = (() => {

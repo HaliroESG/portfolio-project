@@ -1,6 +1,7 @@
-import os
-import json
 import io
+import json
+import os
+import time
 import gspread
 import yfinance as yf
 import pandas as pd
@@ -31,7 +32,7 @@ if not GSPREAD_JSON:
 
 # 3. INITIALISATION
 try:
-    supabase = create_client(SUPABASE_URL, SUPABASE_KEY)
+supabase = create_client(SUPABASE_URL, SUPABASE_KEY)
     print("✅ Client Supabase connecté.", flush=True)
 except Exception as e:
     print(f"❌ Crash Supabase : {e}", flush=True)
@@ -93,10 +94,10 @@ def classify_trend_state(macd_line, macd_signal, rsi_14, momentum_20):
     - BULLISH: MACD > signal, RSI >= 60, momentum > 0
     - BEARISH: MACD < signal, RSI < 40, momentum < 0
     - NEUTRAL: indicateurs présents mais sans alignement
-    - UNKNOWN: indicateurs incomplets (historique insuffisant)
+    - INSUFFICIENT_HISTORY: indicateurs incomplets (historique insuffisant)
     """
     if None in (macd_line, macd_signal, rsi_14, momentum_20):
-        return "UNKNOWN"
+        return "INSUFFICIENT_HISTORY"
 
     if macd_line > macd_signal and rsi_14 >= 60 and momentum_20 > 0:
         return "BULLISH"
@@ -559,6 +560,12 @@ def get_financial_data(ticker, currency):
     try:
         # Récupérer 1 an d'historique pour MA200 (minimum 200 jours ouvrés)
         df_asset = yf.download(ticker, period="1y", progress=False)
+        # Backfill si l'historique est trop court (<220 points) : on relance en 5y
+        if df_asset is None or len(df_asset) < 220:
+            df_asset = yf.download(ticker, period="5y", progress=False)
+        if df_asset is None or df_asset.empty:
+            print(f"      ⚠️ Historique indisponible pour {ticker}, skip indicateurs", flush=True)
+            return None
         
         # Pour la régression 20 ans, essayer de récupérer le maximum d'historique
         df_long = None
@@ -589,6 +596,30 @@ def get_financial_data(ticker, currency):
             df['fx'] = 1.0
         
         df = df.ffill() # Correction FutureWarning fillna
+
+        # Si l'historique reste trop court, retourner un paquet minimal avec état INSUFFICIENT_HISTORY
+        if len(df) < 30:
+            print(f"      ⚠️ Historique trop court ({len(df)} points) pour calculs complets, marquage INSUFFICIENT_HISTORY", flush=True)
+            last_price_safe = float(df['price'].iloc[-1]) if len(df) > 0 else 0.0
+            return {
+                "last_price": last_price_safe,
+                "perf_local": {"day": 0.0, "week": 0.0, "month": 0.0, "ytd": 0.0},
+                "perf_eur": {"day": 0.0, "week": 0.0, "month": 0.0, "ytd": 0.0},
+                "ma200_value": None,
+                "ma200_status": None,
+                "trend_slope": None,
+                "volatility_30d": None,
+                "rsi_14": None,
+                "macd_line": None,
+                "macd_signal": None,
+                "macd_hist": None,
+                "momentum_20": None,
+                "trend_state": "INSUFFICIENT_HISTORY",
+                "trend_changed": False,
+                "pe_ratio": None,
+                "market_cap": None,
+                "data_status": "LOW_CONFIDENCE",
+            }
 
         df['val_eur'] = df['price'] * df['fx']
 
@@ -828,10 +859,10 @@ def update_currencies():
         except Exception as e:
             print(f"    ❌ Erreur devise {code}: {e}", flush=True)
 
-def run_sync():
+def run_sync() -> dict:
     client = get_gspread_client()
     if not client:
-        return
+        return {"assets_total": 0, "unresolved_isins": 0}
 
     sheet_name = os.environ.get("GSHEET_NAME")
     try:
@@ -840,7 +871,7 @@ def run_sync():
         print(f"✅ Feuille connectée. {len(assets)} lignes trouvées.", flush=True)
     except Exception as e:
         print(f"❌ Erreur ouverture GSheet: {e}", flush=True)
-        return
+        return {"assets_total": 0, "unresolved_isins": 0}
 
     # Portfolio par défaut (fallback si la feuille ne fournit pas portfolio_id)
     default_portfolio_id = None
@@ -1005,8 +1036,8 @@ def run_sync():
             trend_changed = (
                 previous_trend_state is not None and
                 current_trend_state is not None and
-                previous_trend_state != 'UNKNOWN' and
-                current_trend_state != 'UNKNOWN' and
+                previous_trend_state not in ('UNKNOWN', 'INSUFFICIENT_HISTORY') and
+                current_trend_state not in ('UNKNOWN', 'INSUFFICIENT_HISTORY') and
                 previous_trend_state != current_trend_state
             )
 
@@ -1136,6 +1167,7 @@ def run_sync():
                 except Exception as position_error:
                     print(f"    ⚠️ Positions non synchronisées pour {ticker} (table absente ou schéma incomplet): {position_error}", flush=True)
     
+    unresolved_unique = []
     if len(unresolved_isins) > 0:
         unresolved_unique = sorted(list(set(unresolved_isins)))
         print(f"--- ⚠️ ISIN NON RÉSOLUS ({len(unresolved_unique)}) ---", flush=True)
@@ -1143,6 +1175,7 @@ def run_sync():
             print(f"    - {unresolved}", flush=True)
 
     # Calculer et enregistrer le coverage_pct dans valuation_snapshots
+    coverage_pct = None
     if total_portfolio_value > 0:
         coverage_pct = (covered_value / total_portfolio_value) * 100
         print(f"--- 📊 COVERAGE DU PORTEFEUILLE ---", flush=True)
@@ -1185,16 +1218,77 @@ def run_sync():
     else:
         print(f"    ⚠️ Aucune valeur de portefeuille à calculer", flush=True)
 
+    status_counts = {"OK": 0, "STALE": 0, "LOW_CONFIDENCE": 0, "PARTIAL": 0}
+    for asset in assets_processed:
+        status = asset.get("status")
+        if status in status_counts:
+            status_counts[status] += 1
+
+    return {
+        "assets_total": len(assets_processed),
+        "coverage_pct": coverage_pct,
+        "status_ok": status_counts["OK"],
+        "status_stale": status_counts["STALE"],
+        "status_low_confidence": status_counts["LOW_CONFIDENCE"],
+        "status_partial": status_counts["PARTIAL"],
+        "unresolved_isins": len(unresolved_unique),
+    }
+
 if __name__ == "__main__":
     print("--- 🚀 DÉMARRAGE DU PIPELINE FINANCIER ---", flush=True)
-    
-    # 1. Mise à jour des taux de change (EUR, USD, CHF...)
-    update_currencies()
-    
-    # 2. Mise à jour des indicateurs Macro (VIX, Gold, Taux...)
-    update_macro_hub()
-    
-    # 3. Synchronisation des actifs du portefeuille (Stocks, ETFs...)
-    run_sync()
-    
-    print("--- ✅ SCRIPT TERMINÉ AVEC SUCCÈS ---", flush=True)
+    job_name = "bridge_sync"
+    started = time.time()
+    run_id = start_etl_run(job_name)
+    try:
+        # 1. Mise à jour des taux de change (EUR, USD, CHF...)
+        update_currencies()
+        
+        # 2. Mise à jour des indicateurs Macro (VIX, Gold, Taux...)
+        update_macro_hub()
+        
+        # 3. Synchronisation des actifs du portefeuille (Stocks, ETFs...)
+        stats = run_sync()
+        
+        finish_etl_run(run_id, "SUCCESS", time.time() - started, stats=stats)
+        print("--- ✅ SCRIPT TERMINÉ AVEC SUCCÈS ---", flush=True)
+    except Exception as e:
+        finish_etl_run(run_id, "FAILED", time.time() - started, error=str(e))
+        raise
+# --- ETL RUN LOGGING ---
+def start_etl_run(job_name: str) -> str | None:
+    try:
+        response = (
+            supabase
+            .table("etl_runs")
+            .insert({
+                "job_name": job_name,
+                "status": "RUNNING",
+                "started_at": datetime.now().isoformat(),
+                "updated_at": datetime.now().isoformat(),
+            })
+            .execute()
+        )
+        if response.data and len(response.data) > 0:
+            return response.data[0].get("id")
+    except Exception as e:
+        print(f"⚠️ Impossible de démarrer etl_runs: {e}", flush=True)
+    return None
+
+
+def finish_etl_run(run_id: str | None, status: str, duration_sec: float, stats: dict | None = None, error: str | None = None) -> None:
+    if not run_id:
+        return
+    try:
+        payload = {
+            "status": status,
+            "finished_at": datetime.now().isoformat(),
+            "duration_sec": round(duration_sec, 2),
+            "updated_at": datetime.now().isoformat(),
+        }
+        if stats is not None:
+            payload["stats"] = stats
+        if error:
+            payload["error"] = error
+        supabase.table("etl_runs").update(payload).eq("id", run_id).execute()
+    except Exception as e:
+        print(f"⚠️ Impossible de clôturer etl_runs: {e}", flush=True)

@@ -1,17 +1,57 @@
-import os
-import re
 import json
+import os
 import random
+import re
 import sys
 import time
-import feedparser
-import requests
 from datetime import datetime, timedelta
 from pathlib import Path
-from supabase import create_client
 from urllib.parse import urlparse
 
+import feedparser
+import requests
+from supabase import create_client
+
 print("--- 📰 DÉMARRAGE DE LA SYNCHRONISATION DES ACTUALITÉS ---", flush=True)
+
+
+def start_etl_run(job_name: str) -> str | None:
+    try:
+        response = (
+            supabase
+            .table("etl_runs")
+            .insert({
+                "job_name": job_name,
+                "status": "RUNNING",
+                "started_at": datetime.now().isoformat(),
+                "updated_at": datetime.now().isoformat(),
+            })
+            .execute()
+        )
+        if response.data and len(response.data) > 0:
+            return response.data[0].get("id")
+    except Exception as e:
+        print(f"⚠️ Impossible de démarrer etl_runs: {e}", flush=True)
+    return None
+
+
+def finish_etl_run(run_id: str | None, status: str, duration_sec: float, stats: dict | None = None, error: str | None = None) -> None:
+    if not run_id:
+        return
+    try:
+        payload = {
+            "status": status,
+            "finished_at": datetime.now().isoformat(),
+            "duration_sec": round(duration_sec, 2),
+            "updated_at": datetime.now().isoformat(),
+        }
+        if stats is not None:
+            payload["stats"] = stats
+        if error:
+            payload["error"] = error
+        supabase.table("etl_runs").update(payload).eq("id", run_id).execute()
+    except Exception as e:
+        print(f"⚠️ Impossible de clôturer etl_runs: {e}", flush=True)
 
 # === CHARGEMENT DE LA CONFIGURATION D'IMPACT ===
 def load_impact_rules():
@@ -344,7 +384,7 @@ def fetch_news_from_marketaux(tickers: list[str]) -> list:
         # Continuer même en cas d'erreur
         return []
 
-def cleanup_old_news():
+def cleanup_old_news() -> int:
     """Supprime les news de plus de 7 jours."""
     try:
         cutoff_date = (datetime.now() - timedelta(days=7)).isoformat()
@@ -354,17 +394,21 @@ def cleanup_old_news():
         
         if result.data:
             print(f"    🗑️ {len(result.data)} articles supprimés (>7 jours)", flush=True)
+            return len(result.data)
         else:
             print(f"    ✅ Aucun article à supprimer", flush=True)
-            
+            return 0
     except Exception as e:
         print(f"    ⚠️ Erreur nettoyage: {e}", flush=True)
+        return 0
 
-def sync_news():
+def sync_news() -> dict:
     """Synchronise toutes les actualités depuis les sources RSS et Marketaux."""
     print("--- SYNCHRONISATION DES ACTUALITÉS ---", flush=True)
     
     all_news = []
+    rss_count = 0
+    marketaux_count = 0
     
     # 1. Récupérer les actualités depuis les sources RSS (Macro)
     print("--- SOURCES RSS (MACRO) ---", flush=True)
@@ -374,6 +418,7 @@ def sync_news():
             # Vérifier que news_items n'est pas None et est une liste avant d'étendre
             if news_items and isinstance(news_items, list):
                 all_news.extend(news_items)
+                rss_count += len(news_items)
             else:
                 print(f"    ⚠️ Aucune news récupérée depuis {rss_config['source']}", flush=True)
         except Exception as e:
@@ -400,6 +445,7 @@ def sync_news():
             # Vérifier que news_items n'est pas None et n'est pas vide avant d'étendre
             if news_items and isinstance(news_items, list):
                 all_news.extend(news_items)
+                marketaux_count += len(news_items)
             else:
                 print(f"    ⚠️ Aucune news récupérée pour le batch de {len(limited_tickers)} tickers", flush=True)
             
@@ -458,10 +504,24 @@ def sync_news():
     
     # 3. Nettoyage : Supprimer les news de plus de 7 jours
     print("--- NETTOYAGE DES ANCIENNES NEWS ---", flush=True)
-    cleanup_old_news()
+    deleted_count = cleanup_old_news()
     
     print(f"--- ✅ SYNCHRONISATION TERMINÉE: {len(unique_news)} articles ---", flush=True)
+    return {
+        "rss_count": rss_count,
+        "marketaux_count": marketaux_count,
+        "unique_count": len(unique_news),
+        "deleted_count": deleted_count,
+    }
 
 if __name__ == "__main__":
-    sync_news()
-    print("--- ✅ SCRIPT TERMINÉ AVEC SUCCÈS ---", flush=True)
+    job_name = "news_sync"
+    started = time.time()
+    run_id = start_etl_run(job_name)
+    try:
+        stats = sync_news()
+        finish_etl_run(run_id, "SUCCESS", time.time() - started, stats=stats)
+        print("--- ✅ SCRIPT TERMINÉ AVEC SUCCÈS ---", flush=True)
+    except Exception as e:
+        finish_etl_run(run_id, "FAILED", time.time() - started, error=str(e))
+        raise

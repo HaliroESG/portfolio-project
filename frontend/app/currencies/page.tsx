@@ -1,19 +1,12 @@
 "use client"
 
-import React, { useState, useEffect } from 'react'
+import React, { useMemo } from 'react'
+import useSWR from 'swr'
 import { Sidebar } from '../../components/Sidebar'
 import { Header } from '../../components/Header'
 import { supabase } from '../../lib/supabase'
 import { ArrowRightLeft, TrendingUp, TrendingDown } from 'lucide-react'
 import { cn } from '../../lib/utils'
-
-interface CurrencyPair {
-  ticker: string
-  name: string
-  currency: string
-  last_price: number
-  perf_day_local: number
-}
 
 // Interface pour les données brutes de Supabase
 interface MarketWatchItem {
@@ -26,83 +19,60 @@ interface MarketWatchItem {
 }
 
 export default function CurrenciesPage() {
-  const [lastSync, setLastSync] = useState("")
-  const [currencyPairs, setCurrencyPairs] = useState<CurrencyPair[]>([])
-  const [loading, setLoading] = useState(true)
+  const { data, isLoading } = useSWR(
+    'market-watch-currencies',
+    async () => {
+      const { data: rows, error } = await supabase
+        .from('market_watch')
+        .select('ticker, name, currency, last_price, perf_day_local, last_update')
+        .not('currency', 'is', null)
+      if (error) throw error
+      return (rows ?? []) as MarketWatchItem[]
+    },
+    { refreshInterval: 300000, revalidateOnFocus: false }
+  )
 
-  useEffect(() => {
-    async function fetchCurrencyPairs() {
-      try {
-        // Récupérer les actifs de type Forex/Currency ou dont le nom contient "vs" ou "Pair"
-        const { data, error } = await supabase
-          .from('market_watch')
-          .select('ticker, name, currency, last_price, perf_day_local, last_update')
-          .not('currency', 'is', null)
-        
-        if (error) throw error
-        
-        if (data && data.length > 0) {
-          // Type-safe: Cast data to MarketWatchItem[]
-          const typedData = data as MarketWatchItem[]
-          
-          // Filtrer pour n'afficher que les paires de devises
-          const pairs = typedData.filter((item) => {
-            const name = (item.name || '').toLowerCase()
-            const ticker = (item.ticker || '').toUpperCase()
-            const currency = (item.currency || '').toUpperCase()
-            
-            // Filtrer les devises non-EUR ou contenant "vs"/"Pair" dans le nom
-            // Ou les tickers FX (EURUSD=X, GBPUSD=X, etc.)
-            return (
-              (currency !== 'EUR') ||
-              name.includes('vs') ||
-              name.includes('pair') ||
-              ticker.includes('=X') ||
-              ticker.includes('USD') ||
-              ticker.includes('EUR')
-            )
-          }).map((item) => ({
-            ticker: item.ticker || 'N/A',
-            name: item.name || 'Unknown',
-            currency: item.currency || 'USD',
-            last_price: item.last_price || 0,
-            perf_day_local: (item.perf_day_local || 0) * 100 // Convertir en pourcentage
-          }))
-          
-          setCurrencyPairs(pairs)
-          
-          // Type-safe reduce pour trouver le dernier sync time
-          // Valeur initiale sécurisée : data[0]?.last_update ou ISO string
-          const initialValue = typedData[0]?.last_update || new Date().toISOString()
-          const latest = typedData.reduce((max: string, item: MarketWatchItem) => {
-            const itemUpdate = item.last_update
-            // Gérer les cas où last_update est undefined/null
-            if (!itemUpdate) return max
-            
-            // S'assurer que max est valide avant de créer une Date
-            const maxDate = max ? new Date(max) : new Date(0)
-            const itemDate = new Date(itemUpdate)
-            
-            // Vérifier que la date est valide
-            if (isNaN(itemDate.getTime())) return max
-            
-            return itemDate > maxDate ? itemUpdate : max
-          }, initialValue)
-          
-          setLastSync(new Date(latest).toLocaleTimeString('fr-FR'))
-        }
-      } catch (err) {
-        console.error('Error fetching currency pairs:', err)
-      } finally {
-        setLoading(false)
-      }
+  const { currencyPairs, lastSync } = useMemo(() => {
+    if (!data || data.length === 0) return { currencyPairs: [], lastSync: '' }
+
+    const pairs = data
+      .filter((item) => {
+        const name = (item.name || '').toLowerCase()
+        const ticker = (item.ticker || '').toUpperCase()
+        const currency = (item.currency || '').toUpperCase()
+
+        return (
+          currency !== 'EUR' ||
+          name.includes('vs') ||
+          name.includes('pair') ||
+          ticker.includes('=X') ||
+          ticker.includes('USD') ||
+          ticker.includes('EUR')
+        )
+      })
+      .map((item) => ({
+        ticker: item.ticker || 'N/A',
+        name: item.name || 'Unknown',
+        currency: item.currency || 'USD',
+        last_price: item.last_price || 0,
+        perf_day_local: (item.perf_day_local || 0) * 100,
+      }))
+
+    const initialValue = data[0]?.last_update || new Date().toISOString()
+    const latest = data.reduce((max: string, item: MarketWatchItem) => {
+      const itemUpdate = item.last_update
+      if (!itemUpdate) return max
+      const maxDate = max ? new Date(max) : new Date(0)
+      const itemDate = new Date(itemUpdate)
+      if (isNaN(itemDate.getTime())) return max
+      return itemDate > maxDate ? itemUpdate : max
+    }, initialValue)
+
+    return {
+      currencyPairs: pairs,
+      lastSync: new Date(latest).toLocaleTimeString('fr-FR'),
     }
-    fetchCurrencyPairs()
-    
-    // Refresh every 5 minutes
-    const interval = setInterval(fetchCurrencyPairs, 300000)
-    return () => clearInterval(interval)
-  }, [])
+  }, [data])
 
   return (
     <div className="flex h-screen bg-slate-50 dark:bg-[#080A0F] transition-colors duration-500">
@@ -142,7 +112,7 @@ export default function CurrenciesPage() {
                     </tr>
                   </thead>
                   <tbody className="divide-y divide-slate-200 dark:divide-white/5">
-                    {loading ? (
+                    {isLoading ? (
                       <tr>
                         <td colSpan={4} className="p-8 text-center text-slate-500 dark:text-gray-400">
                           Loading currency pairs...

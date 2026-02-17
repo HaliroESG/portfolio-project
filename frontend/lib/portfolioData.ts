@@ -261,7 +261,7 @@ function resolveTrendState(row: MarketWatchRow): TrendState {
     row.rsi_14 !== null &&
     row.momentum_20 !== null
 
-  if (!hasIndicators) return 'UNKNOWN'
+  if (!hasIndicators) return 'INSUFFICIENT_HISTORY'
   if (row.trend_state === 'BULLISH') return 'BULLISH'
   if (row.trend_state === 'BEARISH') return 'BEARISH'
   return 'NEUTRAL'
@@ -287,7 +287,11 @@ function getRateToEur(currency: string | null, rates: Map<string, number>): numb
 function parseMarketWatchRow(raw: JsonRecord): MarketWatchRow {
   const trendCandidate = readString(raw.trend_state)
   const trendState: TrendState | null =
-    trendCandidate === 'BULLISH' || trendCandidate === 'BEARISH' || trendCandidate === 'NEUTRAL' || trendCandidate === 'UNKNOWN'
+    trendCandidate === 'BULLISH' ||
+    trendCandidate === 'BEARISH' ||
+    trendCandidate === 'NEUTRAL' ||
+    trendCandidate === 'UNKNOWN' ||
+    trendCandidate === 'INSUFFICIENT_HISTORY'
       ? trendCandidate
       : null
 
@@ -605,7 +609,7 @@ function aggregateByTicker(
         macd_hist: market?.macd_hist ?? null,
         momentum_20: market?.momentum_20 ?? null,
         trend_state: trendState,
-        trend_changed: trendState === 'UNKNOWN' ? false : market?.trend_changed ?? false,
+        trend_changed: trendState === 'UNKNOWN' || trendState === 'INSUFFICIENT_HISTORY' ? false : market?.trend_changed ?? false,
       },
       performance: {
         day: {

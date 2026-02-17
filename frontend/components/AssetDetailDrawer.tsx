@@ -199,7 +199,7 @@ export function AssetDetailDrawer({ asset, isOpen, onClose }: AssetDetailDrawerP
   const investedValueEur = asset?.invested_value_eur ?? null
   const pnlEur = asset?.pnl_eur ?? null
   const pnlPct = asset?.pnl_pct ?? null
-  const hasTechnicalHistory = trendState !== 'UNKNOWN'
+  const hasTechnicalHistory = trendState !== 'UNKNOWN' && trendState !== 'INSUFFICIENT_HISTORY'
 
   // ===== EVENT HANDLERS =====
   const handleYahooFinance = () => {
@@ -509,15 +509,17 @@ export function AssetDetailDrawer({ asset, isOpen, onClose }: AssetDetailDrawerP
                   </div>
                   <span className={cn(
                     'px-3 py-1.5 rounded-lg text-xs font-black uppercase tracking-tighter border',
-                    trendState === 'BULLISH'
+                      trendState === 'BULLISH'
                       ? 'bg-green-100 dark:bg-green-950/30 text-green-700 dark:text-green-400 border-green-300 dark:border-green-800/50'
                       : trendState === 'BEARISH'
                       ? 'bg-red-100 dark:bg-red-950/30 text-red-700 dark:text-red-400 border-red-300 dark:border-red-800/50'
                       : trendState === 'UNKNOWN'
                       ? 'bg-amber-100 dark:bg-amber-950/30 text-amber-700 dark:text-amber-400 border-amber-300 dark:border-amber-800/50'
+                      : trendState === 'INSUFFICIENT_HISTORY'
+                      ? 'bg-orange-100 dark:bg-orange-950/30 text-orange-700 dark:text-orange-400 border-orange-300 dark:border-orange-800/50'
                       : 'bg-slate-100 dark:bg-slate-800/50 text-slate-600 dark:text-gray-400 border-slate-300 dark:border-slate-700'
                   )}>
-                    {trendState}
+                    {trendState === 'INSUFFICIENT_HISTORY' ? 'NO HISTORY' : trendState}
                   </span>
                 </div>
 

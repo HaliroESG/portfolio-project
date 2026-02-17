@@ -1,6 +1,7 @@
 "use client"
 
-import React, { useEffect, useState, useCallback } from 'react'
+import React, { useMemo } from 'react'
+import useSWR from 'swr'
 import { supabase } from '../lib/supabase'
 import { AlertTriangle, ShieldCheck, Zap, Activity, Bell } from 'lucide-react'
 
@@ -16,11 +17,7 @@ interface MacroIndicator {
 }
 
 export function MacroHealth() {
-  const [indicators, setIndicators] = useState<MacroIndicator[]>([])
-  const [alerts, setAlerts] = useState<string[]>([])
-
-  // Memoize processTacticalSignals to prevent recreation on every render
-  const processTacticalSignals = useCallback((data: MacroIndicator[]) => {
+  const buildAlerts = (data: MacroIndicator[]) => {
     const newAlerts: string[] = []
     const find = (id: string) => data.find(i => i.id === id)
 
@@ -49,21 +46,21 @@ export function MacroHealth() {
       newAlerts.push("CURVE DEEP INVERSION: Recession risk rising. Favor defensive quality.")
     }
 
-    setAlerts(newAlerts)
-  }, [])
+    return newAlerts
+  }
 
-  useEffect(() => {
-    const fetchMacro = async () => {
-      const { data } = await supabase.from('macro_indicators').select('*')
-      if (data) {
-        setIndicators(data)
-        processTacticalSignals(data)
-      }
-    }
-    fetchMacro()
-    const interval = setInterval(fetchMacro, 30000)
-    return () => clearInterval(interval)
-  }, [processTacticalSignals])
+  const { data } = useSWR(
+    'macro-indicators',
+    async () => {
+      const { data: rows, error } = await supabase.from('macro_indicators').select('*')
+      if (error) throw error
+      return (rows ?? []) as MacroIndicator[]
+    },
+    { refreshInterval: 30000, revalidateOnFocus: false }
+  )
+
+  const indicators = useMemo(() => data ?? [], [data])
+  const alerts = useMemo(() => buildAlerts(indicators), [indicators])
 
   const getHealthStatus = () => {
     const vix = indicators.find(i => i.id === '^VIX')

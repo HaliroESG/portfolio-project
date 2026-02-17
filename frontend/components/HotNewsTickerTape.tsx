@@ -1,6 +1,7 @@
 "use client"
 
-import React, { useEffect, useState } from 'react'
+import React from 'react'
+import useSWR from 'swr'
 import { supabase } from '../lib/supabase'
 import { ExternalLink } from 'lucide-react'
 import { cn } from '../lib/utils'
@@ -20,39 +21,25 @@ interface NewsItem {
 }
 
 export function HotNewsTickerTape() {
-  const [news, setNews] = useState<NewsItem[]>([])
-  const [loading, setLoading] = useState(true)
-
-  useEffect(() => {
-    async function fetchNews() {
-      try {
-        const { data, error } = await supabase
-          .from('news_feed')
-          .select('*')
-          .or('category.eq.MACRO,impact_level.eq.HIGH')
-          .order('published_at', { ascending: false })
-          .limit(20)
-        
-        if (error) throw error
-        if (data) {
-          setNews(data)
-        }
-      } catch (err) {
-        console.error('Error fetching news:', err)
-      } finally {
-        setLoading(false)
-      }
-    }
-
-    fetchNews()
-    const interval = setInterval(fetchNews, 300000) // Refresh every 5 minutes
-    return () => clearInterval(interval)
-  }, [])
+  const { data, isLoading } = useSWR(
+    'hot-news',
+    async () => {
+      const { data: rows, error } = await supabase
+        .from('news_feed')
+        .select('*')
+        .or('category.eq.MACRO,impact_level.eq.HIGH')
+        .order('published_at', { ascending: false })
+        .limit(20)
+      if (error) throw error
+      return (rows ?? []) as NewsItem[]
+    },
+    { refreshInterval: 300000, revalidateOnFocus: false }
+  )
 
   // Protection contre undefined/null
-  const safeNews = news || []
+  const safeNews = data || []
   
-  if (loading || safeNews.length === 0) {
+  if (isLoading || safeNews.length === 0) {
     return null
   }
 

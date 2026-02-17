@@ -1,6 +1,7 @@
 "use client"
 
-import React, { useEffect, useMemo, useState } from 'react'
+import React, { useMemo } from 'react'
+import useSWR from 'swr'
 import { supabase } from '../../lib/supabase'
 
 import { Sidebar } from '../../components/Sidebar'
@@ -98,23 +99,19 @@ function MacroPillar({ title, subtitle, icon: Icon, status, indicators }: MacroP
 }
 
 export default function MDSSPage() {
-  const [indicators, setIndicators] = useState<MacroIndicator[]>([])
+  const { data } = useSWR(
+    'macro-indicators',
+    async () => {
+      const { data: rows, error } = await supabase
+        .from('macro_indicators')
+        .select('id, name, value, change_pct, last_update')
+      if (error) throw error
+      return (rows ?? []) as MacroIndicator[]
+    },
+    { refreshInterval: 60000, revalidateOnFocus: false }
+  )
 
-  useEffect(() => {
-    async function fetchMacroIndicators() {
-      try {
-        const { data, error } = await supabase.from('macro_indicators').select('id, name, value, change_pct, last_update')
-        if (error) throw error
-        setIndicators((data ?? []) as MacroIndicator[])
-      } catch (err) {
-        console.error('Error fetching MDSS macro data:', err)
-      }
-    }
-
-    fetchMacroIndicators()
-    const interval = setInterval(fetchMacroIndicators, 60000)
-    return () => clearInterval(interval)
-  }, [])
+  const indicators = useMemo(() => data ?? [], [data])
 
   const indicatorMap = useMemo(() => {
     const map = new Map<string, MacroIndicator>()

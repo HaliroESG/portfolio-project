@@ -5,7 +5,8 @@ export type GeoTimeframe = 'day' | 'month' | 'ytd';
 // Data Status Enum
 export type DataStatus = 'OK' | 'STALE' | 'LOW_CONFIDENCE' | 'PARTIAL';
 export type AssetType = 'Stock' | 'STOCK' | 'ETF' | 'Crypto' | 'CRYPTO' | 'Cash' | 'Forex' | 'Currency';
-export type TrendState = 'BULLISH' | 'BEARISH' | 'NEUTRAL' | 'UNKNOWN';
+// Add INSUFFICIENT_HISTORY to distinguish missing historical data from neutral/unknown
+export type TrendState = 'BULLISH' | 'BEARISH' | 'NEUTRAL' | 'UNKNOWN' | 'INSUFFICIENT_HISTORY';
 
 export interface PerformanceData {
   value: number // Percentage

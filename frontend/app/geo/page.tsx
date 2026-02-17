@@ -1,6 +1,7 @@
 "use client"
 
 import React, { useEffect, useMemo, useState } from 'react'
+import useSWR from 'swr'
 import { Sidebar } from '../../components/Sidebar'
 import { Header } from '../../components/Header'
 import { GeographicMap } from '../../components/GeographicMap'
@@ -32,28 +33,26 @@ export default function GeoPage() {
     return buildGeographicPerformance(assets, timeframe)
   }, [assets, timeframe])
 
+  const { data: portfolioBundle, isLoading: bundleLoading } = useSWR(
+    'portfolio-aggregation',
+    () => loadPortfolioAggregation(supabase),
+    { refreshInterval: 300000, revalidateOnFocus: false }
+  )
+
   useEffect(() => {
-    async function fetchData() {
-      try {
-        const bundle = await loadPortfolioAggregation(supabase)
-        setAssetsByPortfolio(bundle.assetsByPortfolio)
-        setPortfolioOptions(bundle.portfolioOptions)
-        setLastSync(bundle.lastSync)
+    if (!portfolioBundle) return
+    setAssetsByPortfolio(portfolioBundle.assetsByPortfolio)
+    setPortfolioOptions(portfolioBundle.portfolioOptions)
+    setLastSync(portfolioBundle.lastSync)
 
-        if (selectedPortfolioId !== 'ALL' && !bundle.assetsByPortfolio[selectedPortfolioId]) {
-          setSelectedPortfolioId('ALL')
-        }
-      } catch (error) {
-        console.error('Error fetching geographic data:', error)
-      } finally {
-        setLoading(false)
-      }
+    if (selectedPortfolioId !== 'ALL' && !portfolioBundle.assetsByPortfolio[selectedPortfolioId]) {
+      setSelectedPortfolioId('ALL')
     }
+  }, [portfolioBundle, selectedPortfolioId])
 
-    fetchData()
-    const interval = setInterval(fetchData, 300000)
-    return () => clearInterval(interval)
-  }, [selectedPortfolioId])
+  useEffect(() => {
+    setLoading(bundleLoading)
+  }, [bundleLoading])
 
   return (
     <div className="flex h-screen bg-slate-100 dark:bg-[#080A0F] text-slate-900 transition-colors duration-500">
