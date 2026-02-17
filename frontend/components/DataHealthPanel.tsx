@@ -30,7 +30,7 @@ function computeStatus(ts: string | null): { status: HealthItem['status']; ageMi
   const ageMs = Date.now() - date.getTime()
   const ageMinutes = Math.max(0, Math.round(ageMs / 60000))
   if (ageMinutes <= 60) return { status: 'LIVE', ageMinutes }
-  if (ageMinutes <= 240) return { status: 'STALE', ageMinutes }
+  if (ageMinutes <= 1440) return { status: 'STALE', ageMinutes }
   return { status: 'MISSING', ageMinutes }
 }
 

@@ -898,7 +898,7 @@ def run_sync() -> dict:
         name_key = next((k for k in keys if 'nom' in k or 'name' in k), None)
         currency_key = next((k for k in keys if 'devise' in k or 'curr' in k or 'currency' in k), None)
         portfolio_key = next((k for k in keys if 'portfolio_id' in k or k == 'portfolio' or 'portfolio' in k), None)
-        type_key = next((k for k in keys if k == 'type' or 'instrument' in k), None)
+        type_key = next((k for k in keys if k == 'type' or 'instrument' in k or 'categorie' in k or 'catégorie' in k), None)
         asset_class_key = next((k for k in keys if 'asset_class' in k or 'classe' in k), None)
         quantity_buy_key = next((k for k in keys if ('quantity_buy' in k or 'qty_buy' in k or 'achat' in k or 'buy' in k)), None)
         quantity_current_key = next((

@@ -405,8 +405,9 @@ async function fetchMarketWatchRows(supabase: SupabaseClient): Promise<MarketWat
     'market_watch',
     [
       'id,name,ticker,last_price,currency,type,geo_coverage,data_status,last_update,pe_ratio,market_cap,asset_class,quantity,quantity_buy,pru,target_weight_pct,portfolio_id,perf_day_eur,perf_day_local,perf_week_local,perf_month_local,perf_ytd_eur,ma200_value,ma200_status,trend_slope,volatility_30d,rsi_14,macd_line,macd_signal,macd_hist,momentum_20,trend_state,trend_changed',
-      'id,name,ticker,last_price,currency,type,geo_coverage,data_status,last_update,pe_ratio,market_cap,asset_class,quantity,perf_day_eur,perf_day_local,perf_week_local,perf_month_local,perf_ytd_eur,ma200_value,ma200_status,trend_slope,volatility_30d,rsi_14,macd_line,macd_signal,macd_hist,momentum_20,trend_state,trend_changed',
-      'id,name,ticker,last_price,currency,type,geo_coverage,data_status,last_update,pe_ratio,market_cap,asset_class,quantity,perf_day_eur,perf_day_local,perf_week_local,perf_month_local,perf_ytd_eur',
+      // Schema without technicals or type column
+      'id,name,ticker,last_price,currency,geo_coverage,data_status,last_update,pe_ratio,market_cap,asset_class,quantity,quantity_buy,pru,target_weight_pct,portfolio_id,perf_day_eur,perf_day_local,perf_week_local,perf_month_local,perf_ytd_eur,ma200_value,ma200_status,trend_slope,volatility_30d',
+      'id,name,ticker,last_price,currency,geo_coverage,data_status,last_update,pe_ratio,market_cap,asset_class,quantity,perf_day_eur,perf_day_local,perf_week_local,perf_month_local,perf_ytd_eur',
     ]
   )
   return rows.map(parseMarketWatchRow)
