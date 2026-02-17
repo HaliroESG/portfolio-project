@@ -3,7 +3,7 @@
 import React from 'react'
 import Link from 'next/link'
 import { usePathname } from 'next/navigation'
-import { LayoutDashboard, Activity, Globe, Wallet, Settings } from 'lucide-react'
+import { LayoutDashboard, Activity, Globe, Wallet, Settings, Target } from 'lucide-react'
 
 export function Sidebar() {
   const pathname = usePathname()
@@ -13,6 +13,7 @@ export function Sidebar() {
     { name: 'Macro Intelligence', icon: Activity, href: '/mdss' },
     { name: 'Geographic View', icon: Globe, href: '/geo' },
     { name: 'Currencies', icon: Wallet, href: '/fx' },
+    { name: 'Targets', icon: Target, href: '/targets' },
   ]
 
   return (
