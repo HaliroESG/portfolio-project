@@ -32,7 +32,7 @@ if not GSPREAD_JSON:
 
 # 3. INITIALISATION
 try:
-supabase = create_client(SUPABASE_URL, SUPABASE_KEY)
+    supabase = create_client(SUPABASE_URL, SUPABASE_KEY)
     print("✅ Client Supabase connecté.", flush=True)
 except Exception as e:
     print(f"❌ Crash Supabase : {e}", flush=True)
