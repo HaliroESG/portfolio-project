@@ -625,14 +625,14 @@ function aggregateByTicker(
           value: ((market?.perf_week_eur ?? market?.perf_week_local) ?? 0) * 100,
           currencyImpact:
             market?.perf_week_eur !== null && market?.perf_week_local !== null
-              ? (market.perf_week_eur - market.perf_week_local) * 100
+              ? ((market?.perf_week_eur ?? 0) - (market?.perf_week_local ?? 0)) * 100
               : 0,
         },
         month: {
           value: ((market?.perf_month_eur ?? market?.perf_month_local) ?? 0) * 100,
           currencyImpact:
             market?.perf_month_eur !== null && market?.perf_month_local !== null
-              ? (market.perf_month_eur - market.perf_month_local) * 100
+              ? ((market?.perf_month_eur ?? 0) - (market?.perf_month_local ?? 0)) * 100
               : 0,
         },
         ytd: {
