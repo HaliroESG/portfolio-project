@@ -7,7 +7,17 @@ interface KpiComparisonTableProps {
   kpis: Record<string, BacktestKpi>
 }
 
-const KPI_ROWS = [
+type KpiMetricKey =
+  | 'cagr'
+  | 'vol'
+  | 'sharpe'
+  | 'sortino'
+  | 'max_drawdown'
+  | 'calmar'
+  | 'worst_year'
+  | 'best_year'
+
+const KPI_ROWS: { key: KpiMetricKey; label: string; format: 'pct' | 'num' }[] = [
   { key: 'cagr', label: 'CAGR', format: 'pct' },
   { key: 'vol', label: 'Volatility', format: 'pct' },
   { key: 'sharpe', label: 'Sharpe', format: 'num' },
@@ -16,7 +26,7 @@ const KPI_ROWS = [
   { key: 'calmar', label: 'Calmar', format: 'num' },
   { key: 'worst_year', label: 'Worst Year', format: 'pct' },
   { key: 'best_year', label: 'Best Year', format: 'pct' },
-] as const
+]
 
 function formatValue(value: number | null | undefined, format: 'pct' | 'num'): string {
   if (value === null || value === undefined || Number.isNaN(value)) return '--'
@@ -69,7 +79,7 @@ export function KpiComparisonTable({ portfolios, kpis }: KpiComparisonTableProps
                 <td className="p-4 text-[11px] font-mono text-slate-600 dark:text-gray-300">{row.label}</td>
                 {portfolios.map((portfolio) => {
                   const kpi = kpis[portfolio.portfolio_key]
-                  const value = kpi ? (kpi as Record<string, number | null>)[row.key] : null
+                  const value = kpi ? kpi[row.key] : null
                   return (
                     <td key={`${portfolio.portfolio_key}-${row.key}`} className="p-4 text-right text-[11px] font-mono text-slate-900 dark:text-gray-200">
                       {formatValue(value ?? null, row.format)}
