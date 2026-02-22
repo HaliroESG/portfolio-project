@@ -93,3 +93,65 @@ export interface CurrencyPair {
   symbol: string;    // ex: '$'
   rate_to_eur: number | null;
 }
+
+export type BacktestRole = 'target' | 'current' | 'preset' | 'baseline'
+export type RebalanceFrequency =
+  | 'none'
+  | 'daily'
+  | 'weekly'
+  | 'monthly'
+  | 'quarterly'
+  | 'semiannual'
+  | 'annual'
+
+export interface BacktestRun {
+  id: string
+  name: string
+  created_at: string
+  base_currency: string
+  start_date: string
+  end_date: string
+  rebalance_freq: RebalanceFrequency
+  fee_bps: number
+  inflation_adjusted: boolean
+  config_json: Record<string, unknown>
+}
+
+export interface BacktestPortfolio {
+  run_id: string
+  portfolio_key: string
+  portfolio_id: string | null
+  preset_key: string | null
+  label: string
+  role: BacktestRole
+  weights_json: Record<string, number>
+  start_date_effective: string | null
+  created_at: string
+}
+
+export interface BacktestResult {
+  run_id: string
+  portfolio_key: string
+  date: string
+  nav: number
+  drawdown: number | null
+  returns_daily: number | null
+}
+
+export interface BacktestKpi {
+  run_id: string
+  portfolio_key: string
+  cagr: number | null
+  vol: number | null
+  sharpe: number | null
+  sortino: number | null
+  max_drawdown: number | null
+  calmar: number | null
+  worst_year: number | null
+  best_year: number | null
+}
+
+export interface CompareSelection {
+  runId: string
+  portfolios: { key: string; role: string }[]
+}
