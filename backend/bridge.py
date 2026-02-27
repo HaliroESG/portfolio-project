@@ -1240,26 +1240,6 @@ def run_sync() -> dict:
         "unresolved_isins": len(unresolved_unique),
     }
 
-if __name__ == "__main__":
-    print("--- 🚀 DÉMARRAGE DU PIPELINE FINANCIER ---", flush=True)
-    job_name = "bridge_sync"
-    started = time.time()
-    run_id = start_etl_run(job_name)
-    try:
-        # 1. Mise à jour des taux de change (EUR, USD, CHF...)
-        update_currencies()
-        
-        # 2. Mise à jour des indicateurs Macro (VIX, Gold, Taux...)
-        update_macro_hub()
-        
-        # 3. Synchronisation des actifs du portefeuille (Stocks, ETFs...)
-        stats = run_sync()
-        
-        finish_etl_run(run_id, "SUCCESS", time.time() - started, stats=stats)
-        print("--- ✅ SCRIPT TERMINÉ AVEC SUCCÈS ---", flush=True)
-    except Exception as e:
-        finish_etl_run(run_id, "FAILED", time.time() - started, error=str(e))
-        raise
 # --- ETL RUN LOGGING ---
 def start_etl_run(job_name: str) -> str | None:
     try:
@@ -1298,3 +1278,24 @@ def finish_etl_run(run_id: str | None, status: str, duration_sec: float, stats: 
         supabase.table("etl_runs").update(payload).eq("id", run_id).execute()
     except Exception as e:
         print(f"⚠️ Impossible de clôturer etl_runs: {e}", flush=True)
+
+if __name__ == "__main__":
+    print("--- 🚀 DÉMARRAGE DU PIPELINE FINANCIER ---", flush=True)
+    job_name = "bridge_sync"
+    started = time.time()
+    run_id = start_etl_run(job_name)
+    try:
+        # 1. Mise à jour des taux de change (EUR, USD, CHF...)
+        update_currencies()
+
+        # 2. Mise à jour des indicateurs Macro (VIX, Gold, Taux...)
+        update_macro_hub()
+
+        # 3. Synchronisation des actifs du portefeuille (Stocks, ETFs...)
+        stats = run_sync()
+
+        finish_etl_run(run_id, "SUCCESS", time.time() - started, stats=stats)
+        print("--- ✅ SCRIPT TERMINÉ AVEC SUCCÈS ---", flush=True)
+    except Exception as e:
+        finish_etl_run(run_id, "FAILED", time.time() - started, error=str(e))
+        raise
