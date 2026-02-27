@@ -10,6 +10,7 @@ import { Globe, Loader2 } from 'lucide-react'
 import { cn } from '../../lib/utils'
 import { Asset, CountryPerformance, GeoTimeframe, PortfolioOption } from '../../types'
 import { buildGeographicPerformance, loadPortfolioAggregation } from '../../lib/portfolioData'
+import { stateFromList, stateLabel as dataStateLabel } from '../../lib/dataStates'
 
 function getDisplayedPerformance(country: CountryPerformance, timeframe: GeoTimeframe): number {
   if (timeframe === 'day') return country.performanceDay
@@ -54,6 +55,8 @@ export default function GeoPage() {
     setLoading(bundleLoading)
   }, [bundleLoading])
 
+  const geoState = stateFromList({ loading, count: regions.length })
+
   return (
     <div className="flex h-screen bg-slate-100 dark:bg-[#080A0F] text-slate-900 transition-colors duration-500">
       <Sidebar />
@@ -61,9 +64,9 @@ export default function GeoPage() {
         <Header lastSync={lastSync} />
         <main className="flex-1 p-8 flex flex-col gap-8">
           <div className="flex justify-between items-center gap-4">
-            <h1 className="text-4xl font-black uppercase tracking-tighter text-slate-950 dark:text-white">
+            <div><h1 className="text-4xl font-black uppercase tracking-tighter text-slate-950 dark:text-white">
               Global <span className="text-[#00FF88]">Exposure</span>
-            </h1>
+            </h1><p className="text-xs text-slate-500 dark:text-gray-400 mt-1">{dataStateLabel(geoState)}</p></div>
 
             <div className="flex items-center gap-3">
               <div className="flex items-center gap-2 rounded-lg bg-slate-200/70 dark:bg-white/10 px-2 py-1">

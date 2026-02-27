@@ -6,6 +6,7 @@ import { X, ExternalLink, Star, TrendingUp, TrendingDown, Globe2, Activity, News
 import { cn } from '../lib/utils'
 import { supabase } from '../lib/supabase'
 import { Tooltip } from './Tooltip'
+import { stateForTechnicalHistory, stateLabel as dataStateLabel } from '../lib/dataStates'
 
 const WATCHLIST_STORAGE_KEY = 'portfolio_watchlist_tickers'
 
@@ -190,6 +191,7 @@ export function AssetDetailDrawer({ asset, isOpen, onClose }: AssetDetailDrawerP
   const pnlEur = asset?.pnl_eur ?? null
   const pnlPct = asset?.pnl_pct ?? null
   const hasTechnicalHistory = trendState !== 'UNKNOWN' && trendState !== 'INSUFFICIENT_HISTORY'
+  const technicalState = stateForTechnicalHistory(trendState)
 
   // ===== EVENT HANDLERS =====
   const handleYahooFinance = () => {
@@ -478,9 +480,12 @@ export function AssetDetailDrawer({ asset, isOpen, onClose }: AssetDetailDrawerP
             <div className="bg-slate-50 dark:bg-[#080A0F] rounded-2xl border-2 border-slate-200 dark:border-white/5 p-6 shadow-xl">
               <div className="flex items-center gap-2 mb-4">
                 <Activity className="w-5 h-5 text-blue-600 dark:text-[#00FF88]" />
+                <div>
                 <h3 className="text-sm font-black text-slate-950 dark:text-white uppercase tracking-tighter">
                   Technical Indicators
                 </h3>
+                <p className="text-[10px] text-slate-500 dark:text-gray-400">{dataStateLabel(technicalState)}</p>
+                </div>
               </div>
               {!hasTechnicalHistory && (
                 <div className="mb-4 p-3 rounded-lg bg-amber-50 dark:bg-amber-950/20 border border-amber-200 dark:border-amber-800/50 text-[11px] font-bold text-amber-700 dark:text-amber-300">

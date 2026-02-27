@@ -7,7 +7,10 @@
     "build": "next build",
     "start": "next start",
     "lint": "eslint",
-    "contract-check": "node scripts/contract-check.mjs"
+    "contract-check": "node scripts/contract-check.mjs",
+    "test:data-states": "node --experimental-strip-types scripts/test-data-states.mjs",
+    "test:smoke": "node scripts/smoke-pages.mjs",
+    "test:frontend": "npm run test:data-states && npm run test:smoke"
   },
   "dependencies": {
     "@supabase/supabase-js": "^2.90.1",

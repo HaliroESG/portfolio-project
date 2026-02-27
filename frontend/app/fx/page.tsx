@@ -7,6 +7,7 @@ import { Header } from '../../components/Header'
 import { supabase } from '../../lib/supabase'
 import { ArrowRightLeft, TrendingDown, TrendingUp } from 'lucide-react'
 import { cn } from '../../lib/utils'
+import { stateLabel as dataStateLabel, UnifiedDataState } from '../../lib/dataStates'
 
 type FxState = 'LIVE' | 'STALE' | 'CACHED' | 'EMPTY'
 
@@ -77,7 +78,7 @@ export default function FXPage() {
   const [marketNote, setMarketNote] = useState('')
   const [fxState, setFxState] = useState<FxState>('EMPTY')
 
-  const { data, isLoading } = useSWR(
+  const { data, isLoading, error } = useSWR(
     'fx-data',
     async () => {
       const [{ data: currenciesData, error: currenciesError }, { data: assetsData, error: assetsError }] = await Promise.all([
@@ -231,6 +232,17 @@ export default function FXPage() {
     computeCurrencies()
   }, [data, isLoading])
 
+
+  const unifiedState: UnifiedDataState = isLoading
+    ? 'LOADING'
+    : error
+    ? 'ERROR'
+    : fxState === 'EMPTY'
+    ? 'EMPTY'
+    : fxState === 'CACHED' || fxState === 'STALE'
+    ? 'STALE'
+    : 'OK'
+
   const stateLabel = useMemo(() => {
     if (fxState === 'LIVE') return { text: 'Live', color: 'text-green-400', dot: 'bg-green-400' }
     if (fxState === 'STALE') return { text: 'Stale', color: 'text-amber-400', dot: 'bg-amber-400' }
@@ -254,6 +266,7 @@ export default function FXPage() {
                 <div className="inline-flex items-center gap-2 px-3 py-1 rounded-lg bg-slate-200 dark:bg-white/10 border border-slate-300 dark:border-white/10">
                   <span className={`h-2 w-2 rounded-full ${stateLabel.dot}`} />
                   <span className={`text-[10px] font-black uppercase tracking-wider ${stateLabel.color}`}>{stateLabel.text}</span>
+                  <span className="text-[10px] text-slate-500 dark:text-gray-400">· {dataStateLabel(unifiedState)}</span>
                 </div>
               </div>
 

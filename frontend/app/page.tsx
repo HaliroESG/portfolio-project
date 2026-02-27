@@ -17,6 +17,7 @@ import { DataHealthPanel } from '../components/DataHealthPanel'
 import { Asset, GeoTimeframe } from '../types'
 import { buildGeographicPerformance, loadPortfolioAggregation } from '../lib/portfolioData'
 import { cn } from '../lib/utils'
+import { stateFromList, stateLabel as dataStateLabel } from '../lib/dataStates'
 
 export default function PortfolioDashboard() {
   const [hoveredAsset, setHoveredAsset] = useState<Asset | null>(null)
@@ -85,6 +86,7 @@ export default function PortfolioDashboard() {
     { refreshInterval: 300000, revalidateOnFocus: false }
   )
   const coveragePct = coverageData ?? null
+  const dashboardState = stateFromList({ loading: loadingBundle, count: assets.length })
 
   return (
     <div className="flex h-screen bg-slate-100 dark:bg-[#080A0F] text-slate-950 dark:text-gray-300 transition-colors duration-500">
@@ -98,7 +100,7 @@ export default function PortfolioDashboard() {
           <div className="flex-1 flex gap-6 min-h-0">
             <div className="w-[65%] flex flex-col">
               <div className="flex items-center justify-between mb-2 px-1 gap-3">
-                <h2 className="text-[10px] font-black text-slate-500 uppercase tracking-[0.2em]">Portfolio Matrix</h2>
+                <div className="flex items-center gap-2"><h2 className="text-[10px] font-black text-slate-500 uppercase tracking-[0.2em]">Portfolio Matrix</h2><span className="text-[10px] text-slate-400 dark:text-gray-500">{dataStateLabel(dashboardState)}</span></div>
                 <div className="flex items-center gap-3">
                   <div className="flex items-center gap-2 rounded-lg bg-slate-200/70 dark:bg-white/10 px-2 py-1">
                     <span className="text-[9px] font-black uppercase tracking-wider text-slate-500 dark:text-gray-400">Portfolio</span>

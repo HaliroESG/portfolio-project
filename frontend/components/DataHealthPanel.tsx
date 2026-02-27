@@ -4,6 +4,7 @@ import { useEffect, useMemo, useState } from 'react'
 import { supabase } from '../lib/supabase'
 import { cn } from '../lib/utils'
 import { Clock, Activity, Database } from 'lucide-react'
+import { stateFromTimestamp } from '../lib/dataStates'
 
 interface HealthItem {
   id: string
@@ -29,8 +30,9 @@ function computeStatus(ts: string | null): { status: HealthItem['status']; ageMi
   if (Number.isNaN(date.getTime())) return { status: 'MISSING', ageMinutes: null }
   const ageMs = Date.now() - date.getTime()
   const ageMinutes = Math.max(0, Math.round(ageMs / 60000))
-  if (ageMinutes <= 60) return { status: 'LIVE', ageMinutes }
-  if (ageMinutes <= 1440) return { status: 'STALE', ageMinutes }
+  const state = stateFromTimestamp(ts, 60)
+  if (state === 'OK') return { status: 'LIVE', ageMinutes }
+  if (state === 'STALE' && ageMinutes <= 1440) return { status: 'STALE', ageMinutes }
   return { status: 'MISSING', ageMinutes }
 }
 
