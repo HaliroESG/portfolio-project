@@ -68,10 +68,8 @@ jobs:
         with:
           python-version: '3.11'
 
-      - name: Install minimal deps for schema check
-        run: |
-          python -m pip install --upgrade pip
-          pip install requests
+      - name: Validate Python runtime
+        run: python --version
 
       - name: Run schema parity check (read-only)
         working-directory: ./backend
@@ -119,3 +117,45 @@ jobs:
         if: ${{ secrets.SUPABASE_URL == '' || secrets.SUPABASE_ANON_KEY == '' }}
         working-directory: ./frontend
         run: node scripts/smoke-supabase.mjs --ci-skip-missing-env
+
+
+  # Week 2 strategy:
+  # - Enable repository variable SCHEMA_CHECK_ENFORCE=true
+  # - This job becomes blocking on main (continue-on-error is NOT set)
+  schema-parity-check-enforced:
+    if: ${{ github.ref == 'refs/heads/main' && vars.SCHEMA_CHECK_ENFORCE == 'true' }}
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v3
+
+      - name: Set up Python
+        uses: actions/setup-python@v4
+        with:
+          python-version: '3.11'
+
+      - name: Validate required secrets
+        env:
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_KEY }}
+        run: |
+          if [ -z "$SUPABASE_URL" ] || [ -z "$SUPABASE_SERVICE_ROLE_KEY" ]; then
+            echo "❌ schema-check enforced but required secrets are missing (SUPABASE_URL / SUPABASE_SERVICE_KEY)."
+            exit 1
+          fi
+
+      - name: Run schema parity check (blocking)
+        working-directory: ./backend
+        env:
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_KEY }}
+        run: python tools/schema_check.py --pretty --output schema-check.json
+
+      - name: Upload schema report artifact
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: schema-check-report-enforced
+          path: backend/schema-check.json
+          if-no-files-found: warn
