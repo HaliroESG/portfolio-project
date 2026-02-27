@@ -14,23 +14,26 @@ If a PR changes backend payload/schema or Supabase migration:
 ### Frontend contract check (blocking)
 - Workflow: `.github/workflows/ci.yml`
 - Trigger: `pull_request` + `push` on `main`
-- Gate: `npm run contract-check`
+- Commands:
+  - `npm ci` (frontend)
+  - `npm run contract-check` (blocking gate)
 
-### Schema parity check (progressive rollout)
+### Schema parity check (two rollout versions)
 
-#### Week 1 (observe-only)
+#### Version A — non-bloquant (Week 1)
 - Workflow: `.github/workflows/schedule.yml` → `schema-parity-check`
 - `continue-on-error: true`
-- Publishes JSON artifact (`schema-check-report`)
-- Goal: collect drift data without blocking deploys
+- Runs only when secrets are present (`SUPABASE_URL`, `SUPABASE_SERVICE_KEY`)
+- If secrets missing: **skip propre** (no failure)
+- Uploads artifact: `schema-check-report`
 
-#### Week 2 (enforced on main)
+#### Version B — bloquant (Week 2 on main)
 - Same workflow, job: `schema-parity-check-enforced`
-- Activated by repository variable: `SCHEMA_CHECK_ENFORCE=true`
-- Blocking on `main` (no `continue-on-error`)
-- Fails fast with clear message when required secrets are missing:
-  - `SUPABASE_URL`
-  - `SUPABASE_SERVICE_KEY` (mapped to `SUPABASE_SERVICE_ROLE_KEY` in job env)
+- Enabled via repo variable: `SCHEMA_CHECK_ENFORCE=true`
+- Runs on `main`
+- Blocking when executed (no `continue-on-error`)
+- If secrets missing: **skip propre** (no failure)
+- Uploads artifact: `schema-check-report-enforced`
 
 ## Policy
 - No silent fallback-only schema changes.

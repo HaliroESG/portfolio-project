@@ -1,5 +1,11 @@
 # Post-deploy checklist (UI + Supabase)
 
+## CI/order of verification
+- [ ] `npm run contract-check` (frontend contract)
+- [ ] `npm run smoke:supabase` (anon read smoke)
+- [ ] `python backend/tools/schema_check.py --pretty --output schema-check.json` (service-role parity)
+- [ ] Review CI artifacts (`schema-check-report`, `anon-supabase-smoke-report`)
+
 ## UI checks
 - [ ] `/` shows explicit state badge/message (Loading/No data/Stale/Error/OK)
 - [ ] `/geo` shows explicit state message and no blank map silence
