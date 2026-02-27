@@ -1,10 +1,12 @@
 "use client"
 
-import { useEffect, useMemo, useState } from 'react'
+import { useMemo } from 'react'
+import useSWR from 'swr'
 import { supabase } from '../lib/supabase'
 import { cn } from '../lib/utils'
 import { Clock, Activity, Database } from 'lucide-react'
-import { stateFromTimestamp } from '../lib/dataStates'
+import { stateFromTimestamp, stateLabel as dataStateLabel, UnifiedDataState } from '../lib/dataStates'
+import { swrOptions, SWR_REFRESH } from '../lib/swrConfig'
 
 interface HealthItem {
   id: string
@@ -24,35 +26,36 @@ interface EtlRun {
   error?: string | null
 }
 
-function computeStatus(ts: string | null): { status: HealthItem['status']; ageMinutes: number | null } {
+function computeStatus(ts: string | null, staleAfterMinutes = 60): { status: HealthItem['status']; ageMinutes: number | null } {
   if (!ts) return { status: 'MISSING', ageMinutes: null }
   const date = new Date(ts)
   if (Number.isNaN(date.getTime())) return { status: 'MISSING', ageMinutes: null }
   const ageMs = Date.now() - date.getTime()
   const ageMinutes = Math.max(0, Math.round(ageMs / 60000))
-  const state = stateFromTimestamp(ts, 60)
+  const state = stateFromTimestamp(ts, staleAfterMinutes)
   if (state === 'OK') return { status: 'LIVE', ageMinutes }
-  if (state === 'STALE' && ageMinutes <= 1440) return { status: 'STALE', ageMinutes }
+  if (state === 'STALE') return { status: 'STALE', ageMinutes }
   return { status: 'MISSING', ageMinutes }
 }
 
-export function DataHealthPanel() {
-  const [items, setItems] = useState<HealthItem[]>([])
-  const [etlRuns, setEtlRuns] = useState<EtlRun[]>([])
+function pct(value: number, total: number): number {
+  if (!total || total <= 0) return 0
+  return (value / total) * 100
+}
 
-  useEffect(() => {
-    async function fetchFreshness() {
-      const configs = [
-        { id: 'market', label: 'Market Watch', table: 'market_watch', field: 'last_update' },
-        { id: 'valuations', label: 'Valuation Snapshots', table: 'valuation_snapshots', field: 'created_at' },
-        { id: 'news', label: 'News Feed', table: 'news_feed', field: 'published_at' },
-        { id: 'macro', label: 'Macro Indicators', table: 'macro_indicators', field: 'last_update' },
+export function DataHealthPanel() {
+  const { data, isLoading } = useSWR(
+    'health-panel:v2',
+    async () => {
+      const freshnessConfigs = [
+        { id: 'market', label: 'Market Watch', table: 'market_watch', field: 'last_update', staleAfterMinutes: 60 },
+        { id: 'valuations', label: 'Valuation Snapshots', table: 'valuation_snapshots', field: 'created_at', staleAfterMinutes: 360 },
+        { id: 'news', label: 'News Feed', table: 'news_feed', field: 'published_at', staleAfterMinutes: 180 },
+        { id: 'macro', label: 'Macro Indicators', table: 'macro_indicators', field: 'last_update', staleAfterMinutes: 120 },
       ] as const
 
-      const results: HealthItem[] = []
-
-      await Promise.all(
-        configs.map(async (cfg) => {
+      const freshness = await Promise.all(
+        freshnessConfigs.map(async (cfg) => {
           try {
             const { data, error } = await supabase
               .from(cfg.table)
@@ -63,45 +66,80 @@ export function DataHealthPanel() {
             if (error) throw error
             const rawTs = data?.[cfg.field as keyof typeof data]
             const ts = typeof rawTs === 'string' ? rawTs : null
-            const { status, ageMinutes } = computeStatus(ts)
-            results.push({ id: cfg.id, label: cfg.label, timestamp: ts, status, ageMinutes })
-          } catch (e) {
-            results.push({ id: cfg.id, label: cfg.label, timestamp: null, status: 'MISSING', ageMinutes: null })
-            console.error('Data health fetch error', cfg.id, e)
+            const { status, ageMinutes } = computeStatus(ts, cfg.staleAfterMinutes)
+            return { id: cfg.id, label: cfg.label, timestamp: ts, status, ageMinutes }
+          } catch {
+            return { id: cfg.id, label: cfg.label, timestamp: null, status: 'MISSING' as const, ageMinutes: null }
           }
         })
       )
 
-      setItems(results)
-
-      try {
-        const { data, error } = await supabase
+      const [{ data: etlRows }, { data: mwRows }, { data: coverageRows }] = await Promise.all([
+        supabase
           .from('etl_runs')
           .select('job_name,status,started_at,finished_at,duration_sec,stats,error')
           .order('started_at', { ascending: false })
-          .limit(20)
-        if (error) throw error
+          .limit(20),
+        supabase
+          .from('market_watch')
+          .select('ticker,last_price,data_status,rsi_14,macd_line,momentum_20,last_update')
+          .limit(500),
+        supabase
+          .from('valuation_snapshots')
+          .select('coverage_pct,created_at')
+          .order('created_at', { ascending: false })
+          .limit(7),
+      ])
 
-        const latestByJob = new Map<string, EtlRun>()
-        ;(data ?? []).forEach((row) => {
-          const run = row as EtlRun
-          if (!latestByJob.has(run.job_name)) {
-            latestByJob.set(run.job_name, run)
-          }
-        })
-        setEtlRuns(Array.from(latestByJob.values()))
-      } catch (e) {
-        console.error('ETL run fetch error', e)
-        setEtlRuns([])
+      const latestByJob = new Map<string, EtlRun>()
+      ;((etlRows ?? []) as EtlRun[]).forEach((row) => {
+        if (!latestByJob.has(row.job_name)) latestByJob.set(row.job_name, row)
+      })
+
+      const market = (mwRows ?? []) as Array<{
+        ticker: string | null
+        last_price: number | null
+        data_status: string | null
+        rsi_14: number | null
+        macd_line: number | null
+        momentum_20: number | null
+        last_update: string | null
+      }>
+      const total = market.length
+      const nullRate = {
+        last_price: pct(market.filter((r) => r.last_price === null).length, total),
+        data_status: pct(market.filter((r) => r.data_status === null).length, total),
+        rsi_14: pct(market.filter((r) => r.rsi_14 === null).length, total),
+        macd_line: pct(market.filter((r) => r.macd_line === null).length, total),
+        momentum_20: pct(market.filter((r) => r.momentum_20 === null).length, total),
       }
-    }
 
-    fetchFreshness()
-    const interval = setInterval(fetchFreshness, 180000) // 3 minutes
-    return () => clearInterval(interval)
-  }, [])
+      const coverageSeries = ((coverageRows ?? []) as Array<{ coverage_pct: number | null; created_at: string }>).filter(
+        (x) => typeof x.coverage_pct === 'number'
+      )
+      const latestCoverage = coverageSeries[0]?.coverage_pct ?? null
+      const oldestCoverage = coverageSeries[coverageSeries.length - 1]?.coverage_pct ?? null
+      const coverageTrend =
+        latestCoverage !== null && oldestCoverage !== null ? Number((latestCoverage - oldestCoverage).toFixed(2)) : null
 
+      return {
+        freshness,
+        etlRuns: Array.from(latestByJob.values()),
+        nullRate,
+        coverage: {
+          latest: latestCoverage,
+          trendDelta: coverageTrend,
+          points: coverageSeries.length,
+        },
+      }
+    },
+    swrOptions(SWR_REFRESH.MEDIUM)
+  )
+
+  const items = useMemo(() => data?.freshness ?? [], [data])
+  const etlRuns = useMemo(() => data?.etlRuns ?? [], [data])
   const liveCount = useMemo(() => items.filter((i) => i.status === 'LIVE').length, [items])
+  const panelState: UnifiedDataState = isLoading ? 'LOADING' : items.length === 0 ? 'EMPTY' : 'OK'
 
   return (
     <div className="w-full bg-white dark:bg-[#0D1117]/50 border-2 border-slate-200 dark:border-white/5 rounded-3xl shadow-2xl p-4">
@@ -112,7 +150,7 @@ export function DataHealthPanel() {
         </div>
         <div className="flex items-center gap-2 text-[10px] font-black text-slate-600 dark:text-gray-400">
           <Activity className="w-3 h-3" />
-          {liveCount}/{items.length || 4} live
+          {liveCount}/{items.length || 4} live · {dataStateLabel(panelState)}
         </div>
       </div>
 
@@ -148,6 +186,27 @@ export function DataHealthPanel() {
             </span>
           </div>
         ))}
+      </div>
+
+      <div className="mt-4 grid grid-cols-1 md:grid-cols-2 gap-3">
+        <div className="p-3 rounded-2xl border border-slate-300/60 bg-slate-50 dark:bg-slate-900/40">
+          <div className="text-[10px] font-black uppercase tracking-wider text-slate-600 dark:text-gray-300 mb-1">Null-rate (market_watch)</div>
+          <div className="text-[11px] font-mono text-slate-600 dark:text-gray-300 space-y-1">
+            <div>last_price: {data?.nullRate.last_price?.toFixed(1) ?? '0.0'}%</div>
+            <div>data_status: {data?.nullRate.data_status?.toFixed(1) ?? '0.0'}%</div>
+            <div>rsi_14: {data?.nullRate.rsi_14?.toFixed(1) ?? '0.0'}%</div>
+            <div>macd_line: {data?.nullRate.macd_line?.toFixed(1) ?? '0.0'}%</div>
+            <div>momentum_20: {data?.nullRate.momentum_20?.toFixed(1) ?? '0.0'}%</div>
+          </div>
+        </div>
+
+        <div className="p-3 rounded-2xl border border-slate-300/60 bg-slate-50 dark:bg-slate-900/40">
+          <div className="text-[10px] font-black uppercase tracking-wider text-slate-600 dark:text-gray-300 mb-1">Coverage SLA</div>
+          <div className="text-[11px] font-mono text-slate-600 dark:text-gray-300 space-y-1">
+            <div>latest coverage: {data?.coverage.latest !== null && data?.coverage.latest !== undefined ? `${data.coverage.latest.toFixed(2)}%` : 'N/A'}</div>
+            <div>trend (last {data?.coverage.points ?? 0} pts): {data?.coverage.trendDelta !== null && data?.coverage.trendDelta !== undefined ? `${data.coverage.trendDelta >= 0 ? '+' : ''}${data.coverage.trendDelta.toFixed(2)} pts` : 'N/A'}</div>
+          </div>
+        </div>
       </div>
 
       {etlRuns.length > 0 && (
@@ -199,6 +258,7 @@ export function DataHealthPanel() {
                       {coverage ? ` · coverage ${coverage}` : ''}
                     </div>
                   )}
+                  {run.error && <div className="text-[9px] font-mono text-red-500 dark:text-red-400 truncate">{run.error}</div>}
                 </div>
               )
             })}

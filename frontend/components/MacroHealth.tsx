@@ -5,6 +5,7 @@ import useSWR from 'swr'
 import { supabase } from '../lib/supabase'
 import { AlertTriangle, ShieldCheck, Zap, Activity, Bell } from 'lucide-react'
 import { MacroIndicatorRow } from '../types'
+import { swrOptions, SWR_REFRESH } from '../lib/swrConfig'
 
 
 export function MacroHealth() {
@@ -47,7 +48,7 @@ export function MacroHealth() {
       if (error) throw error
       return (rows ?? []) as MacroIndicatorRow[]
     },
-    { refreshInterval: 30000, revalidateOnFocus: false }
+    swrOptions(SWR_REFRESH.FAST)
   )
 
   const indicators = useMemo(() => data ?? [], [data])

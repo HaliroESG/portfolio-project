@@ -7,6 +7,7 @@ import { ExternalLink } from 'lucide-react'
 import { cn } from '../lib/utils'
 import { Tooltip } from './Tooltip'
 import { NewsFeedRow } from '../types'
+import { swrOptions, SWR_REFRESH } from '../lib/swrConfig'
 
 
 export function HotNewsTickerTape() {
@@ -22,7 +23,7 @@ export function HotNewsTickerTape() {
       if (error) throw error
       return (rows ?? []) as NewsFeedRow[]
     },
-    { refreshInterval: 300000, revalidateOnFocus: false }
+    swrOptions(SWR_REFRESH.SLOW)
   )
 
   // Protection contre undefined/null

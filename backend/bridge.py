@@ -888,6 +888,7 @@ def run_sync() -> dict:
     covered_value = 0.0  # Valeur des actifs avec status OK ou STALE
     assets_processed = []
     unresolved_isins = []
+    indicators_missing = {"rsi_14": 0, "macd_line": 0, "momentum_20": 0}
 
     for asset in assets:
         data_clean = {k.strip().lower(): v for k, v in asset.items()}
@@ -1039,6 +1040,12 @@ def run_sync() -> dict:
             # Détecter les changements de tendance
             previous_trend_state = existing_data.get('trend_state') if existing_data else None
             current_trend_state = mkt.get('trend_state')
+            if mkt.get('rsi_14') is None:
+                indicators_missing['rsi_14'] += 1
+            if mkt.get('macd_line') is None:
+                indicators_missing['macd_line'] += 1
+            if mkt.get('momentum_20') is None:
+                indicators_missing['momentum_20'] += 1
             trend_changed = (
                 previous_trend_state is not None and
                 current_trend_state is not None and
@@ -1230,14 +1237,37 @@ def run_sync() -> dict:
         if status in status_counts:
             status_counts[status] += 1
 
+    assets_total = len(assets_processed)
+    null_rate = {
+        "rsi_14": round((indicators_missing["rsi_14"] / assets_total) * 100, 2) if assets_total else None,
+        "macd_line": round((indicators_missing["macd_line"] / assets_total) * 100, 2) if assets_total else None,
+        "momentum_20": round((indicators_missing["momentum_20"] / assets_total) * 100, 2) if assets_total else None,
+    }
+
     return {
-        "assets_total": len(assets_processed),
+        "assets_total": assets_total,
         "coverage_pct": coverage_pct,
         "status_ok": status_counts["OK"],
         "status_stale": status_counts["STALE"],
         "status_low_confidence": status_counts["LOW_CONFIDENCE"],
         "status_partial": status_counts["PARTIAL"],
         "unresolved_isins": len(unresolved_unique),
+        "assets": {
+            "total": assets_total,
+            "status_counts": status_counts,
+        },
+        "coverage": {
+            "pct": coverage_pct,
+            "covered_value_eur": round(covered_value, 2),
+            "total_value_eur": round(total_portfolio_value, 2),
+        },
+        "quality": {
+            "null_rate_pct": null_rate,
+        },
+        "identifiers": {
+            "unresolved_isins": unresolved_unique,
+            "unresolved_count": len(unresolved_unique),
+        },
     }
 
 # --- ETL RUN LOGGING ---
@@ -1259,6 +1289,14 @@ def start_etl_run(job_name: str) -> str | None:
     except Exception as e:
         print(f"⚠️ Impossible de démarrer etl_runs: {e}", flush=True)
     return None
+
+
+def normalize_error(error: Exception) -> str:
+    error_type = error.__class__.__name__
+    message = str(error).strip()
+    if not message:
+        message = "Unknown error"
+    return f"{error_type}: {message}"
 
 
 def finish_etl_run(run_id: str | None, status: str, duration_sec: float, stats: dict | None = None, error: str | None = None) -> None:
@@ -1297,5 +1335,5 @@ if __name__ == "__main__":
         finish_etl_run(run_id, "SUCCESS", time.time() - started, stats=stats)
         print("--- ✅ SCRIPT TERMINÉ AVEC SUCCÈS ---", flush=True)
     except Exception as e:
-        finish_etl_run(run_id, "FAILED", time.time() - started, error=str(e))
+        finish_etl_run(run_id, "FAILED", time.time() - started, error=normalize_error(e))
         raise

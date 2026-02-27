@@ -18,6 +18,7 @@ import { Asset, GeoTimeframe } from '../types'
 import { buildGeographicPerformance, loadPortfolioAggregation } from '../lib/portfolioData'
 import { cn } from '../lib/utils'
 import { stateFromList, stateLabel as dataStateLabel } from '../lib/dataStates'
+import { swrOptions, SWR_REFRESH } from '../lib/swrConfig'
 
 export default function PortfolioDashboard() {
   const [hoveredAsset, setHoveredAsset] = useState<Asset | null>(null)
@@ -31,7 +32,7 @@ export default function PortfolioDashboard() {
   const { data: portfolioBundle, isLoading: loadingBundle } = useSWR(
     'portfolio-aggregation',
     () => loadPortfolioAggregation(supabase),
-    { refreshInterval: 300000, revalidateOnFocus: false }
+    swrOptions(SWR_REFRESH.SLOW)
   )
 
   const assetsByPortfolio = useMemo(
@@ -83,7 +84,7 @@ export default function PortfolioDashboard() {
       }
       return null
     },
-    { refreshInterval: 300000, revalidateOnFocus: false }
+    swrOptions(SWR_REFRESH.SLOW)
   )
   const coveragePct = coverageData ?? null
   const dashboardState = stateFromList({ loading: loadingBundle, count: assets.length })

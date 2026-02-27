@@ -8,6 +8,7 @@ import { supabase } from '../../lib/supabase'
 import { ArrowRightLeft, TrendingDown, TrendingUp } from 'lucide-react'
 import { cn } from '../../lib/utils'
 import { stateLabel as dataStateLabel, UnifiedDataState } from '../../lib/dataStates'
+import { swrOptions, SWR_REFRESH } from '../../lib/swrConfig'
 
 type FxState = 'LIVE' | 'STALE' | 'CACHED' | 'EMPTY'
 
@@ -100,7 +101,7 @@ export default function FXPage() {
         assets: (assetsData ?? []) as MarketWatchAssetRow[],
       }
     },
-    { refreshInterval: 300000, revalidateOnFocus: false }
+    swrOptions(SWR_REFRESH.SLOW)
   )
 
   useEffect(() => {

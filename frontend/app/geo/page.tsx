@@ -11,6 +11,7 @@ import { cn } from '../../lib/utils'
 import { Asset, CountryPerformance, GeoTimeframe, PortfolioOption } from '../../types'
 import { buildGeographicPerformance, loadPortfolioAggregation } from '../../lib/portfolioData'
 import { stateFromList, stateLabel as dataStateLabel } from '../../lib/dataStates'
+import { swrOptions, SWR_REFRESH } from '../../lib/swrConfig'
 
 function getDisplayedPerformance(country: CountryPerformance, timeframe: GeoTimeframe): number {
   if (timeframe === 'day') return country.performanceDay
@@ -37,7 +38,7 @@ export default function GeoPage() {
   const { data: portfolioBundle, isLoading: bundleLoading } = useSWR(
     'portfolio-aggregation',
     () => loadPortfolioAggregation(supabase),
-    { refreshInterval: 300000, revalidateOnFocus: false }
+    swrOptions(SWR_REFRESH.SLOW)
   )
 
   useEffect(() => {

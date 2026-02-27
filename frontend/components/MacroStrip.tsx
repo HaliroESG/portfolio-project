@@ -6,6 +6,7 @@ import { supabase } from '../lib/supabase'
 import { TrendingUp, TrendingDown, AlertCircle, HelpCircle } from 'lucide-react'
 import { Tooltip } from './Tooltip'
 import { MacroIndicatorRow } from '../types'
+import { swrOptions, SWR_REFRESH } from '../lib/swrConfig'
 
 
 const MACRO_CONFIG: Record<string, { 
@@ -51,7 +52,7 @@ export function MacroStrip() {
       if (error) throw error
       return (rows ?? []) as MacroIndicatorRow[]
     },
-    { refreshInterval: 60000, revalidateOnFocus: false }
+    swrOptions(SWR_REFRESH.FAST)
   )
 
   const indicators = data ?? []
