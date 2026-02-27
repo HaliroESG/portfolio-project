@@ -10,7 +10,8 @@
     "contract-check": "node scripts/contract-check.mjs",
     "test:data-states": "node --experimental-strip-types scripts/test-data-states.mjs",
     "test:smoke": "node scripts/smoke-pages.mjs",
-    "test:frontend": "npm run test:data-states && npm run test:smoke"
+    "test:frontend": "npm run test:data-states && npm run test:smoke",
+    "smoke:supabase": "node scripts/smoke-supabase.mjs"
   },
   "dependencies": {
     "@supabase/supabase-js": "^2.90.1",

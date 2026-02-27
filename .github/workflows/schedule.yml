@@ -88,3 +88,34 @@ jobs:
           name: schema-check-report
           path: backend/schema-check.json
           if-no-files-found: warn
+
+
+  anon-supabase-smoke:
+    runs-on: ubuntu-latest
+    continue-on-error: true
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v3
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+
+      - name: Install frontend deps
+        working-directory: ./frontend
+        run: npm ci
+
+      - name: Run ANON Supabase smoke (when secrets present)
+        if: ${{ secrets.SUPABASE_URL != '' && secrets.SUPABASE_ANON_KEY != '' }}
+        working-directory: ./frontend
+        env:
+          NEXT_PUBLIC_SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          NEXT_PUBLIC_SUPABASE_ANON_KEY: ${{ secrets.SUPABASE_ANON_KEY }}
+        run: npm run smoke:supabase
+
+      - name: Skip ANON smoke (missing secrets)
+        if: ${{ secrets.SUPABASE_URL == '' || secrets.SUPABASE_ANON_KEY == '' }}
+        working-directory: ./frontend
+        run: node scripts/smoke-supabase.mjs --ci-skip-missing-env
