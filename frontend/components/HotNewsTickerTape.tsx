@@ -6,19 +6,8 @@ import { supabase } from '../lib/supabase'
 import { ExternalLink } from 'lucide-react'
 import { cn } from '../lib/utils'
 import { Tooltip } from './Tooltip'
+import { NewsFeedRow } from '../types'
 
-interface NewsItem {
-  id: string
-  url: string
-  title: string
-  source: string
-  category: string
-  impact_level: string
-  impact_score: number
-  impact_explanation?: string | null
-  ticker: string | null
-  published_at: string
-}
 
 export function HotNewsTickerTape() {
   const { data, isLoading } = useSWR(
@@ -26,12 +15,12 @@ export function HotNewsTickerTape() {
     async () => {
       const { data: rows, error } = await supabase
         .from('news_feed')
-        .select('*')
+        .select('id,url,title,source,category,impact_level,impact_score,impact_explanation,ticker,published_at')
         .or('category.eq.MACRO,impact_level.eq.HIGH')
         .order('published_at', { ascending: false })
         .limit(20)
       if (error) throw error
-      return (rows ?? []) as NewsItem[]
+      return (rows ?? []) as NewsFeedRow[]
     },
     { refreshInterval: 300000, revalidateOnFocus: false }
   )

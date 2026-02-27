@@ -1,7 +1,7 @@
 "use client"
 
 import React, { useEffect, useState, useMemo } from 'react'
-import { Asset } from '../types'
+import { Asset, NewsFeedRow } from '../types'
 import { X, ExternalLink, Star, TrendingUp, TrendingDown, Globe2, Activity, Newspaper } from 'lucide-react'
 import { cn } from '../lib/utils'
 import { supabase } from '../lib/supabase'
@@ -101,22 +101,12 @@ const COUNTRY_NAMES: Record<string, string> = {
   'MX': 'Mexico',
 }
 
-interface NewsItem {
-  id: string
-  url: string
-  title: string
-  source: string
-  impact_level: string
-  impact_score: number
-  impact_explanation?: string | null
-  published_at: string
-}
 
 export function AssetDetailDrawer({ asset, isOpen, onClose }: AssetDetailDrawerProps) {
   // ===== ALL HOOKS MUST BE DECLARED FIRST (before any conditional returns) =====
   
   // Hook 1: useState
-  const [news, setNews] = useState<NewsItem[]>([])
+  const [news, setNews] = useState<NewsFeedRow[]>([])
   const [watchlistEntries, setWatchlistEntries] = useState<string[]>(() => readWatchlist())
 
   // Hook 2: useMemo - Memoize derived data to prevent recalculation on every render
@@ -159,7 +149,7 @@ export function AssetDetailDrawer({ asset, isOpen, onClose }: AssetDetailDrawerP
         
         const { data, error } = await supabase
           .from('news_feed')
-          .select('*')
+          .select('id,url,title,source,impact_level,impact_score,impact_explanation,published_at,ticker')
           .eq('ticker', ticker) // Utiliser ticker (singulier) pour la requête
           .order('impact_score', { ascending: false })
           .order('published_at', { ascending: false })

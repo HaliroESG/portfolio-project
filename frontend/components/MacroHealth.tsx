@@ -4,20 +4,11 @@ import React, { useMemo } from 'react'
 import useSWR from 'swr'
 import { supabase } from '../lib/supabase'
 import { AlertTriangle, ShieldCheck, Zap, Activity, Bell } from 'lucide-react'
+import { MacroIndicatorRow } from '../types'
 
-interface MacroIndicator {
-  id: string;
-  name: string;
-  value: number | null; // Peut être null
-  change_pct: number | null; // Peut être null
-  threshold_amber: number;
-  threshold_red: number;
-  direction: 'UP' | 'DOWN';
-  pillar: string;
-}
 
 export function MacroHealth() {
-  const buildAlerts = (data: MacroIndicator[]) => {
+  const buildAlerts = (data: MacroIndicatorRow[]) => {
     const newAlerts: string[] = []
     const find = (id: string) => data.find(i => i.id === id)
 
@@ -29,7 +20,7 @@ export function MacroHealth() {
     const curve = find('10Y2Y')
 
     // Sécurisation des valeurs pour les comparaisons (fallback à 0 si null)
-    const val = (i: MacroIndicator | undefined) => i?.value ?? 0
+    const val = (i: MacroIndicatorRow | undefined) => i?.value ?? 0
 
     // 1. RULE: Risk-Off Confirmation
     if (vix && hy && val(vix) > vix.threshold_amber && val(hy) > hy.threshold_amber) {
@@ -52,9 +43,9 @@ export function MacroHealth() {
   const { data } = useSWR(
     'macro-indicators',
     async () => {
-      const { data: rows, error } = await supabase.from('macro_indicators').select('*')
+      const { data: rows, error } = await supabase.from('macro_indicators').select('id,name,value,change_pct,threshold_amber,threshold_red,direction,pillar')
       if (error) throw error
-      return (rows ?? []) as MacroIndicator[]
+      return (rows ?? []) as MacroIndicatorRow[]
     },
     { refreshInterval: 30000, revalidateOnFocus: false }
   )

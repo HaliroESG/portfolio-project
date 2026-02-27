@@ -2,17 +2,10 @@
 
 import React, { useEffect, useState, useMemo } from 'react'
 import { supabase } from '../lib/supabase'
-import { Asset } from '../types'
+import { Asset, GovernanceTargetRow } from '../types'
 import { Shield, AlertTriangle, CheckCircle2 } from 'lucide-react'
 import { cn } from '../lib/utils'
 
-interface GovernanceTarget {
-  id: string
-  portfolio_id: string
-  asset_class: string
-  target_pct: number
-  tolerance_band: number
-}
 
 interface AllocationData {
   asset_class: string
@@ -69,7 +62,7 @@ function calculateDriftStatus(drift: number, toleranceBand: number): 'OK' | 'WAR
 }
 
 export function GovernanceWidget({ assets, selectedPortfolioId = 'ALL' }: GovernanceWidgetProps) {
-  const [targets, setTargets] = useState<GovernanceTarget[]>([])
+  const [targets, setTargets] = useState<GovernanceTargetRow[]>([])
   const [loading, setLoading] = useState(true)
 
   // Fetch governance targets for the main portfolio
@@ -98,13 +91,13 @@ export function GovernanceWidget({ assets, selectedPortfolioId = 'ALL' }: Govern
         // Fetch governance targets for this portfolio
         const { data, error } = await supabase
           .from('governance_targets')
-          .select('*')
+          .select('id,portfolio_id,asset_class,target_pct,tolerance_band')
           .eq('portfolio_id', portfolioId)
         
         if (error) throw error
         
         if (data) {
-          setTargets(data as GovernanceTarget[])
+          setTargets(data as GovernanceTargetRow[])
         }
       } catch (err) {
         console.error('Error fetching governance targets:', err)

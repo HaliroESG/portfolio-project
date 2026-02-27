@@ -155,3 +155,38 @@ export interface CompareSelection {
   runId: string
   portfolios: { key: string; role: string }[]
 }
+
+// Supabase row contracts (frontend read models)
+export interface NewsFeedRow {
+  id: string
+  url: string
+  title: string
+  source: string
+  category?: string | null
+  impact_level: string
+  impact_score: number
+  impact_explanation?: string | null
+  ticker?: string | null
+  published_at: string
+}
+
+export interface MacroIndicatorRow {
+  id: string
+  name: string
+  value: number | null
+  change_pct: number | null
+  last_update?: string | null
+  threshold_amber: number
+  threshold_red: number
+  direction: 'UP' | 'DOWN'
+  pillar: string
+}
+
+export interface GovernanceTargetRow {
+  id: string
+  portfolio_id: string
+  asset_class: string
+  target_pct: number
+  tolerance_band: number
+}
+
