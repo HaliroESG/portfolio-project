@@ -54,3 +54,37 @@ jobs:
           SUPABASE_KEY: ${{ secrets.SUPABASE_SERVICE_KEY }}
           MARKETAUX_API_KEY: ${{ secrets.MARKETAUX_API_KEY }}
         run: python news_sync.py
+
+  schema-parity-check:
+    runs-on: ubuntu-latest
+    continue-on-error: true
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v3
+
+      - name: Set up Python
+        uses: actions/setup-python@v4
+        with:
+          python-version: '3.11'
+
+      - name: Install minimal deps for schema check
+        run: |
+          python -m pip install --upgrade pip
+          pip install requests
+
+      - name: Run schema parity check (read-only)
+        working-directory: ./backend
+        env:
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_KEY }}
+        run: |
+          python tools/schema_check.py --pretty --output schema-check.json || true
+
+      - name: Upload schema report artifact
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: schema-check-report
+          path: backend/schema-check.json
+          if-no-files-found: warn
