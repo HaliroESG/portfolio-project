@@ -6,7 +6,8 @@ import { supabase } from '../lib/supabase'
 import { cn } from '../lib/utils'
 import { Clock, Activity, Database } from 'lucide-react'
 import { stateFromTimestamp, stateLabel as dataStateLabel, UnifiedDataState } from '../lib/dataStates'
-import { swrOptions, SWR_REFRESH } from '../lib/swrConfig'
+import { swrOptions } from '../lib/swrConfig'
+import { HEALTH_CONFIG } from '../lib/healthConfig'
 
 interface HealthItem {
   id: string
@@ -48,10 +49,10 @@ export function DataHealthPanel() {
     'health-panel:v2',
     async () => {
       const freshnessConfigs = [
-        { id: 'market', label: 'Market Watch', table: 'market_watch', field: 'last_update', staleAfterMinutes: 60 },
-        { id: 'valuations', label: 'Valuation Snapshots', table: 'valuation_snapshots', field: 'created_at', staleAfterMinutes: 360 },
-        { id: 'news', label: 'News Feed', table: 'news_feed', field: 'published_at', staleAfterMinutes: 180 },
-        { id: 'macro', label: 'Macro Indicators', table: 'macro_indicators', field: 'last_update', staleAfterMinutes: 120 },
+        { id: 'market', label: 'Market Watch', table: 'market_watch', field: 'last_update', staleAfterMinutes: HEALTH_CONFIG.freshnessSlaMinutes.market_watch },
+        { id: 'valuations', label: 'Valuation Snapshots', table: 'valuation_snapshots', field: 'created_at', staleAfterMinutes: HEALTH_CONFIG.freshnessSlaMinutes.valuation_snapshots },
+        { id: 'news', label: 'News Feed', table: 'news_feed', field: 'published_at', staleAfterMinutes: HEALTH_CONFIG.freshnessSlaMinutes.news_feed },
+        { id: 'macro', label: 'Macro Indicators', table: 'macro_indicators', field: 'last_update', staleAfterMinutes: HEALTH_CONFIG.freshnessSlaMinutes.macro_indicators },
       ] as const
 
       const freshness = await Promise.all(
@@ -133,7 +134,7 @@ export function DataHealthPanel() {
         },
       }
     },
-    swrOptions(SWR_REFRESH.MEDIUM)
+    swrOptions(HEALTH_CONFIG.refreshIntervalMs)
   )
 
   const items = useMemo(() => data?.freshness ?? [], [data])
@@ -192,11 +193,11 @@ export function DataHealthPanel() {
         <div className="p-3 rounded-2xl border border-slate-300/60 bg-slate-50 dark:bg-slate-900/40">
           <div className="text-[10px] font-black uppercase tracking-wider text-slate-600 dark:text-gray-300 mb-1">Null-rate (market_watch)</div>
           <div className="text-[11px] font-mono text-slate-600 dark:text-gray-300 space-y-1">
-            <div>last_price: {data?.nullRate.last_price?.toFixed(1) ?? '0.0'}%</div>
-            <div>data_status: {data?.nullRate.data_status?.toFixed(1) ?? '0.0'}%</div>
-            <div>rsi_14: {data?.nullRate.rsi_14?.toFixed(1) ?? '0.0'}%</div>
-            <div>macd_line: {data?.nullRate.macd_line?.toFixed(1) ?? '0.0'}%</div>
-            <div>momentum_20: {data?.nullRate.momentum_20?.toFixed(1) ?? '0.0'}%</div>
+            <div>last_price: {data?.nullRate.last_price?.toFixed(1) ?? '0.0'}% {(data?.nullRate.last_price ?? 0) >= HEALTH_CONFIG.nullRateWarnPct.last_price ? '⚠️' : ''}</div>
+            <div>data_status: {data?.nullRate.data_status?.toFixed(1) ?? '0.0'}% {(data?.nullRate.data_status ?? 0) >= HEALTH_CONFIG.nullRateWarnPct.data_status ? '⚠️' : ''}</div>
+            <div>rsi_14: {data?.nullRate.rsi_14?.toFixed(1) ?? '0.0'}% {(data?.nullRate.rsi_14 ?? 0) >= HEALTH_CONFIG.nullRateWarnPct.rsi_14 ? '⚠️' : ''}</div>
+            <div>macd_line: {data?.nullRate.macd_line?.toFixed(1) ?? '0.0'}% {(data?.nullRate.macd_line ?? 0) >= HEALTH_CONFIG.nullRateWarnPct.macd_line ? '⚠️' : ''}</div>
+            <div>momentum_20: {data?.nullRate.momentum_20?.toFixed(1) ?? '0.0'}% {(data?.nullRate.momentum_20 ?? 0) >= HEALTH_CONFIG.nullRateWarnPct.momentum_20 ? '⚠️' : ''}</div>
           </div>
         </div>
 
