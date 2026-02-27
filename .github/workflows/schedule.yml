@@ -111,12 +111,20 @@ jobs:
         env:
           NEXT_PUBLIC_SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
           NEXT_PUBLIC_SUPABASE_ANON_KEY: ${{ secrets.SUPABASE_ANON_KEY }}
-        run: npm run smoke:supabase
+        run: npm run smoke:supabase -- --output=smoke-supabase-report.json
 
       - name: Skip ANON smoke (missing secrets)
         if: ${{ secrets.SUPABASE_URL == '' || secrets.SUPABASE_ANON_KEY == '' }}
         working-directory: ./frontend
-        run: node scripts/smoke-supabase.mjs --ci-skip-missing-env
+        run: node scripts/smoke-supabase.mjs --ci-skip-missing-env --output=smoke-supabase-report.json
+
+      - name: Upload ANON smoke report artifact
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: anon-supabase-smoke-report
+          path: frontend/smoke-supabase-report.json
+          if-no-files-found: warn
 
 
   # Week 2 strategy:
