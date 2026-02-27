@@ -256,7 +256,7 @@ export default function BacktestPage() {
         end_date: runEnd,
       } as PortfolioCard
     })
-  }, [portfolios, results, selectedRun])
+  }, [portfolios, results, selectedRun, dateMode])
 
   const selectedPortfolios = useMemo(() => {
     return portfolios.filter((portfolio) => selectedKeys.includes(portfolio.portfolio_key))
