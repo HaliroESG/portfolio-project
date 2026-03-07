@@ -26,7 +26,7 @@ export function HotNewsTickerTape() {
     async () => {
       const { data: rows, error } = await supabase
         .from('news_feed')
-        .select('*')
+        .select('id,url,title,source,category,impact_level,impact_score,impact_explanation,ticker,published_at')
         .or('category.eq.MACRO,impact_level.eq.HIGH')
         .order('published_at', { ascending: false })
         .limit(20)

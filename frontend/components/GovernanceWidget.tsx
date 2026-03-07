@@ -28,6 +28,17 @@ interface GovernanceWidgetProps {
   selectedPortfolioId?: string
 }
 
+type GovernanceTargetRow = {
+  id: string
+  portfolio_id: string
+  asset_class: string
+  target_pct?: number | null
+  target_weight_pct?: number | null
+  target_weight?: number | null
+  target_percent?: number | null
+  tolerance_band: number
+}
+
 // Normalize asset_class to standard format (EQUITY -> Equity)
 function normalizeAssetClass(assetClass: string | null | undefined): string | null {
   if (!assetClass) return null
@@ -95,17 +106,27 @@ export function GovernanceWidget({ assets, selectedPortfolioId = 'ALL' }: Govern
           portfolioId = portfoliosResponse.data.id
         }
         
-        // Fetch governance targets for this portfolio
+        // Schema-tolerant fetch: governance target column name differs across deployments.
         const { data, error } = await supabase
           .from('governance_targets')
           .select('*')
           .eq('portfolio_id', portfolioId)
-        
+
         if (error) throw error
-        
-        if (data) {
-          setTargets(data as GovernanceTarget[])
-        }
+
+        const rows = (data ?? []) as unknown as GovernanceTargetRow[]
+
+        const normalizedTargets: GovernanceTarget[] = rows
+          .map((row) => ({
+            id: row.id,
+            portfolio_id: row.portfolio_id,
+            asset_class: row.asset_class,
+            target_pct: row.target_pct ?? row.target_weight_pct ?? row.target_weight ?? row.target_percent ?? 0,
+            tolerance_band: row.tolerance_band,
+          }))
+          .filter((target) => Number.isFinite(target.target_pct))
+
+        setTargets(normalizedTargets)
       } catch (err) {
         console.error('Error fetching governance targets:', err)
       } finally {

@@ -3,6 +3,12 @@
 import React, { useMemo } from 'react'
 import useSWR from 'swr'
 import { supabase } from '../../lib/supabase'
+import {
+  MACRO_INDICATORS_REFRESH_MS,
+  MACRO_INDICATORS_SWR_KEY,
+  loadMacroIndicators,
+  type MacroIndicatorRow,
+} from '../../lib/macroData'
 
 import { Sidebar } from '../../components/Sidebar'
 import { Header } from '../../components/Header'
@@ -18,13 +24,7 @@ import {
 
 type PillarStatus = 'red' | 'amber' | 'green'
 
-interface MacroIndicator {
-  id: string
-  name: string | null
-  value: number | null
-  change_pct: number | null
-  last_update: string | null
-}
+type MacroIndicator = MacroIndicatorRow
 
 interface PillarIndicator {
   label: string
@@ -100,15 +100,9 @@ function MacroPillar({ title, subtitle, icon: Icon, status, indicators }: MacroP
 
 export default function MDSSPage() {
   const { data } = useSWR(
-    'macro-indicators',
-    async () => {
-      const { data: rows, error } = await supabase
-        .from('macro_indicators')
-        .select('id, name, value, change_pct, last_update')
-      if (error) throw error
-      return (rows ?? []) as MacroIndicator[]
-    },
-    { refreshInterval: 60000, revalidateOnFocus: false }
+    MACRO_INDICATORS_SWR_KEY,
+    () => loadMacroIndicators(supabase),
+    { refreshInterval: MACRO_INDICATORS_REFRESH_MS, revalidateOnFocus: false }
   )
 
   const indicators = useMemo(() => data ?? [], [data])
@@ -242,7 +236,7 @@ export default function MDSSPage() {
                 <BarChart3 size={16} className="text-[#00FF88]" />
                 <h2 className="text-xs font-black text-slate-900 dark:text-white uppercase tracking-[0.2em]">Volatility Regime & Tail Risk</h2>
              </div>
-             <MacroHealth />
+             <MacroHealth indicators={indicators} />
           </div>
 
           <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">

@@ -29,13 +29,49 @@ interface MarketWatchAssetRow {
   ticker: string | null
   currency: string | null
   perf_day_eur: number | null
-  perf_week_local: number | null
-  perf_month_local: number | null
+  perf_week_local?: number | null
+  perf_month_local?: number | null
   last_price: number | null
-  type: string | null
 }
 
 const FX_CACHE_KEY = 'fx_pairs_cache_v1'
+const FX_DATA_SWR_KEY = 'fx-data-v1'
+const SELECTOR_CACHE: Record<string, string> = {}
+
+async function selectWithFallback<T>(
+  table: string,
+  selectors: string[],
+  options?: {
+    notNullColumn?: string
+    orderBy?: { column: string; ascending?: boolean }
+  }
+): Promise<T[]> {
+  let lastErrorMessage = ''
+  const cachedSelector = SELECTOR_CACHE[table]
+  const orderedSelectors = cachedSelector
+    ? [cachedSelector, ...selectors.filter((selector) => selector !== cachedSelector)]
+    : selectors
+
+  for (const selector of orderedSelectors) {
+    let query = supabase.from(table).select(selector)
+
+    if (options?.notNullColumn) {
+      query = query.not(options.notNullColumn, 'is', null)
+    }
+    if (options?.orderBy) {
+      query = query.order(options.orderBy.column, { ascending: options.orderBy.ascending ?? true })
+    }
+
+    const { data, error } = await query
+    if (!error) {
+      SELECTOR_CACHE[table] = selector
+      return (data ?? []) as T[]
+    }
+    lastErrorMessage = error.message
+  }
+
+  throw new Error(`[fx] failed to query "${table}": ${lastErrorMessage || 'unknown error'}`)
+}
 
 function readFxCache(): CurrencyData[] {
   if (typeof window === 'undefined') return []
@@ -78,25 +114,26 @@ export default function FXPage() {
   const [fxState, setFxState] = useState<FxState>('EMPTY')
 
   const { data, isLoading } = useSWR(
-    'fx-data',
+    FX_DATA_SWR_KEY,
     async () => {
-      const [{ data: currenciesData, error: currenciesError }, { data: assetsData, error: assetsError }] = await Promise.all([
-        supabase
-          .from('currencies')
-          .select('id, symbol, rate_to_eur, last_update')
-          .order('id', { ascending: true }),
-        supabase
-          .from('market_watch')
-          .select('ticker, currency, perf_day_eur, perf_week_local, perf_month_local, last_price, type')
-          .not('currency', 'is', null),
+      const [currenciesData, assetsData] = await Promise.all([
+        selectWithFallback<CurrencyRow>(
+          'currencies',
+          ['id, symbol, rate_to_eur, last_update', 'id, symbol, rate_to_eur'],
+          { orderBy: { column: 'id', ascending: true } }
+        ),
+        selectWithFallback<MarketWatchAssetRow>(
+          'market_watch',
+          [
+            'ticker, currency, perf_day_eur, last_price',
+          ],
+          { notNullColumn: 'currency' }
+        ),
       ])
 
-      if (currenciesError) throw currenciesError
-      if (assetsError) throw assetsError
-
       return {
-        currencies: (currenciesData ?? []) as CurrencyRow[],
-        assets: (assetsData ?? []) as MarketWatchAssetRow[],
+        currencies: currenciesData,
+        assets: assetsData,
       }
     },
     { refreshInterval: 300000, revalidateOnFocus: false }
@@ -110,8 +147,7 @@ export default function FXPage() {
 
         const forexAssets = typedAssets.filter((asset) => {
           const ticker = (asset.ticker || '').toUpperCase()
-          const type = (asset.type || '').toUpperCase()
-          return type === 'FOREX' || type === 'CURRENCY' || ticker.includes('=X')
+          return ticker.includes('=X')
         })
 
         const currencyPerformance = new Map<string, number[]>()

@@ -1,11 +1,11 @@
 # Product Backlog - Portfolio Project
 
-Last update: 2026-02-10
+Last update: 2026-03-07
 
 ## P0 - Data Reliability and Signal Quality
 
 ### BL-001 - Technical indicators completeness (asset-level)
-- Status: IN_PROGRESS
+- Status: DONE
 - Problem:
   - In asset drawer, RSI/MACD/Momentum can be missing (`--`) for multiple assets.
   - Trend column is often `NEUTRAL`, reducing actionability.
@@ -24,6 +24,11 @@ Last update: 2026-02-10
   - Backend bridge now uses `historical_prices` as fallback source for technical indicators when live Yahoo window is insufficient.
   - Added robust reference-price handling for day/week/month/YTD performance baselines to avoid hard failures on short/new listings.
   - ETL stats now include technical completeness counters (`technical_ready`, `technical_missing`, `technical_backfilled`).
+- Progress (2026-03-07):
+  - RSI edge-case handling fixed in backend (`RSI=100` on zero-loss windows, `RSI=50` on flat windows) to reduce avoidable missing technical values.
+  - Trend-state classification now explicitly separates `NEUTRAL` (rule-based), `INSUFFICIENT_HISTORY` (short lookback), and `UNKNOWN` (data gap despite sufficient lookback).
+  - Frontend market-watch mapping now preserves explicit technical states and avoids collapsing missing-data states into neutral.
+  - Asset table/drawer now render explicit labels for technical unavailability (`NO HISTORY`, `UNKNOWN`) instead of silent placeholders.
 
 ### BL-002 - FX page data pipeline consistency
 - Status: DONE (phase 1)
@@ -120,15 +125,19 @@ Last update: 2026-02-10
 ## P2 - Performance and Product Hardening
 
 ### BL-008 - Frontend data fetching optimization
-- Status: TODO
+- Status: IN_PROGRESS
 - Scope:
   - Reduce duplicated polling and redundant `select('*')`.
   - Move to shared cache strategy (example: SWR/React Query).
 - Deliverable:
   - Lower API load, faster route transitions, more stable UI state.
+- Progress (2026-03-07):
+  - Macro data access moved to shared typed fetcher with SWR key/versioning (`macro-indicators-v1`) to align cache behavior across dashboard and MDSS.
+  - Removed broad `select('*')` reads for macro consumers; replaced with explicit column selectors and schema-safe fallback selector.
+  - Removed duplicated MDSS macro reads by injecting parent-fetched indicators into `MacroHealth` (child fetch disabled when props provided).
 
 ### BL-009 - Data health observability
-- Status: DONE (phase 1)
+- Status: DONE (phase 2)
 - Scope:
   - Add data health panel: freshness, null rate, coverage.
   - Add backend run status/error tracking for ETL jobs.
@@ -143,7 +152,10 @@ Last update: 2026-02-10
   - Panel now highlights latest ETL failure with error preview.
   - Backend ETL jobs now emit harmonized canonical run stats (`items_total/items_success/items_failed/coverage_pct`) while preserving legacy keys.
   - ETL cards now display canonical metrics with backward-compatible fallbacks.
-  - Remaining (phase 2): add alerting thresholds and historical trending on ETL quality.
+- Progress (2026-03-07):
+  - Added threshold-based ETL quality classification on dashboard (`OK` / `WARNING` / `CRITICAL` / `UNKNOWN`) using canonical ETL metrics (`items_total/items_success/items_failed/coverage_pct`) with legacy fallbacks.
+  - Added per-job historical ETL quality trend (last runs sparkline + direction: improving/stable/degrading).
+  - Added explicit threshold semantics in UI messaging (fail-rate and coverage threshold breaches surfaced with reasons).
 
 ## Notes
 

@@ -5,14 +5,14 @@ import useSWR from 'swr'
 import { supabase } from '../lib/supabase'
 import { TrendingUp, TrendingDown, AlertCircle, HelpCircle } from 'lucide-react'
 import { Tooltip } from './Tooltip'
+import {
+  MACRO_INDICATORS_REFRESH_MS,
+  MACRO_INDICATORS_SWR_KEY,
+  loadMacroIndicators,
+  type MacroIndicatorRow,
+} from '../lib/macroData'
 
-interface MacroIndicator {
-  id: string
-  name: string
-  value: number | null
-  change_pct: number | null
-  last_update: string | null
-}
+type MacroIndicator = MacroIndicatorRow
 
 const MACRO_CONFIG: Record<string, { 
   label: string
@@ -48,16 +48,9 @@ const MACRO_CONFIG: Record<string, {
 
 export function MacroStrip() {
   const { data } = useSWR(
-    'macro-indicators',
-    async () => {
-      const { data: rows, error } = await supabase
-        .from('macro_indicators')
-        .select('*')
-        .in('id', ['^VIX', 'DX-Y.NYB', '^MOVE', '^TNX', 'SPREAD_10Y_2Y', 'MISERY_INDEX', 'JPY_VOLATILITY'])
-      if (error) throw error
-      return (rows ?? []) as MacroIndicator[]
-    },
-    { refreshInterval: 60000, revalidateOnFocus: false }
+    MACRO_INDICATORS_SWR_KEY,
+    () => loadMacroIndicators(supabase),
+    { refreshInterval: MACRO_INDICATORS_REFRESH_MS, revalidateOnFocus: false }
   )
 
   const indicators = data ?? []

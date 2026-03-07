@@ -4,19 +4,20 @@ import React, { useMemo } from 'react'
 import useSWR from 'swr'
 import { supabase } from '../lib/supabase'
 import { AlertTriangle, ShieldCheck, Zap, Activity, Bell } from 'lucide-react'
+import {
+  MACRO_INDICATORS_REFRESH_MS,
+  MACRO_INDICATORS_SWR_KEY,
+  loadMacroIndicators,
+  type MacroIndicatorRow,
+} from '../lib/macroData'
 
-interface MacroIndicator {
-  id: string;
-  name: string;
-  value: number | null; // Peut être null
-  change_pct: number | null; // Peut être null
-  threshold_amber: number;
-  threshold_red: number;
-  direction: 'UP' | 'DOWN';
-  pillar: string;
+type MacroIndicator = MacroIndicatorRow
+
+interface MacroHealthProps {
+  indicators?: MacroIndicator[]
 }
 
-export function MacroHealth() {
+export function MacroHealth({ indicators: indicatorsProp }: MacroHealthProps) {
   const buildAlerts = (data: MacroIndicator[]) => {
     const newAlerts: string[] = []
     const find = (id: string) => data.find(i => i.id === id)
@@ -26,23 +27,30 @@ export function MacroHealth() {
     // const bread = find('BREADTH_200') // Pas utilisé pour l'instant
     // const realYield = find('^TNX') 
     const dxy = find('DX-Y.NYB')
-    const curve = find('10Y2Y')
+    const curve = find('SPREAD_10Y_2Y')
 
     // Sécurisation des valeurs pour les comparaisons (fallback à 0 si null)
     const val = (i: MacroIndicator | undefined) => i?.value ?? 0
 
     // 1. RULE: Risk-Off Confirmation
-    if (vix && hy && val(vix) > vix.threshold_amber && val(hy) > hy.threshold_amber) {
+    if (
+      vix &&
+      hy &&
+      vix.threshold_amber !== null &&
+      hy.threshold_amber !== null &&
+      val(vix) > vix.threshold_amber &&
+      val(hy) > hy.threshold_amber
+    ) {
       newAlerts.push("RISK-OFF CONFIRMED: Tighten rebalancing bands & increase cash.")
     }
 
     // 2. RULE: USD Stress
-    if (dxy && val(dxy) > dxy.threshold_red) {
+    if (dxy && dxy.threshold_red !== null && val(dxy) > dxy.threshold_red) {
       newAlerts.push("USD LIQUIDITY STRESS: Reduce Emerging Markets exposure.")
     }
 
     // 3. RULE: Yield Curve Inversion
-    if (curve && val(curve) < curve.threshold_red) {
+    if (curve && curve.threshold_red !== null && val(curve) < curve.threshold_red) {
       newAlerts.push("CURVE DEEP INVERSION: Recession risk rising. Favor defensive quality.")
     }
 
@@ -50,16 +58,12 @@ export function MacroHealth() {
   }
 
   const { data } = useSWR(
-    'macro-indicators',
-    async () => {
-      const { data: rows, error } = await supabase.from('macro_indicators').select('*')
-      if (error) throw error
-      return (rows ?? []) as MacroIndicator[]
-    },
-    { refreshInterval: 30000, revalidateOnFocus: false }
+    indicatorsProp ? null : MACRO_INDICATORS_SWR_KEY,
+    () => loadMacroIndicators(supabase),
+    { refreshInterval: MACRO_INDICATORS_REFRESH_MS, revalidateOnFocus: false }
   )
 
-  const indicators = useMemo(() => data ?? [], [data])
+  const indicators = useMemo(() => indicatorsProp ?? data ?? [], [data, indicatorsProp])
   const alerts = useMemo(() => buildAlerts(indicators), [indicators])
 
   const getHealthStatus = () => {
@@ -69,8 +73,11 @@ export function MacroHealth() {
     // Protection contre les valeurs nulles
     const vixValue = vix.value ?? 0
     
-    if (vixValue >= vix.threshold_red) return 'STRESS'
-    if (vixValue >= vix.threshold_amber) return 'CAUTION'
+    const thresholdRed = vix.threshold_red
+    const thresholdAmber = vix.threshold_amber
+
+    if (thresholdRed !== null && vixValue >= thresholdRed) return 'STRESS'
+    if (thresholdAmber !== null && vixValue >= thresholdAmber) return 'CAUTION'
     return 'NORMAL'
   }
 
@@ -126,8 +133,9 @@ export function MacroHealth() {
           const safeValue = ind.value ?? 0
           const safeChange = ind.change_pct ?? 0
 
-          const isWarning = (ind.direction === 'UP' && safeValue >= ind.threshold_amber) || 
-                           (ind.direction === 'DOWN' && safeValue <= ind.threshold_amber)
+          const isWarning =
+            (ind.direction === 'UP' && ind.threshold_amber !== null && safeValue >= ind.threshold_amber) ||
+            (ind.direction === 'DOWN' && ind.threshold_amber !== null && safeValue <= ind.threshold_amber)
           
           return (
             <div key={ind.id} className={`p-3 rounded-xl border transition-all hover:bg-white/5 ${

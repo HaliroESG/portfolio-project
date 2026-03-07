@@ -89,6 +89,8 @@ interface CountryAccumulator {
 }
 
 const DEFAULT_PORTFOLIO_ID = 'default'
+export const PORTFOLIO_AGGREGATION_SWR_KEY = 'portfolio-aggregation-v1'
+const SELECTOR_CACHE: Record<string, string> = {}
 
 const COUNTRY_COORDS: Record<string, [number, number]> = {
   US: [37, -95],
@@ -257,16 +259,37 @@ function normalizeAssetType(value: string | null): AssetType {
 }
 
 function resolveTrendState(row: MarketWatchRow): TrendState {
-  const hasIndicators =
+  const hasAllIndicators =
     row.macd_line !== null &&
     row.macd_signal !== null &&
     row.rsi_14 !== null &&
     row.momentum_20 !== null
 
-  if (!hasIndicators) return 'INSUFFICIENT_HISTORY'
-  if (row.trend_state === 'BULLISH') return 'BULLISH'
-  if (row.trend_state === 'BEARISH') return 'BEARISH'
-  return 'NEUTRAL'
+  const hasAnyIndicators =
+    row.macd_line !== null ||
+    row.macd_signal !== null ||
+    row.rsi_14 !== null ||
+    row.momentum_20 !== null
+
+  if (row.trend_state === 'UNKNOWN' || row.trend_state === 'INSUFFICIENT_HISTORY') {
+    return row.trend_state
+  }
+
+  if (hasAllIndicators) {
+    if (row.trend_state === 'BULLISH' || row.trend_state === 'BEARISH' || row.trend_state === 'NEUTRAL') {
+      return row.trend_state
+    }
+
+    if ((row.macd_line ?? 0) > (row.macd_signal ?? 0) && (row.rsi_14 ?? 0) >= 60 && (row.momentum_20 ?? 0) > 0) {
+      return 'BULLISH'
+    }
+    if ((row.macd_line ?? 0) < (row.macd_signal ?? 0) && (row.rsi_14 ?? 0) < 40 && (row.momentum_20 ?? 0) < 0) {
+      return 'BEARISH'
+    }
+    return 'NEUTRAL'
+  }
+
+  return hasAnyIndicators ? 'UNKNOWN' : 'INSUFFICIENT_HISTORY'
 }
 
 function toCurrencyRateMap(currencies: CurrencyPair[]): Map<string, number> {
@@ -383,15 +406,20 @@ async function selectWithFallback(
   selectors: string[],
   orderBy?: { column: string; ascending?: boolean }
 ): Promise<JsonRecord[]> {
+  const cachedSelector = SELECTOR_CACHE[table]
+  const orderedSelectors = cachedSelector
+    ? [cachedSelector, ...selectors.filter((selector) => selector !== cachedSelector)]
+    : selectors
   let lastErrorMessage = ''
 
-  for (const selector of selectors) {
+  for (const selector of orderedSelectors) {
     let query = supabase.from(table).select(selector)
     if (orderBy) {
       query = query.order(orderBy.column, { ascending: orderBy.ascending ?? true })
     }
     const { data, error } = await query
     if (!error) {
+      SELECTOR_CACHE[table] = selector
       return ((data ?? []) as unknown as JsonRecord[])
     }
     lastErrorMessage = error.message

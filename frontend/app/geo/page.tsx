@@ -9,7 +9,11 @@ import { supabase } from '../../lib/supabase'
 import { Globe, Loader2 } from 'lucide-react'
 import { cn } from '../../lib/utils'
 import { Asset, CountryPerformance, GeoTimeframe, PortfolioOption } from '../../types'
-import { buildGeographicPerformance, loadPortfolioAggregation } from '../../lib/portfolioData'
+import {
+  PORTFOLIO_AGGREGATION_SWR_KEY,
+  buildGeographicPerformance,
+  loadPortfolioAggregation,
+} from '../../lib/portfolioData'
 
 function getDisplayedPerformance(country: CountryPerformance, timeframe: GeoTimeframe): number {
   if (timeframe === 'day') return country.performanceDay
@@ -34,7 +38,7 @@ export default function GeoPage() {
   }, [assets, timeframe])
 
   const { data: portfolioBundle, isLoading: bundleLoading } = useSWR(
-    'portfolio-aggregation',
+    PORTFOLIO_AGGREGATION_SWR_KEY,
     () => loadPortfolioAggregation(supabase),
     { refreshInterval: 300000, revalidateOnFocus: false }
   )

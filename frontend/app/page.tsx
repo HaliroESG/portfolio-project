@@ -15,7 +15,11 @@ import { GovernanceWidget } from '../components/GovernanceWidget'
 import { PortfolioTrendPanel } from '../components/PortfolioTrendPanel'
 import { DataHealthPanel } from '../components/DataHealthPanel'
 import { Asset, GeoTimeframe } from '../types'
-import { buildGeographicPerformance, loadPortfolioAggregation } from '../lib/portfolioData'
+import {
+  PORTFOLIO_AGGREGATION_SWR_KEY,
+  buildGeographicPerformance,
+  loadPortfolioAggregation,
+} from '../lib/portfolioData'
 import { cn } from '../lib/utils'
 
 export default function PortfolioDashboard() {
@@ -28,7 +32,7 @@ export default function PortfolioDashboard() {
 
   // SWR fetchers to avoid duplicated polling and share cache across components
   const { data: portfolioBundle, isLoading: loadingBundle } = useSWR(
-    'portfolio-aggregation',
+    PORTFOLIO_AGGREGATION_SWR_KEY,
     () => loadPortfolioAggregation(supabase),
     { refreshInterval: 300000, revalidateOnFocus: false }
   )

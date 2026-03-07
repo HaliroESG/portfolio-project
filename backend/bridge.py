@@ -20,6 +20,11 @@ from market_history_utils import (
     trailing_reference,
     year_start_reference,
 )
+from technical_state import (
+    calculate_rsi_series,
+    classify_trend_state,
+    normalize_indicator_value,
+)
 
 print("--- 🔍 DÉMARRAGE DU DIAGNOSTIC ---", flush=True)
 
@@ -79,40 +84,6 @@ def fetch_fred_series(series_id):
     df['VALUE'] = pd.to_numeric(df[series_id], errors='coerce')
     df = df.dropna(subset=['DATE', 'VALUE']).sort_values('DATE').reset_index(drop=True)
     return df[['DATE', 'VALUE']]
-
-
-def calculate_rsi_series(prices, period=14):
-    """
-    RSI standard (Wilder smoothing) à partir d'une série de prix.
-    """
-    delta = prices.diff()
-    gains = delta.where(delta > 0, 0.0)
-    losses = -delta.where(delta < 0, 0.0)
-
-    avg_gain = gains.ewm(alpha=1 / period, min_periods=period, adjust=False).mean()
-    avg_loss = losses.ewm(alpha=1 / period, min_periods=period, adjust=False).mean()
-
-    rs = avg_gain / avg_loss.replace(0, np.nan)
-    rsi = 100 - (100 / (1 + rs))
-    return rsi
-
-
-def classify_trend_state(macd_line, macd_signal, rsi_14, momentum_20):
-    """
-    Classification de tendance:
-    - BULLISH: MACD > signal, RSI >= 60, momentum > 0
-    - BEARISH: MACD < signal, RSI < 40, momentum < 0
-    - NEUTRAL: indicateurs présents mais sans alignement
-    - INSUFFICIENT_HISTORY: indicateurs incomplets (historique insuffisant)
-    """
-    if None in (macd_line, macd_signal, rsi_14, momentum_20):
-        return "INSUFFICIENT_HISTORY"
-
-    if macd_line > macd_signal and rsi_14 >= 60 and momentum_20 > 0:
-        return "BULLISH"
-    if macd_line < macd_signal and rsi_14 < 40 and momentum_20 < 0:
-        return "BEARISH"
-    return "NEUTRAL"
 
 
 def parse_numeric(value):
@@ -723,9 +694,9 @@ def get_financial_data(ticker, currency):
                 signal_series = macd_series.ewm(span=9, adjust=False).mean()
                 hist_series = macd_series - signal_series
 
-                macd_line = float(macd_series.iloc[-1])
-                macd_signal = float(signal_series.iloc[-1])
-                macd_hist = float(hist_series.iloc[-1])
+                macd_line = normalize_indicator_value(macd_series.iloc[-1])
+                macd_signal = normalize_indicator_value(signal_series.iloc[-1])
+                macd_hist = normalize_indicator_value(hist_series.iloc[-1])
             else:
                 print(
                     f"      ⚠️ Pas assez de données pour MACD ({len(indicator_series)} jours, source={indicator_source})",
@@ -740,7 +711,7 @@ def get_financial_data(ticker, currency):
             if len(indicator_series) >= 15:
                 rsi_series = calculate_rsi_series(indicator_series, period=14)
                 if pd.notna(rsi_series.iloc[-1]):
-                    rsi_14 = float(rsi_series.iloc[-1])
+                    rsi_14 = normalize_indicator_value(rsi_series.iloc[-1])
             else:
                 print(
                     f"      ⚠️ Pas assez de données pour RSI ({len(indicator_series)} jours, source={indicator_source})",
@@ -755,8 +726,8 @@ def get_financial_data(ticker, currency):
             if len(indicator_series) >= 21:
                 previous_price = indicator_series.iloc[-21]
                 current_price = indicator_series.iloc[-1]
-                if previous_price and previous_price != 0:
-                    momentum_20 = float(((current_price / previous_price) - 1) * 100)
+                if pd.notna(previous_price) and pd.notna(current_price) and previous_price != 0:
+                    momentum_20 = normalize_indicator_value(((current_price / previous_price) - 1) * 100)
             else:
                 print(
                     f"      ⚠️ Pas assez de données pour Momentum20 ({len(indicator_series)} jours, source={indicator_source})",
@@ -766,7 +737,14 @@ def get_financial_data(ticker, currency):
             print(f"      ⚠️ Erreur calcul Momentum20: {e}", flush=True)
 
         # 7. État de tendance
-        trend_state = classify_trend_state(macd_line, macd_signal, rsi_14, momentum_20)
+        trend_state = classify_trend_state(
+            macd_line,
+            macd_signal,
+            rsi_14,
+            momentum_20,
+            indicator_points=len(indicator_series),
+            min_required_points=35,
+        )
 
         # 8. Métriques de valorisation (P/E Ratio et Market Cap)
         valuation_metrics = get_valuation_metrics(ticker)
@@ -1145,7 +1123,9 @@ def run_sync() -> dict:
                 "perf_day_local": mkt['perf_local']['day'],
                 "perf_day_eur": mkt['perf_eur']['day'],
                 "perf_week_local": mkt['perf_local'].get('week', mkt['perf_eur']['week']),
+                "perf_week_eur": mkt['perf_eur']['week'],
                 "perf_month_local": mkt['perf_local'].get('month', mkt['perf_eur']['month']),
+                "perf_month_eur": mkt['perf_eur']['month'],
                 "perf_ytd_local": mkt['perf_local']['ytd'],
                 "perf_ytd_eur": mkt['perf_eur']['ytd'],
                 "geo_coverage": geo_coverage,

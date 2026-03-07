@@ -159,7 +159,7 @@ export function AssetDetailDrawer({ asset, isOpen, onClose }: AssetDetailDrawerP
         
         const { data, error } = await supabase
           .from('news_feed')
-          .select('*')
+          .select('id,url,title,source,impact_level,impact_score,impact_explanation,published_at')
           .eq('ticker', ticker) // Utiliser ticker (singulier) pour la requête
           .order('impact_score', { ascending: false })
           .order('published_at', { ascending: false })
@@ -192,6 +192,12 @@ export function AssetDetailDrawer({ asset, isOpen, onClose }: AssetDetailDrawerP
   const macdHist = asset?.technical?.macd_hist ?? null
   const momentum20 = asset?.technical?.momentum_20 ?? null
   const trendState = asset?.technical?.trend_state ?? 'UNKNOWN'
+  const trendStateLabel =
+    trendState === 'INSUFFICIENT_HISTORY'
+      ? 'NO HISTORY'
+      : trendState === 'NEUTRAL'
+      ? 'NEUTRAL (RULE)'
+      : trendState
   const quantityCurrent = asset?.quantity_current ?? asset?.quantity ?? null
   const quantityBuy = asset?.quantity_buy ?? null
   const targetWeight = asset?.target_weight_pct ?? null
@@ -200,6 +206,11 @@ export function AssetDetailDrawer({ asset, isOpen, onClose }: AssetDetailDrawerP
   const pnlEur = asset?.pnl_eur ?? null
   const pnlPct = asset?.pnl_pct ?? null
   const hasTechnicalHistory = trendState !== 'UNKNOWN' && trendState !== 'INSUFFICIENT_HISTORY'
+  const technicalMissingLabel = trendState === 'INSUFFICIENT_HISTORY' ? 'NO HISTORY' : 'UNKNOWN'
+  const technicalMissingMessage =
+    trendState === 'INSUFFICIENT_HISTORY'
+      ? 'Insufficient history: MACD / RSI / Momentum are currently unavailable for this instrument.'
+      : 'Unknown technical state: indicator data is incomplete despite available history.'
 
   // ===== EVENT HANDLERS =====
   const handleYahooFinance = () => {
@@ -494,7 +505,7 @@ export function AssetDetailDrawer({ asset, isOpen, onClose }: AssetDetailDrawerP
               </div>
               {!hasTechnicalHistory && (
                 <div className="mb-4 p-3 rounded-lg bg-amber-50 dark:bg-amber-950/20 border border-amber-200 dark:border-amber-800/50 text-[11px] font-bold text-amber-700 dark:text-amber-300">
-                  Insufficient history: MACD / RSI / Momentum are currently unavailable for this instrument.
+                  {technicalMissingMessage}
                 </div>
               )}
               <div className="space-y-4">
@@ -519,7 +530,7 @@ export function AssetDetailDrawer({ asset, isOpen, onClose }: AssetDetailDrawerP
                       ? 'bg-orange-100 dark:bg-orange-950/30 text-orange-700 dark:text-orange-400 border-orange-300 dark:border-orange-800/50'
                       : 'bg-slate-100 dark:bg-slate-800/50 text-slate-600 dark:text-gray-400 border-slate-300 dark:border-slate-700'
                   )}>
-                    {trendState === 'INSUFFICIENT_HISTORY' ? 'NO HISTORY' : trendState}
+                    {trendStateLabel}
                   </span>
                 </div>
 
@@ -579,7 +590,7 @@ export function AssetDetailDrawer({ asset, isOpen, onClose }: AssetDetailDrawerP
                       Relative Strength Index (RSI 14)
                     </span>
                     <span className="text-sm font-mono font-black text-slate-950 dark:text-white">
-                      {rsi14 !== null ? rsi14.toFixed(1) : '--'}
+                      {rsi14 !== null ? rsi14.toFixed(1) : technicalMissingLabel}
                     </span>
                   </div>
                   <div className="relative h-3 w-full bg-slate-200 dark:bg-white/5 rounded-full overflow-hidden">
@@ -615,11 +626,11 @@ export function AssetDetailDrawer({ asset, isOpen, onClose }: AssetDetailDrawerP
                     <div className="mt-2 space-y-1 text-xs font-mono font-bold">
                       <div className="flex justify-between">
                         <span className="text-slate-500 dark:text-gray-500">Line</span>
-                        <span className="text-slate-900 dark:text-gray-100">{macdLine !== null ? macdLine.toFixed(3) : '--'}</span>
+                        <span className="text-slate-900 dark:text-gray-100">{macdLine !== null ? macdLine.toFixed(3) : technicalMissingLabel}</span>
                       </div>
                       <div className="flex justify-between">
                         <span className="text-slate-500 dark:text-gray-500">Signal</span>
-                        <span className="text-slate-900 dark:text-gray-100">{macdSignal !== null ? macdSignal.toFixed(3) : '--'}</span>
+                        <span className="text-slate-900 dark:text-gray-100">{macdSignal !== null ? macdSignal.toFixed(3) : technicalMissingLabel}</span>
                       </div>
                       <div className="flex justify-between">
                         <span className="text-slate-500 dark:text-gray-500">Hist</span>
@@ -630,7 +641,7 @@ export function AssetDetailDrawer({ asset, isOpen, onClose }: AssetDetailDrawerP
                             ? 'text-green-600 dark:text-green-400'
                             : 'text-red-600 dark:text-red-400'
                         )}>
-                          {macdHist !== null ? macdHist.toFixed(3) : '--'}
+                          {macdHist !== null ? macdHist.toFixed(3) : technicalMissingLabel}
                         </span>
                       </div>
                     </div>
@@ -647,10 +658,10 @@ export function AssetDetailDrawer({ asset, isOpen, onClose }: AssetDetailDrawerP
                         ? 'text-green-600 dark:text-green-400'
                         : 'text-red-600 dark:text-red-400'
                     )}>
-                      {momentum20 === null ? '--' : `${momentum20 >= 0 ? '+' : ''}${momentum20.toFixed(2)}%`}
+                      {momentum20 === null ? technicalMissingLabel : `${momentum20 >= 0 ? '+' : ''}${momentum20.toFixed(2)}%`}
                     </div>
                     <div className="mt-1 text-[10px] font-bold text-slate-500 dark:text-gray-500 uppercase tracking-wider">
-                      {momentum20 === null ? 'Insufficient history' : momentum20 > 0 ? 'Positive Impulse' : 'Negative Impulse'}
+                      {momentum20 === null ? technicalMissingLabel : momentum20 > 0 ? 'Positive Impulse' : 'Negative Impulse'}
                     </div>
                   </div>
                 </div>
