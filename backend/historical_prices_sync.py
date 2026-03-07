@@ -9,6 +9,7 @@ import yfinance as yf
 from supabase import create_client
 
 from backtest.presets import get_preset_tickers, get_proxy_map
+from etl_stats import build_etl_stats
 
 BASE_CURRENCY = "EUR"
 DEFAULT_START_DATE = "1999-01-01"
@@ -508,14 +509,21 @@ def main():
             sorted(tickers),
             dry_run=args.dry_run,
         )
+        normalized_stats = build_etl_stats(
+            job_name,
+            stats,
+            items_total=stats.get("tickers"),
+            items_success=stats.get("tickers_ok"),
+            items_failed=stats.get("tickers_failed"),
+        )
         finish_etl_run(
             supabase,
             run_id,
             "SUCCESS",
             time.time() - started,
-            stats=stats,
+            stats=normalized_stats,
         )
-        print(f"--- FINISHED: {stats} ---", flush=True)
+        print(f"--- FINISHED: {normalized_stats} ---", flush=True)
     except Exception as exc:
         finish_etl_run(
             supabase,

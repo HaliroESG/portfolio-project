@@ -6,6 +6,8 @@ import pandas as pd
 import yfinance as yf
 from supabase import create_client
 
+from etl_stats import build_etl_stats
+
 # Utilisation des secrets GitHub
 SUPABASE_URL = os.environ.get("SUPABASE_URL")
 SUPABASE_KEY = os.environ.get("SUPABASE_KEY")
@@ -99,7 +101,14 @@ if __name__ == "__main__":
     run_id = start_etl_run(job_name)
     try:
         stats = sync_macro()
-        finish_etl_run(run_id, "SUCCESS", time.time() - started, stats=stats)
+        normalized_stats = build_etl_stats(
+            job_name,
+            stats,
+            items_total=(stats.get("updated", 0) + stats.get("failed", 0)),
+            items_success=stats.get("updated"),
+            items_failed=stats.get("failed"),
+        )
+        finish_etl_run(run_id, "SUCCESS", time.time() - started, stats=normalized_stats)
     except Exception as e:
         finish_etl_run(run_id, "FAILED", time.time() - started, error=str(e))
         raise

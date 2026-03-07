@@ -20,6 +20,10 @@ Last update: 2026-02-10
   - `UNKNOWN` state added when MACD/RSI/Momentum are unavailable.
   - Drawer and table now explicitly show insufficient history instead of silent placeholders.
   - Remaining: historical backfill strategy to reduce missing values.
+- Progress (2026-03-06):
+  - Backend bridge now uses `historical_prices` as fallback source for technical indicators when live Yahoo window is insufficient.
+  - Added robust reference-price handling for day/week/month/YTD performance baselines to avoid hard failures on short/new listings.
+  - ETL stats now include technical completeness counters (`technical_ready`, `technical_missing`, `technical_backfilled`).
 
 ### BL-002 - FX page data pipeline consistency
 - Status: DONE (phase 1)
@@ -124,12 +128,22 @@ Last update: 2026-02-10
   - Lower API load, faster route transitions, more stable UI state.
 
 ### BL-009 - Data health observability
-- Status: TODO
+- Status: DONE (phase 1)
 - Scope:
   - Add data health panel: freshness, null rate, coverage.
   - Add backend run status/error tracking for ETL jobs.
 - Deliverable:
   - Faster diagnosis when data is stale or missing.
+- Progress (2026-03-06):
+  - Dashboard data health panel now includes actionable quality signals:
+    - priced-assets completeness,
+    - technical-signal coverage,
+    - non-OK asset ratio,
+    - latest valuation coverage.
+  - Panel now highlights latest ETL failure with error preview.
+  - Backend ETL jobs now emit harmonized canonical run stats (`items_total/items_success/items_failed/coverage_pct`) while preserving legacy keys.
+  - ETL cards now display canonical metrics with backward-compatible fallbacks.
+  - Remaining (phase 2): add alerting thresholds and historical trending on ETL quality.
 
 ## Notes
 
