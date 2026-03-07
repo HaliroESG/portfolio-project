@@ -84,6 +84,16 @@ const ETL_QUALITY_THRESHOLDS = {
 } as const
 
 let QUALITY_MARKET_WATCH_SELECTOR_CACHE: string | null = null
+const MARKET_WATCH_TECHNICAL_COLUMNS = [
+  'macd_line',
+  'macd_signal',
+  'macd_hist',
+  'rsi_14',
+  'momentum_20',
+  'trend_state',
+  'trend_changed',
+] as const
+let MARKET_WATCH_TECHNICAL_SCHEMA_AVAILABLE: boolean | null = null
 
 function computeStatus(ts: string | null): { status: HealthItem['status']; ageMinutes: number | null } {
   if (!ts) return { status: 'MISSING', ageMinutes: null }
@@ -405,23 +415,51 @@ async function fetchRecentEtlRuns(): Promise<EtlRun[]> {
   }
 }
 
+async function detectMarketWatchTechnicalSchema(): Promise<boolean> {
+  if (MARKET_WATCH_TECHNICAL_SCHEMA_AVAILABLE !== null) {
+    return MARKET_WATCH_TECHNICAL_SCHEMA_AVAILABLE
+  }
+
+  try {
+    const { data, error } = await supabase.from('market_watch').select('*').limit(1)
+    if (error) {
+      MARKET_WATCH_TECHNICAL_SCHEMA_AVAILABLE = false
+      return false
+    }
+
+    const firstRow = ((data ?? []) as unknown as JsonRecord[])[0]
+    if (!firstRow || typeof firstRow !== 'object') {
+      MARKET_WATCH_TECHNICAL_SCHEMA_AVAILABLE = false
+      return false
+    }
+
+    const keys = new Set(Object.keys(firstRow))
+    MARKET_WATCH_TECHNICAL_SCHEMA_AVAILABLE = MARKET_WATCH_TECHNICAL_COLUMNS.every((column) => keys.has(column))
+    return MARKET_WATCH_TECHNICAL_SCHEMA_AVAILABLE
+  } catch {
+    MARKET_WATCH_TECHNICAL_SCHEMA_AVAILABLE = false
+    return false
+  }
+}
+
 async function fetchQualityMetrics(): Promise<QualityMetric[]> {
   let marketRows: JsonRecord[] = []
-  let technicalColumnsAvailable = false
+  const technicalColumnsAvailable = await detectMarketWatchTechnicalSchema()
   const selectors = [
     'ticker,last_price,data_status,last_update,rsi_14,macd_line,macd_signal,momentum_20',
     'ticker,last_price,data_status,last_update',
   ]
   const orderedSelectors = QUALITY_MARKET_WATCH_SELECTOR_CACHE
     ? [QUALITY_MARKET_WATCH_SELECTOR_CACHE, ...selectors.filter((selector) => selector !== QUALITY_MARKET_WATCH_SELECTOR_CACHE)]
-    : selectors
+    : technicalColumnsAvailable
+    ? selectors
+    : [selectors[1]]
 
   for (const selector of orderedSelectors) {
     const { data, error } = await supabase.from('market_watch').select(selector).limit(600)
     if (error) continue
     marketRows = (data ?? []) as unknown as JsonRecord[]
     QUALITY_MARKET_WATCH_SELECTOR_CACHE = selector
-    technicalColumnsAvailable = selector.includes('rsi_14')
     break
   }
 

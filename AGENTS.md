@@ -4,12 +4,12 @@
 
 This is a **monorepo** containing:
 
-- **Frontend** (`frontend/`): Next.js 14 application with TypeScript, Tailwind CSS, and Shadcn/UI
+- **Frontend** (`frontend/`): Next.js 16 application with TypeScript, Tailwind CSS, and Shadcn/UI
 - **Backend** (`backend/`): Python ETL scripts for financial data synchronization with Supabase
 
 ## Frontend Stack
 
-- **Framework**: Next.js 14
+- **Framework**: Next.js 16
 - **Language**: TypeScript (strict mode)
 - **Styling**: Tailwind CSS
 - **UI Components**: Shadcn/UI

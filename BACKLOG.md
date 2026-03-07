@@ -4,31 +4,45 @@ Last update: 2026-03-07
 
 ## P0 - Data Reliability and Signal Quality
 
-### BL-001 - Technical indicators completeness (asset-level)
-- Status: DONE
-- Problem:
-  - In asset drawer, RSI/MACD/Momentum can be missing (`--`) for multiple assets.
-  - Trend column is often `NEUTRAL`, reducing actionability.
-- Scope:
-  - Backfill technical columns for all assets from backend sync.
-  - Add explicit state for missing history (`UNKNOWN` / `INSUFFICIENT_HISTORY`) instead of silent `--`.
-  - Distinguish "Neutral by rule" vs "Neutral by missing data".
-- Deliverable:
-  - Reliable values in table + drawer for most tracked assets.
-  - Clear UX for unavailable indicators.
-- Progress (2026-02-10):
-  - `UNKNOWN` state added when MACD/RSI/Momentum are unavailable.
-  - Drawer and table now explicitly show insufficient history instead of silent placeholders.
-  - Remaining: historical backfill strategy to reduce missing values.
-- Progress (2026-03-06):
-  - Backend bridge now uses `historical_prices` as fallback source for technical indicators when live Yahoo window is insufficient.
-  - Added robust reference-price handling for day/week/month/YTD performance baselines to avoid hard failures on short/new listings.
-  - ETL stats now include technical completeness counters (`technical_ready`, `technical_missing`, `technical_backfilled`).
-- Progress (2026-03-07):
-  - RSI edge-case handling fixed in backend (`RSI=100` on zero-loss windows, `RSI=50` on flat windows) to reduce avoidable missing technical values.
-  - Trend-state classification now explicitly separates `NEUTRAL` (rule-based), `INSUFFICIENT_HISTORY` (short lookback), and `UNKNOWN` (data gap despite sufficient lookback).
-  - Frontend market-watch mapping now preserves explicit technical states and avoids collapsing missing-data states into neutral.
-  - Asset table/drawer now render explicit labels for technical unavailability (`NO HISTORY`, `UNKNOWN`) instead of silent placeholders.
+BL-001 — Explicit Technical State Semantics
+
+Priority: P0
+Status: BLOCKED (live schema)
+
+Problem
+
+The frontend now implements explicit technical-state semantics (NEUTRAL / UNKNOWN / INSUFFICIENT_HISTORY / NO HISTORY).
+However, the live Supabase schema is missing technical indicator columns in market_watch (e.g. macd_line), which blocks full live completeness validation.
+
+Scope
+	•	Verify presence of technical columns in market_watch
+	•	Apply migration if missing
+	•	Re-run Supabase smoke tests
+	•	Confirm technical-state completeness in dashboard and asset drawer
+
+Implementation (already in repo)
+	•	Technical-state semantics implemented in technical_state.py
+	•	Frontend explicit rendering (table + drawer)
+	•	No silent placeholders
+	•	Compatibility with missing data handled in UI
+
+Validation required
+	•	npm run smoke:supabase
+	•	Dashboard asset drawer technical-state rendering
+	•	Data health panel coverage metrics
+
+Blocking dependency
+
+Apply migration:
+
+backend/sql/20260210_market_watch_phase2_technicals.sql
+
+Acceptance criteria
+	•	Supabase smoke test passes
+	•	Technical indicators available in market_watch
+	•	Frontend technical-state semantics render correctly
+	•	No runtime 400 errors on technical selectors
+
 
 ### BL-002 - FX page data pipeline consistency
 - Status: DONE (phase 1)
@@ -122,40 +136,78 @@ Last update: 2026-03-07
   - Map and side panel values are recalculated by selected horizon.
   - Added bubble overlay to visualize exposure + timeframe performance.
 
+BL-008 — Frontend Data Fetch Optimization
+
+Priority: P1
+Status: IN_PROGRESS
+
+Problem
+
+Certain frontend reads triggered redundant Supabase queries and fallback selector retries under schema drift.
+
+Scope
+
+Reduce redundant queries and stabilize selector fallbacks.
+
+Implemented
+	•	FX page narrowed market_watch read fields
+	•	Selector fallback helper introduced
+	•	Selector cache added
+	•	Shared fetcher optimization in portfolioData.ts
+	•	Technical selector probe caching in DataHealthPanel
+
+Impact
+	•	Reduced Supabase read failures
+	•	Reduced repeated fallback queries
+	•	Improved runtime stability under schema drift
+
+Remaining
+
+Optional improvement:
+	•	eliminate first-attempt fallback 400s on portfolio/data-health selectors
+
+Acceptance criteria
+	•	No redundant fallback queries during repeated reads
+	•	Stable FX / dashboard / geo loads
+	•	No user-visible errors under schema drift
+
+BL-009 — ETL Health Observability (Phase 2)
+
+Priority: P1
+Status: DONE
+
+Problem
+
+ETL health previously exposed raw metrics without actionable interpretation.
+
+Scope
+
+Expose explicit ETL quality classification and historical trends.
+
+Implemented
+	•	Threshold-based ETL status classification
+	•	Historical ETL quality trend extraction
+	•	DataHealthPanel UI integration
+	•	Compatibility with canonical and legacy stats payloads
+
+Behavior
+
+Each ETL job now classified as:
+
+OK
+WARNING
+CRITICAL
+UNKNOWN
+
+Trend direction derived from etl_runs history.
+
+Validation
+	•	DataHealthPanel displays ETL status badges
+	•	Trend sparkline renders correctly
+	•	Legacy stats payload compatibility maintained
+
+
 ## P2 - Performance and Product Hardening
-
-### BL-008 - Frontend data fetching optimization
-- Status: IN_PROGRESS
-- Scope:
-  - Reduce duplicated polling and redundant `select('*')`.
-  - Move to shared cache strategy (example: SWR/React Query).
-- Deliverable:
-  - Lower API load, faster route transitions, more stable UI state.
-- Progress (2026-03-07):
-  - Macro data access moved to shared typed fetcher with SWR key/versioning (`macro-indicators-v1`) to align cache behavior across dashboard and MDSS.
-  - Removed broad `select('*')` reads for macro consumers; replaced with explicit column selectors and schema-safe fallback selector.
-  - Removed duplicated MDSS macro reads by injecting parent-fetched indicators into `MacroHealth` (child fetch disabled when props provided).
-
-### BL-009 - Data health observability
-- Status: DONE (phase 2)
-- Scope:
-  - Add data health panel: freshness, null rate, coverage.
-  - Add backend run status/error tracking for ETL jobs.
-- Deliverable:
-  - Faster diagnosis when data is stale or missing.
-- Progress (2026-03-06):
-  - Dashboard data health panel now includes actionable quality signals:
-    - priced-assets completeness,
-    - technical-signal coverage,
-    - non-OK asset ratio,
-    - latest valuation coverage.
-  - Panel now highlights latest ETL failure with error preview.
-  - Backend ETL jobs now emit harmonized canonical run stats (`items_total/items_success/items_failed/coverage_pct`) while preserving legacy keys.
-  - ETL cards now display canonical metrics with backward-compatible fallbacks.
-- Progress (2026-03-07):
-  - Added threshold-based ETL quality classification on dashboard (`OK` / `WARNING` / `CRITICAL` / `UNKNOWN`) using canonical ETL metrics (`items_total/items_success/items_failed/coverage_pct`) with legacy fallbacks.
-  - Added per-job historical ETL quality trend (last runs sparkline + direction: improving/stable/degrading).
-  - Added explicit threshold semantics in UI messaging (fail-rate and coverage threshold breaches surfaced with reasons).
 
 ## Notes
 
@@ -165,3 +217,84 @@ Last update: 2026-03-07
   - Momentum(20)
 - Supabase migration available for new technical fields:
   - `backend/sql/20260210_market_watch_phase2_technicals.sql`
+
+Documentation Alignment
+
+README
+
+Status: DONE
+
+Root README rewritten to document:
+	•	architecture flow
+	•	operational validation commands
+	•	roadmap wave state
+	•	runtime validation checklist
+
+Stack documentation mismatch
+
+Observed:
+
+AGENTS.md / docs mention Next.js 14
+Actual runtime: Next.js 16.1.3
+
+Action
+
+Update documentation to avoid stack drift.
+
+Status: DONE (2026-03-07)
+
+⸻
+
+Validation Matrix (Latest Run)
+
+Check	Status
+Frontend lint	PASS
+TypeScript compile	PASS
+Frontend build	PASS
+Critical flow validator	PASS
+Supabase smoke	FAIL
+Backend pytest	PASS
+Backend syntax compile	PASS
+Runtime smoke routes	PASS
+Manual write tests (/targets)	NOT RUN
+
+Blocking error:
+
+column market_watch.macd_line does not exist
+
+
+⸻
+
+Current Roadmap Status
+
+Item	Status
+BL-001	BLOCKED (live schema drift)
+BL-008	IN_PROGRESS
+BL-009	DONE
+
+
+⸻
+
+Next Action (P0)
+
+Apply or verify the following migration on the target Supabase environment:
+
+backend/sql/20260210_market_watch_phase2_technicals.sql
+
+Then re-run:
+
+npm run smoke:supabase
+npm run build
+node scripts/validate-critical-flows.mjs
+
+Followed by runtime smoke on:
+
+/dashboard
+/fx
+/geo
+/targets
+asset drawer
+data health panel
+
+
+⸻

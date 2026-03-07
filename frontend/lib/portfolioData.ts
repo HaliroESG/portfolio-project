@@ -49,6 +49,7 @@ interface MarketWatchRow {
   momentum_20: number | null
   trend_state: TrendState | null
   trend_changed: boolean | null
+  technical_schema_available: boolean
 }
 
 interface PortfolioRow {
@@ -91,6 +92,16 @@ interface CountryAccumulator {
 const DEFAULT_PORTFOLIO_ID = 'default'
 export const PORTFOLIO_AGGREGATION_SWR_KEY = 'portfolio-aggregation-v1'
 const SELECTOR_CACHE: Record<string, string> = {}
+const MARKET_WATCH_TECHNICAL_COLUMNS = [
+  'macd_line',
+  'macd_signal',
+  'macd_hist',
+  'rsi_14',
+  'momentum_20',
+  'trend_state',
+  'trend_changed',
+] as const
+let MARKET_WATCH_TECHNICAL_SCHEMA_AVAILABLE: boolean | null = null
 
 const COUNTRY_COORDS: Record<string, [number, number]> = {
   US: [37, -95],
@@ -259,6 +270,11 @@ function normalizeAssetType(value: string | null): AssetType {
 }
 
 function resolveTrendState(row: MarketWatchRow): TrendState {
+  if (!row.technical_schema_available) {
+    // If technical columns are absent in schema, this is a data-contract gap, not a "no history" signal.
+    return 'UNKNOWN'
+  }
+
   const hasAllIndicators =
     row.macd_line !== null &&
     row.macd_signal !== null &&
@@ -365,6 +381,34 @@ function parseMarketWatchRow(raw: JsonRecord): MarketWatchRow {
     momentum_20: readNumber(raw.momentum_20),
     trend_state: trendState,
     trend_changed: readBoolean(raw.trend_changed),
+    technical_schema_available: MARKET_WATCH_TECHNICAL_SCHEMA_AVAILABLE !== false,
+  }
+}
+
+async function detectMarketWatchTechnicalSchema(supabase: SupabaseClient): Promise<boolean> {
+  if (MARKET_WATCH_TECHNICAL_SCHEMA_AVAILABLE !== null) {
+    return MARKET_WATCH_TECHNICAL_SCHEMA_AVAILABLE
+  }
+
+  try {
+    const { data, error } = await supabase.from('market_watch').select('*').limit(1)
+    if (error) {
+      MARKET_WATCH_TECHNICAL_SCHEMA_AVAILABLE = false
+      return false
+    }
+
+    const firstRow = ((data ?? []) as unknown as JsonRecord[])[0]
+    if (!firstRow || typeof firstRow !== 'object') {
+      MARKET_WATCH_TECHNICAL_SCHEMA_AVAILABLE = false
+      return false
+    }
+
+    const keys = new Set(Object.keys(firstRow))
+    MARKET_WATCH_TECHNICAL_SCHEMA_AVAILABLE = MARKET_WATCH_TECHNICAL_COLUMNS.every((column) => keys.has(column))
+    return MARKET_WATCH_TECHNICAL_SCHEMA_AVAILABLE
+  } catch {
+    MARKET_WATCH_TECHNICAL_SCHEMA_AVAILABLE = false
+    return false
   }
 }
 
@@ -432,15 +476,22 @@ async function selectWithFallback(
 }
 
 async function fetchMarketWatchRows(supabase: SupabaseClient): Promise<MarketWatchRow[]> {
+  const technicalSchemaAvailable = await detectMarketWatchTechnicalSchema(supabase)
+
   const rows = await selectWithFallback(
     supabase,
     'market_watch',
-    [
-      'id,name,ticker,last_price,currency,type,geo_coverage,data_status,last_update,pe_ratio,market_cap,asset_class,quantity,quantity_buy,pru,target_weight_pct,portfolio_id,perf_day_eur,perf_day_local,perf_week_local,perf_week_eur,perf_month_local,perf_month_eur,perf_ytd_eur,ma200_value,ma200_status,trend_slope,volatility_30d,rsi_14,macd_line,macd_signal,macd_hist,momentum_20,trend_state,trend_changed',
-      // Schema without technicals or type column
-      'id,name,ticker,last_price,currency,geo_coverage,data_status,last_update,pe_ratio,market_cap,asset_class,quantity,quantity_buy,pru,target_weight_pct,portfolio_id,perf_day_eur,perf_day_local,perf_week_local,perf_week_eur,perf_month_local,perf_month_eur,perf_ytd_eur,ma200_value,ma200_status,trend_slope,volatility_30d',
-      'id,name,ticker,last_price,currency,geo_coverage,data_status,last_update,pe_ratio,market_cap,asset_class,quantity,perf_day_eur,perf_day_local,perf_week_local,perf_week_eur,perf_month_local,perf_month_eur,perf_ytd_eur',
-    ]
+    technicalSchemaAvailable
+      ? [
+          'id,name,ticker,last_price,currency,type,geo_coverage,data_status,last_update,pe_ratio,market_cap,asset_class,quantity,quantity_buy,pru,target_weight_pct,portfolio_id,perf_day_eur,perf_day_local,perf_week_local,perf_week_eur,perf_month_local,perf_month_eur,perf_ytd_eur,ma200_value,ma200_status,trend_slope,volatility_30d,rsi_14,macd_line,macd_signal,macd_hist,momentum_20,trend_state,trend_changed',
+          // Schema without technicals or type column
+          'id,name,ticker,last_price,currency,geo_coverage,data_status,last_update,pe_ratio,market_cap,asset_class,quantity,quantity_buy,pru,target_weight_pct,portfolio_id,perf_day_eur,perf_day_local,perf_week_local,perf_week_eur,perf_month_local,perf_month_eur,perf_ytd_eur,ma200_value,ma200_status,trend_slope,volatility_30d',
+          'id,name,ticker,last_price,currency,geo_coverage,data_status,last_update,pe_ratio,market_cap,asset_class,quantity,perf_day_eur,perf_day_local,perf_week_local,perf_week_eur,perf_month_local,perf_month_eur,perf_ytd_eur',
+        ]
+      : [
+          'id,name,ticker,last_price,currency,geo_coverage,data_status,last_update,pe_ratio,market_cap,asset_class,quantity,quantity_buy,pru,target_weight_pct,portfolio_id,perf_day_eur,perf_day_local,perf_week_local,perf_week_eur,perf_month_local,perf_month_eur,perf_ytd_eur,ma200_value,ma200_status,trend_slope,volatility_30d',
+          'id,name,ticker,last_price,currency,geo_coverage,data_status,last_update,pe_ratio,market_cap,asset_class,quantity,perf_day_eur,perf_day_local,perf_week_local,perf_week_eur,perf_month_local,perf_month_eur,perf_ytd_eur',
+        ]
   )
   return rows.map(parseMarketWatchRow)
 }
