@@ -12,6 +12,15 @@ from supabase import create_client
 from oauth2client.service_account import ServiceAccountCredentials
 from scipy.stats import linregress
 
+from etl_stats import build_etl_stats
+from market_history_utils import (
+    choose_indicator_series,
+    pct_change,
+    rows_to_adj_close_series,
+    trailing_reference,
+    year_start_reference,
+)
+
 print("--- 🔍 DÉMARRAGE DU DIAGNOSTIC ---", flush=True)
 
 # 1. RÉCUPÉRATION DES VARIABLES (Noms standardisés par le YAML)
@@ -553,6 +562,24 @@ def get_valuation_metrics(ticker):
         "market_cap": market_cap
     }
 
+
+def fetch_historical_indicator_series(ticker: str, limit_rows: int = 520):
+    try:
+        response = (
+            supabase
+            .table("historical_prices")
+            .select("date,adj_close")
+            .eq("ticker", ticker)
+            .order("date", desc=True)
+            .limit(limit_rows)
+            .execute()
+        )
+        return rows_to_adj_close_series(response.data)
+    except Exception as e:
+        print(f"      ⚠️ Backfill historique indisponible pour {ticker}: {e}", flush=True)
+        return None
+
+
 def get_financial_data(ticker, currency):
     if not ticker: return None
     print(f"    📊 Analyse financière : {ticker} ({currency})...", flush=True)
@@ -596,43 +623,39 @@ def get_financial_data(ticker, currency):
             df['fx'] = 1.0
         
         df = df.ffill() # Correction FutureWarning fillna
-
-        # Si l'historique reste trop court, retourner un paquet minimal avec état INSUFFICIENT_HISTORY
-        if len(df) < 30:
-            print(f"      ⚠️ Historique trop court ({len(df)} points) pour calculs complets, marquage INSUFFICIENT_HISTORY", flush=True)
-            last_price_safe = float(df['price'].iloc[-1]) if len(df) > 0 else 0.0
-            return {
-                "last_price": last_price_safe,
-                "perf_local": {"day": 0.0, "week": 0.0, "month": 0.0, "ytd": 0.0},
-                "perf_eur": {"day": 0.0, "week": 0.0, "month": 0.0, "ytd": 0.0},
-                "ma200_value": None,
-                "ma200_status": None,
-                "trend_slope": None,
-                "volatility_30d": None,
-                "rsi_14": None,
-                "macd_line": None,
-                "macd_signal": None,
-                "macd_hist": None,
-                "momentum_20": None,
-                "trend_state": "INSUFFICIENT_HISTORY",
-                "trend_changed": False,
-                "pe_ratio": None,
-                "market_cap": None,
-                "data_status": "LOW_CONFIDENCE",
-            }
-
         df['val_eur'] = df['price'] * df['fx']
 
-        now_eur = df['val_eur'].iloc[-1]
-        prev_eur = df['val_eur'].iloc[-2]
-        week_eur = df['val_eur'].iloc[-6]
-        month_eur = df['val_eur'].iloc[-22]
-        
-        ytd_date = f"{datetime.now().year}-01-01"
-        start_year_eur = df[df.index < ytd_date]['val_eur'].iloc[-1]
-        start_year_local = df[df.index < ytd_date]['price'].iloc[-1]
+        price_series = df['price'].dropna()
+        val_eur_series = df['val_eur'].dropna()
+        if price_series.empty or val_eur_series.empty:
+            print(f"      ⚠️ Série de prix invalide pour {ticker}", flush=True)
+            return None
 
-        calc = lambda current, start: (current / start) - 1
+        now_eur = float(val_eur_series.iloc[-1])
+        prev_eur = trailing_reference(val_eur_series, 1) or now_eur
+        week_eur = trailing_reference(val_eur_series, 5) or now_eur
+        month_eur = trailing_reference(val_eur_series, 21) or now_eur
+        start_year_eur = year_start_reference(val_eur_series)
+        start_year_local = year_start_reference(price_series)
+
+        local_prev = trailing_reference(price_series, 1) or float(price_series.iloc[-1])
+        local_week = trailing_reference(price_series, 5) or float(price_series.iloc[-1])
+        local_month = trailing_reference(price_series, 21) or float(price_series.iloc[-1])
+
+        indicator_series = price_series
+        indicator_source = "yfinance"
+        historical_indicator_series = fetch_historical_indicator_series(ticker)
+        indicator_series, selected_source = choose_indicator_series(
+            indicator_series,
+            historical_indicator_series,
+            min_points=35,
+        )
+        if selected_source == "fallback":
+            indicator_source = "historical_prices"
+            print(
+                f"      ℹ️ Backfill technique utilisé depuis historical_prices ({len(indicator_series)} points)",
+                flush=True,
+            )
 
         # === CALCULS D'INDICATEURS TECHNIQUES ===
         
@@ -640,12 +663,15 @@ def get_financial_data(ticker, currency):
         ma200_value = None
         ma200_status = None
         try:
-            if len(df) >= 200:
-                ma200_value = float(df['price'].rolling(window=200).mean().iloc[-1])
-                current_price = float(df['price'].iloc[-1])
+            if len(indicator_series) >= 200:
+                ma200_value = float(indicator_series.rolling(window=200).mean().iloc[-1])
+                current_price = float(indicator_series.iloc[-1])
                 ma200_status = "above" if current_price > ma200_value else "below"
             else:
-                print(f"      ⚠️ Pas assez de données pour MA200 ({len(df)} jours)", flush=True)
+                print(
+                    f"      ⚠️ Pas assez de données pour MA200 ({len(indicator_series)} jours, source={indicator_source})",
+                    flush=True,
+                )
         except Exception as e:
             print(f"      ⚠️ Erreur calcul MA200: {e}", flush=True)
 
@@ -668,9 +694,9 @@ def get_financial_data(ticker, currency):
         # 3. Volatilité annualisée (30 derniers jours)
         volatility_30d = None
         try:
-            if len(df) >= 30:
+            if len(indicator_series) >= 30:
                 # Calculer les rendements logarithmiques
-                returns = np.log(df['price'] / df['price'].shift(1)).dropna()
+                returns = np.log(indicator_series / indicator_series.shift(1)).dropna()
                 # Prendre les 30 derniers jours
                 recent_returns = returns.tail(30)
                 # Écart-type des rendements
@@ -678,7 +704,10 @@ def get_financial_data(ticker, currency):
                 # Annualiser: multiplier par sqrt(252) pour les jours ouvrés
                 volatility_30d = float(std_dev * np.sqrt(252) * 100)  # En pourcentage
             else:
-                print(f"      ⚠️ Pas assez de données pour volatilité 30d ({len(df)} jours)", flush=True)
+                print(
+                    f"      ⚠️ Pas assez de données pour volatilité 30d ({len(indicator_series)} jours, source={indicator_source})",
+                    flush=True,
+                )
         except Exception as e:
             print(f"      ⚠️ Erreur calcul volatilité: {e}", flush=True)
 
@@ -687,9 +716,9 @@ def get_financial_data(ticker, currency):
         macd_signal = None
         macd_hist = None
         try:
-            if len(df) >= 35:
-                ema_12 = df['price'].ewm(span=12, adjust=False).mean()
-                ema_26 = df['price'].ewm(span=26, adjust=False).mean()
+            if len(indicator_series) >= 35:
+                ema_12 = indicator_series.ewm(span=12, adjust=False).mean()
+                ema_26 = indicator_series.ewm(span=26, adjust=False).mean()
                 macd_series = ema_12 - ema_26
                 signal_series = macd_series.ewm(span=9, adjust=False).mean()
                 hist_series = macd_series - signal_series
@@ -698,32 +727,41 @@ def get_financial_data(ticker, currency):
                 macd_signal = float(signal_series.iloc[-1])
                 macd_hist = float(hist_series.iloc[-1])
             else:
-                print(f"      ⚠️ Pas assez de données pour MACD ({len(df)} jours)", flush=True)
+                print(
+                    f"      ⚠️ Pas assez de données pour MACD ({len(indicator_series)} jours, source={indicator_source})",
+                    flush=True,
+                )
         except Exception as e:
             print(f"      ⚠️ Erreur calcul MACD: {e}", flush=True)
 
         # 5. RSI 14
         rsi_14 = None
         try:
-            if len(df) >= 15:
-                rsi_series = calculate_rsi_series(df['price'], period=14)
+            if len(indicator_series) >= 15:
+                rsi_series = calculate_rsi_series(indicator_series, period=14)
                 if pd.notna(rsi_series.iloc[-1]):
                     rsi_14 = float(rsi_series.iloc[-1])
             else:
-                print(f"      ⚠️ Pas assez de données pour RSI ({len(df)} jours)", flush=True)
+                print(
+                    f"      ⚠️ Pas assez de données pour RSI ({len(indicator_series)} jours, source={indicator_source})",
+                    flush=True,
+                )
         except Exception as e:
             print(f"      ⚠️ Erreur calcul RSI: {e}", flush=True)
 
         # 6. Momentum 20 jours (%)
         momentum_20 = None
         try:
-            if len(df) >= 21:
-                previous_price = df['price'].iloc[-21]
-                current_price = df['price'].iloc[-1]
+            if len(indicator_series) >= 21:
+                previous_price = indicator_series.iloc[-21]
+                current_price = indicator_series.iloc[-1]
                 if previous_price and previous_price != 0:
                     momentum_20 = float(((current_price / previous_price) - 1) * 100)
             else:
-                print(f"      ⚠️ Pas assez de données pour Momentum20 ({len(df)} jours)", flush=True)
+                print(
+                    f"      ⚠️ Pas assez de données pour Momentum20 ({len(indicator_series)} jours, source={indicator_source})",
+                    flush=True,
+                )
         except Exception as e:
             print(f"      ⚠️ Erreur calcul Momentum20: {e}", flush=True)
 
@@ -776,7 +814,7 @@ def get_financial_data(ticker, currency):
                 last_trade_timestamp = datetime.now()
 
         # 6. Validation finale : Si timestamp invalide mais prix valide, forcer timestamp à maintenant
-        last_price = float(df['price'].iloc[-1])
+        last_price = float(price_series.iloc[-1])
         if last_price > 0:
             # Vérifier si le timestamp final est invalide
             try:
@@ -809,14 +847,16 @@ def get_financial_data(ticker, currency):
             "last_trade_timestamp": last_trade_timestamp.isoformat() if isinstance(last_trade_timestamp, datetime) else str(last_trade_timestamp),
             "data_status": data_status,
             "perf_eur": {
-                "day": calc(now_eur, prev_eur),
-                "week": calc(now_eur, week_eur),
-                "month": calc(now_eur, month_eur),
-                "ytd": calc(now_eur, start_year_eur)
+                "day": pct_change(now_eur, prev_eur),
+                "week": pct_change(now_eur, week_eur),
+                "month": pct_change(now_eur, month_eur),
+                "ytd": pct_change(now_eur, start_year_eur)
             },
             "perf_local": {
-                "day": calc(df['price'].iloc[-1], df['price'].iloc[-2]),
-                "ytd": calc(df['price'].iloc[-1], start_year_local)
+                "day": pct_change(last_price, local_prev),
+                "week": pct_change(last_price, local_week),
+                "month": pct_change(last_price, local_month),
+                "ytd": pct_change(last_price, start_year_local)
             },
             "ma200_value": ma200_value,
             "ma200_status": ma200_status,
@@ -827,6 +867,7 @@ def get_financial_data(ticker, currency):
             "macd_hist": macd_hist,
             "rsi_14": rsi_14,
             "momentum_20": momentum_20,
+            "technical_source": indicator_source,
             "trend_state": trend_state,
             "pe_ratio": valuation_metrics.get('pe_ratio'),
             "market_cap": valuation_metrics.get('market_cap')
@@ -1073,11 +1114,18 @@ def run_sync() -> dict:
             # Seuls les actifs avec status OK ou STALE comptent dans le coverage
             if data_status in ['OK', 'STALE']:
                 covered_value += asset_value_eur
+
+            has_complete_technicals = all(
+                mkt.get(field) is not None
+                for field in ["macd_line", "macd_signal", "rsi_14", "momentum_20"]
+            )
             
             assets_processed.append({
                 'ticker': ticker,
                 'value': asset_value_eur,
-                'status': data_status
+                'status': data_status,
+                'technical_complete': has_complete_technicals,
+                'technical_source': mkt.get('technical_source', 'yfinance'),
             })
 
             asset_name_raw = data_clean.get(name_key, ticker) if name_key else ticker
@@ -1096,8 +1144,8 @@ def run_sync() -> dict:
                 "target_weight_pct": target_weight_pct,
                 "perf_day_local": mkt['perf_local']['day'],
                 "perf_day_eur": mkt['perf_eur']['day'],
-                "perf_week_local": mkt['perf_eur']['week'],
-                "perf_month_local": mkt['perf_eur']['month'],
+                "perf_week_local": mkt['perf_local'].get('week', mkt['perf_eur']['week']),
+                "perf_month_local": mkt['perf_local'].get('month', mkt['perf_eur']['month']),
                 "perf_ytd_local": mkt['perf_local']['ytd'],
                 "perf_ytd_eur": mkt['perf_eur']['ytd'],
                 "geo_coverage": geo_coverage,
@@ -1230,6 +1278,11 @@ def run_sync() -> dict:
         if status in status_counts:
             status_counts[status] += 1
 
+    technical_ready = sum(1 for asset in assets_processed if asset.get("technical_complete"))
+    technical_backfilled = sum(
+        1 for asset in assets_processed if asset.get("technical_source") == "historical_prices"
+    )
+
     return {
         "assets_total": len(assets_processed),
         "coverage_pct": coverage_pct,
@@ -1237,6 +1290,9 @@ def run_sync() -> dict:
         "status_stale": status_counts["STALE"],
         "status_low_confidence": status_counts["LOW_CONFIDENCE"],
         "status_partial": status_counts["PARTIAL"],
+        "technical_ready": technical_ready,
+        "technical_missing": max(len(assets_processed) - technical_ready, 0),
+        "technical_backfilled": technical_backfilled,
         "unresolved_isins": len(unresolved_unique),
     }
 
@@ -1293,8 +1349,15 @@ if __name__ == "__main__":
 
         # 3. Synchronisation des actifs du portefeuille (Stocks, ETFs...)
         stats = run_sync()
+        normalized_stats = build_etl_stats(
+            job_name,
+            stats,
+            items_total=stats.get("assets_total"),
+            items_success=(stats.get("status_ok", 0) + stats.get("status_stale", 0)),
+            items_failed=(stats.get("status_low_confidence", 0) + stats.get("status_partial", 0)),
+        )
 
-        finish_etl_run(run_id, "SUCCESS", time.time() - started, stats=stats)
+        finish_etl_run(run_id, "SUCCESS", time.time() - started, stats=normalized_stats)
         print("--- ✅ SCRIPT TERMINÉ AVEC SUCCÈS ---", flush=True)
     except Exception as e:
         finish_etl_run(run_id, "FAILED", time.time() - started, error=str(e))

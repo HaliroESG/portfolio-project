@@ -12,6 +12,8 @@ import feedparser
 import requests
 from supabase import create_client
 
+from etl_stats import build_etl_stats
+
 print("--- 📰 DÉMARRAGE DE LA SYNCHRONISATION DES ACTUALITÉS ---", flush=True)
 
 
@@ -520,7 +522,14 @@ if __name__ == "__main__":
     run_id = start_etl_run(job_name)
     try:
         stats = sync_news()
-        finish_etl_run(run_id, "SUCCESS", time.time() - started, stats=stats)
+        normalized_stats = build_etl_stats(
+            job_name,
+            stats,
+            items_total=stats.get("unique_count"),
+            items_success=stats.get("unique_count"),
+            items_failed=0,
+        )
+        finish_etl_run(run_id, "SUCCESS", time.time() - started, stats=normalized_stats)
         print("--- ✅ SCRIPT TERMINÉ AVEC SUCCÈS ---", flush=True)
     except Exception as e:
         finish_etl_run(run_id, "FAILED", time.time() - started, error=str(e))
