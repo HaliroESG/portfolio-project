@@ -1,62 +1,50 @@
-# Portfolio Project - Agent Guidelines
+# Portfolio Project - Global AGENTS
 
-## Project Structure
+This file defines monorepo-wide invariants.
+Directory-specific rules live in:
+- `frontend/AGENTS.md`
+- `backend/AGENTS.md`
 
-This is a **monorepo** containing:
+## Monorepo and Data Flow
 
-- **Frontend** (`frontend/`): Next.js 14 application with TypeScript, Tailwind CSS, and Shadcn/UI
-- **Backend** (`backend/`): Python ETL scripts for financial data synchronization with Supabase
+- Structure:
+  - `backend/` = Python ETL/sync scripts
+  - `frontend/` = Next.js 16 + TypeScript strict UI
+- Architecture is strict and must stay explicit:
+  - `backend -> Supabase -> frontend`
+- Supabase is the source of truth for frontend runtime reads.
 
-## Frontend Stack
+## Contract and Type Alignment (Mandatory)
 
-- **Framework**: Next.js 14
-- **Language**: TypeScript (strict mode)
-- **Styling**: Tailwind CSS
-- **UI Components**: Shadcn/UI
-- **Design System**: High Contrast Financial UI
-  - Light mode: Slate-950 text, shadow-2xl for depth
-  - Dark mode: Custom dark theme with high contrast
-- **State Management**: React hooks (useState, useEffect)
-- **Database**: Supabase (client-side)
+- Any backend payload, SQL schema, or Supabase-facing shape change must be reviewed against frontend readers.
+- If a backend/Supabase contract changes, update `frontend/types.ts` in the same change set.
+- Do not merge partial contract updates (backend-only or frontend-only drift).
 
-### Frontend Guidelines
+## Delivery and Change Discipline
 
-- Use `"use client"` directive for client components
-- Follow TypeScript strict standards
-- Use Tailwind utility classes for styling
-- Path aliases: `@/*` maps to `frontend/` root (configured in `tsconfig.json`)
-- Component structure: Co-locate related components
-- Financial UI standards: Maintain high contrast, use shadow-2xl in light mode
+- Before coding, state expected impact on:
+  - backend writes
+  - Supabase schema/data
+  - frontend typed reads and UI states
+- Keep edits minimal and coherent. Avoid broad rewrites unless unavoidable.
+- Keep uncertainty explicit (no silent fallback that hides business state).
+- Use `BACKLOG.md` as product source of truth for scope and acceptance.
 
-## Backend Stack
+## Validation Policy
 
-- **Language**: Python 3.11
-- **Libraries**: yfinance, supabase, pandas, numpy, gspread, oauth2client, scipy, statsmodels
-- **Database**: Supabase (server-side)
-- **CI/CD**: GitHub Actions (scheduled runs)
-- **Dependencies**: Managed via `backend/requirements.txt` with pinned versions for stability
+- Prefer acceptance-criteria-driven validation over assumptions.
+- Minimum checks before concluding a task:
+  - Frontend (from `frontend/`):
+    - `npm run lint`
+    - `npx tsc --noEmit`
+    - `npm run build`
+    - `npm run smoke:supabase` (when Supabase reads/contracts are involved)
+  - Backend (from `backend/`):
+    - `python3.11 -m pytest -q`
+    - targeted syntax/import check when needed (`python3.11 -m py_compile ...`)
+- Report results honestly as `PASS` / `FAIL` / `NOT RUN` / `BLOCKED`.
 
-### Backend Guidelines
+## Instruction Sources
 
-- Follow PEP 8 coding standards
-- Use Pydantic for data validation when applicable
-- Environment variables: Load from GitHub Secrets in CI/CD
-- Error handling: Comprehensive try/except blocks with logging
-- Supabase interaction: Use service key for backend operations
-
-## Monorepo Interdependencies
-
-- **Data Flow**: Backend scripts → Supabase → Frontend reads
-- **Type Safety**: When modifying backend data structures, update `frontend/types.ts`
-- **Synchronization**: Backend runs on schedule via GitHub Actions
-
-## Architecture Reference
-
-See `.cursor/rules/architecture.mdc` for detailed architecture documentation.
-
-## Development Workflow
-
-1. **Frontend Development**: Work in `frontend/` directory
-2. **Backend Development**: Work in `backend/` directory
-3. **Type Alignment**: When backend data changes, verify frontend types match
-4. **Testing**: Test locally before pushing to trigger CI/CD
+- Primary instruction layer for Codex is AGENTS hierarchy (`/AGENTS.md`, `/frontend/AGENTS.md`, `/backend/AGENTS.md`).
+- Legacy `.mdc` files under `.cursor/rules/` are secondary reference docs, not the primary instruction source.

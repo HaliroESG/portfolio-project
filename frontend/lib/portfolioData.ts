@@ -49,6 +49,7 @@ interface MarketWatchRow {
   momentum_20: number | null
   trend_state: TrendState | null
   trend_changed: boolean | null
+  technical_schema_available: boolean
 }
 
 interface PortfolioRow {
@@ -89,6 +90,18 @@ interface CountryAccumulator {
 }
 
 const DEFAULT_PORTFOLIO_ID = 'default'
+export const PORTFOLIO_AGGREGATION_SWR_KEY = 'portfolio-aggregation-v1'
+const SELECTOR_CACHE: Record<string, string> = {}
+const MARKET_WATCH_TECHNICAL_COLUMNS = [
+  'macd_line',
+  'macd_signal',
+  'macd_hist',
+  'rsi_14',
+  'momentum_20',
+  'trend_state',
+  'trend_changed',
+] as const
+let MARKET_WATCH_TECHNICAL_SCHEMA_AVAILABLE: boolean | null = null
 
 const COUNTRY_COORDS: Record<string, [number, number]> = {
   US: [37, -95],
@@ -257,16 +270,42 @@ function normalizeAssetType(value: string | null): AssetType {
 }
 
 function resolveTrendState(row: MarketWatchRow): TrendState {
-  const hasIndicators =
+  if (!row.technical_schema_available) {
+    // If technical columns are absent in schema, this is a data-contract gap, not a "no history" signal.
+    return 'UNKNOWN'
+  }
+
+  const hasAllIndicators =
     row.macd_line !== null &&
     row.macd_signal !== null &&
     row.rsi_14 !== null &&
     row.momentum_20 !== null
 
-  if (!hasIndicators) return 'INSUFFICIENT_HISTORY'
-  if (row.trend_state === 'BULLISH') return 'BULLISH'
-  if (row.trend_state === 'BEARISH') return 'BEARISH'
-  return 'NEUTRAL'
+  const hasAnyIndicators =
+    row.macd_line !== null ||
+    row.macd_signal !== null ||
+    row.rsi_14 !== null ||
+    row.momentum_20 !== null
+
+  if (row.trend_state === 'UNKNOWN' || row.trend_state === 'INSUFFICIENT_HISTORY') {
+    return row.trend_state
+  }
+
+  if (hasAllIndicators) {
+    if (row.trend_state === 'BULLISH' || row.trend_state === 'BEARISH' || row.trend_state === 'NEUTRAL') {
+      return row.trend_state
+    }
+
+    if ((row.macd_line ?? 0) > (row.macd_signal ?? 0) && (row.rsi_14 ?? 0) >= 60 && (row.momentum_20 ?? 0) > 0) {
+      return 'BULLISH'
+    }
+    if ((row.macd_line ?? 0) < (row.macd_signal ?? 0) && (row.rsi_14 ?? 0) < 40 && (row.momentum_20 ?? 0) < 0) {
+      return 'BEARISH'
+    }
+    return 'NEUTRAL'
+  }
+
+  return hasAnyIndicators ? 'UNKNOWN' : 'INSUFFICIENT_HISTORY'
 }
 
 function toCurrencyRateMap(currencies: CurrencyPair[]): Map<string, number> {
@@ -342,6 +381,23 @@ function parseMarketWatchRow(raw: JsonRecord): MarketWatchRow {
     momentum_20: readNumber(raw.momentum_20),
     trend_state: trendState,
     trend_changed: readBoolean(raw.trend_changed),
+    technical_schema_available: MARKET_WATCH_TECHNICAL_SCHEMA_AVAILABLE !== false,
+  }
+}
+
+async function detectMarketWatchTechnicalSchema(supabase: SupabaseClient): Promise<boolean> {
+  if (MARKET_WATCH_TECHNICAL_SCHEMA_AVAILABLE !== null) {
+    return MARKET_WATCH_TECHNICAL_SCHEMA_AVAILABLE
+  }
+
+  try {
+    const selector = MARKET_WATCH_TECHNICAL_COLUMNS.join(',')
+    const { error } = await supabase.from('market_watch').select(selector).limit(1)
+    MARKET_WATCH_TECHNICAL_SCHEMA_AVAILABLE = !error
+    return MARKET_WATCH_TECHNICAL_SCHEMA_AVAILABLE
+  } catch {
+    MARKET_WATCH_TECHNICAL_SCHEMA_AVAILABLE = false
+    return false
   }
 }
 
@@ -383,15 +439,20 @@ async function selectWithFallback(
   selectors: string[],
   orderBy?: { column: string; ascending?: boolean }
 ): Promise<JsonRecord[]> {
+  const cachedSelector = SELECTOR_CACHE[table]
+  const orderedSelectors = cachedSelector
+    ? [cachedSelector, ...selectors.filter((selector) => selector !== cachedSelector)]
+    : selectors
   let lastErrorMessage = ''
 
-  for (const selector of selectors) {
+  for (const selector of orderedSelectors) {
     let query = supabase.from(table).select(selector)
     if (orderBy) {
       query = query.order(orderBy.column, { ascending: orderBy.ascending ?? true })
     }
     const { data, error } = await query
     if (!error) {
+      SELECTOR_CACHE[table] = selector
       return ((data ?? []) as unknown as JsonRecord[])
     }
     lastErrorMessage = error.message
@@ -404,15 +465,22 @@ async function selectWithFallback(
 }
 
 async function fetchMarketWatchRows(supabase: SupabaseClient): Promise<MarketWatchRow[]> {
+  const technicalSchemaAvailable = await detectMarketWatchTechnicalSchema(supabase)
+
   const rows = await selectWithFallback(
     supabase,
     'market_watch',
-    [
-      'id,name,ticker,last_price,currency,type,geo_coverage,data_status,last_update,pe_ratio,market_cap,asset_class,quantity,quantity_buy,pru,target_weight_pct,portfolio_id,perf_day_eur,perf_day_local,perf_week_local,perf_week_eur,perf_month_local,perf_month_eur,perf_ytd_eur,ma200_value,ma200_status,trend_slope,volatility_30d,rsi_14,macd_line,macd_signal,macd_hist,momentum_20,trend_state,trend_changed',
-      // Schema without technicals or type column
-      'id,name,ticker,last_price,currency,geo_coverage,data_status,last_update,pe_ratio,market_cap,asset_class,quantity,quantity_buy,pru,target_weight_pct,portfolio_id,perf_day_eur,perf_day_local,perf_week_local,perf_week_eur,perf_month_local,perf_month_eur,perf_ytd_eur,ma200_value,ma200_status,trend_slope,volatility_30d',
-      'id,name,ticker,last_price,currency,geo_coverage,data_status,last_update,pe_ratio,market_cap,asset_class,quantity,perf_day_eur,perf_day_local,perf_week_local,perf_week_eur,perf_month_local,perf_month_eur,perf_ytd_eur',
-    ]
+    technicalSchemaAvailable
+      ? [
+          'id,name,ticker,last_price,currency,type,geo_coverage,data_status,last_update,pe_ratio,market_cap,asset_class,quantity,quantity_buy,pru,target_weight_pct,portfolio_id,perf_day_eur,perf_day_local,perf_week_local,perf_week_eur,perf_month_local,perf_month_eur,perf_ytd_eur,ma200_value,ma200_status,trend_slope,volatility_30d,rsi_14,macd_line,macd_signal,macd_hist,momentum_20,trend_state,trend_changed',
+          // Schema without technicals or type column
+          'id,name,ticker,last_price,currency,geo_coverage,data_status,last_update,pe_ratio,market_cap,asset_class,quantity,quantity_buy,pru,target_weight_pct,portfolio_id,perf_day_eur,perf_day_local,perf_week_local,perf_week_eur,perf_month_local,perf_month_eur,perf_ytd_eur,ma200_value,ma200_status,trend_slope,volatility_30d',
+          'id,name,ticker,last_price,currency,geo_coverage,data_status,last_update,pe_ratio,market_cap,asset_class,quantity,perf_day_eur,perf_day_local,perf_week_local,perf_week_eur,perf_month_local,perf_month_eur,perf_ytd_eur',
+        ]
+      : [
+          'id,name,ticker,last_price,currency,geo_coverage,data_status,last_update,pe_ratio,market_cap,asset_class,quantity,quantity_buy,pru,target_weight_pct,portfolio_id,perf_day_eur,perf_day_local,perf_week_local,perf_week_eur,perf_month_local,perf_month_eur,perf_ytd_eur,ma200_value,ma200_status,trend_slope,volatility_30d',
+          'id,name,ticker,last_price,currency,geo_coverage,data_status,last_update,pe_ratio,market_cap,asset_class,quantity,perf_day_eur,perf_day_local,perf_week_local,perf_week_eur,perf_month_local,perf_month_eur,perf_ytd_eur',
+        ]
   )
   return rows.map(parseMarketWatchRow)
 }

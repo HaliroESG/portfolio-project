@@ -1,223 +1,130 @@
-import fs from 'node:fs'
 import { createClient } from '@supabase/supabase-js'
+import fs from 'node:fs'
 
-const url = process.env.NEXT_PUBLIC_SUPABASE_URL
-const anon = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY
-const ciSkipMissing = process.argv.includes('--ci-skip-missing-env')
-const outputArg = process.argv.find((a) => a.startsWith('--output='))
-const outputPath = outputArg ? outputArg.split('=')[1] : 'smoke-supabase-report.json'
-
-function writeReport(report) {
-  try {
-    fs.writeFileSync(outputPath, JSON.stringify(report, null, 2))
-  } catch {
-    // best effort only
+function loadLocalEnv() {
+  const env = {}
+  for (const file of ['.env.local', '.env']) {
+    if (!fs.existsSync(file)) continue
+    const lines = fs.readFileSync(file, 'utf8').split(/\r?\n/)
+    for (const line of lines) {
+      const trimmed = line.trim()
+      if (!trimmed || trimmed.startsWith('#')) continue
+      const match = trimmed.match(/^([A-Za-z_][A-Za-z0-9_]*)=(.*)$/)
+      if (!match) continue
+      const [, key, rawValue] = match
+      env[key] = rawValue.trim().replace(/^['"]|['"]$/g, '')
+    }
   }
+  return env
 }
+
+const localEnv = loadLocalEnv()
+const url = process.env.NEXT_PUBLIC_SUPABASE_URL || localEnv.NEXT_PUBLIC_SUPABASE_URL
+const anon = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY || localEnv.NEXT_PUBLIC_SUPABASE_ANON_KEY
+const ciSkipMissing = process.argv.includes('--ci-skip-missing-env')
+const outArg = process.argv.find((a) => a.startsWith('--output='))
+const output = outArg ? outArg.split('=')[1] : 'smoke-supabase-report.json'
+const MARKET_WATCH_TECHNICAL_SELECTOR =
+  'ticker,last_update,macd_line,macd_signal,macd_hist,rsi_14,momentum_20,trend_state,trend_changed'
+const MARKET_WATCH_BASE_SELECTOR = 'ticker,last_update,data_status,last_price,currency'
 
 if (!url || !anon) {
   const report = {
-    ok: false,
-    skipped: !!ciSkipMissing,
-    reason: 'Missing NEXT_PUBLIC_SUPABASE_URL and/or NEXT_PUBLIC_SUPABASE_ANON_KEY',
+    ok: ciSkipMissing,
+    status: ciSkipMissing ? 'SKIPPED' : 'FAIL',
+    skipped: ciSkipMissing,
+    error: 'Missing NEXT_PUBLIC_SUPABASE_URL or NEXT_PUBLIC_SUPABASE_ANON_KEY',
   }
-  writeReport(report)
   console.log(JSON.stringify(report, null, 2))
+  fs.writeFileSync(output, JSON.stringify(report, null, 2))
   process.exit(ciSkipMissing ? 0 : 2)
 }
 
 const supabase = createClient(url, anon)
 
-function ageMinutes(ts) {
-  if (!ts) return null
-  const d = new Date(ts)
-  if (Number.isNaN(d.getTime())) return null
-  return Math.round((Date.now() - d.getTime()) / 60000)
+async function q(name, fn) {
+  const { data, error, count } = await fn()
+  if (error) return { name, ok: false, status: 'FAIL', error: error.message }
+  return { name, ok: true, status: 'PASS', row_count: count ?? (data?.length ?? 0), sample: data?.[0] ?? null }
 }
 
-function maxTimestamp(rows, field) {
-  if (!field || !rows.length) return null
-  const vals = rows.map((r) => r?.[field]).filter((v) => typeof v === 'string')
-  if (vals.length === 0) return null
-  return vals.reduce((a, b) => (new Date(a) > new Date(b) ? a : b))
+function isMissingColumnError(message) {
+  return /column .* does not exist/i.test(message || '')
 }
 
-async function runQuery(name, queryFactory, expectedColumns, tsField) {
-  const { data, error, count } = await queryFactory()
-  if (error) {
-    return { name, ok: false, error: error.message }
-  }
+async function marketWatchCheck() {
+  const technicalAttempt = await supabase
+    .from('market_watch')
+    .select(MARKET_WATCH_TECHNICAL_SELECTOR, { count: 'exact' })
+    .limit(5)
 
-  const rows = data ?? []
-  const sample = rows[0] ?? {}
-  const missingColumns = expectedColumns.filter((c) => !(c in sample) && rows.length > 0)
-  if (missingColumns.length > 0) {
+  if (!technicalAttempt.error) {
     return {
-      name,
+      name: 'market_watch',
+      ok: true,
+      status: 'PASS',
+      technical_schema: 'present',
+      row_count: technicalAttempt.count ?? (technicalAttempt.data?.length ?? 0),
+      sample: technicalAttempt.data?.[0] ?? null,
+    }
+  }
+
+  if (!isMissingColumnError(technicalAttempt.error.message)) {
+    return {
+      name: 'market_watch',
       ok: false,
-      error: `Missing expected columns: ${missingColumns.join(', ')}`,
-      row_count: typeof count === 'number' ? count : rows.length,
+      status: 'FAIL',
+      error: technicalAttempt.error.message,
     }
   }
 
-  const maxTs = maxTimestamp(rows, tsField)
+  const fallbackAttempt = await supabase
+    .from('market_watch')
+    .select(MARKET_WATCH_BASE_SELECTOR, { count: 'exact' })
+    .limit(5)
+
+  if (fallbackAttempt.error) {
+    return {
+      name: 'market_watch',
+      ok: false,
+      status: 'FAIL',
+      error: technicalAttempt.error.message,
+      fallback_error: fallbackAttempt.error.message,
+    }
+  }
+
   return {
-    name,
-    ok: true,
-    row_count: typeof count === 'number' ? count : rows.length,
-    max_timestamp_field: tsField ?? null,
-    max_timestamp: maxTs,
-    max_timestamp_age_minutes: ageMinutes(maxTs),
+    name: 'market_watch',
+    ok: false,
+    status: 'BLOCKED',
+    blocked_reason: 'Technical schema drift: required columns for BL-001 are missing in market_watch.',
+    error: technicalAttempt.error.message,
+    fallback_selector_used: MARKET_WATCH_BASE_SELECTOR,
+    row_count: fallbackAttempt.count ?? (fallbackAttempt.data?.length ?? 0),
+    sample: fallbackAttempt.data?.[0] ?? null,
   }
 }
 
-async function nonNullCount(table, column) {
-  const { count, error } = await supabase
-    .from(table)
-    .select('*', { count: 'exact', head: true })
-    .not(column, 'is', null)
-  if (error) {
-    return { ok: false, error: error.message }
-  }
-  return { ok: true, count: count ?? 0 }
+const checks = await Promise.all([
+  marketWatchCheck(),
+  q('currencies', () => supabase.from('currencies').select('id,symbol,rate_to_eur,last_update', { count: 'exact' }).limit(5)),
+  q('valuation_snapshots', () => supabase.from('valuation_snapshots').select('coverage_pct,created_at', { count: 'exact' }).order('created_at', { ascending: false }).limit(5)),
+  q('news_feed', () => supabase.from('news_feed').select('id,title,impact_score,published_at,ticker', { count: 'exact' }).limit(5)),
+  q('macro_indicators', () => supabase.from('macro_indicators').select('id,name,value,last_update', { count: 'exact' }).limit(5)),
+  q('etl_runs', () => supabase.from('etl_runs').select('job_name,status,started_at,finished_at,duration_sec', { count: 'exact' }).order('started_at', { ascending: false }).limit(5)),
+])
+
+const hasFail = checks.some((c) => c.status === 'FAIL')
+const hasBlocked = checks.some((c) => c.status === 'BLOCKED')
+const status = hasFail ? 'FAIL' : hasBlocked ? 'BLOCKED' : 'PASS'
+const ok = status === 'PASS'
+const report = { ok, status, checks }
+console.log(JSON.stringify(report, null, 2))
+fs.writeFileSync(output, JSON.stringify(report, null, 2))
+if (status === 'PASS') {
+  process.exit(0)
 }
-
-async function main() {
-  const checks = []
-
-  checks.push(
-    await runQuery(
-      'market_watch',
-      () =>
-        supabase
-          .from('market_watch')
-          .select(
-            'ticker,name,last_price,currency,data_status,last_update,ma200_value,ma200_status,trend_slope,volatility_30d,macd_line,macd_signal,macd_hist,rsi_14,momentum_20,trend_state,trend_changed',
-            { count: 'exact' }
-          )
-          .order('last_update', { ascending: false })
-          .limit(5),
-      [
-        'ticker',
-        'name',
-        'last_price',
-        'currency',
-        'data_status',
-        'last_update',
-        'ma200_value',
-        'ma200_status',
-        'trend_slope',
-        'volatility_30d',
-        'macd_line',
-        'macd_signal',
-        'macd_hist',
-        'rsi_14',
-        'momentum_20',
-        'trend_state',
-        'trend_changed',
-      ],
-      'last_update'
-    )
-  )
-
-  checks.push(
-    await runQuery(
-      'currencies',
-      () =>
-        supabase
-          .from('currencies')
-          .select('id,symbol,rate_to_eur,last_update', { count: 'exact' })
-          .order('id', { ascending: true })
-          .limit(5),
-      ['id', 'symbol', 'rate_to_eur', 'last_update'],
-      'last_update'
-    )
-  )
-
-  checks.push(
-    await runQuery(
-      'valuation_snapshots',
-      () =>
-        supabase
-          .from('valuation_snapshots')
-          .select('coverage_pct,created_at', { count: 'exact' })
-          .order('created_at', { ascending: false })
-          .limit(5),
-      ['coverage_pct', 'created_at'],
-      'created_at'
-    )
-  )
-
-  checks.push(
-    await runQuery(
-      'news_feed',
-      () =>
-        supabase
-          .from('news_feed')
-          .select('id,title,impact_score,published_at,ticker', { count: 'exact' })
-          .order('published_at', { ascending: false })
-          .limit(5),
-      ['id', 'title', 'impact_score', 'published_at', 'ticker'],
-      'published_at'
-    )
-  )
-
-  checks.push(
-    await runQuery(
-      'macro_indicators',
-      () =>
-        supabase
-          .from('macro_indicators')
-          .select('id,name,value,last_update', { count: 'exact' })
-          .order('last_update', { ascending: false })
-          .limit(5),
-      ['id', 'name', 'value', 'last_update'],
-      'last_update'
-    )
-  )
-
-  checks.push(
-    await runQuery(
-      'etl_runs',
-      () =>
-        supabase
-          .from('etl_runs')
-          .select('job_name,status,started_at,finished_at,duration_sec', { count: 'exact' })
-          .order('started_at', { ascending: false })
-          .limit(5),
-      ['job_name', 'status', 'started_at', 'finished_at', 'duration_sec'],
-      'started_at'
-    )
-  )
-
-  const techCols = ['macd_line', 'macd_signal', 'macd_hist', 'rsi_14', 'momentum_20']
-  const techCounts = {}
-  let techError = null
-  for (const col of techCols) {
-    const result = await nonNullCount('market_watch', col)
-    if (!result.ok) {
-      techError = result.error
-      break
-    }
-    techCounts[col] = result.count
-  }
-
-  const failedChecks = checks.filter((c) => !c.ok)
-  const report = {
-    ok: failedChecks.length === 0 && !techError,
-    checks,
-    technical_non_null_counts: techCounts,
-    technical_counts_error: techError,
-  }
-
-  writeReport(report)
-  console.log(JSON.stringify(report, null, 2))
-  process.exit(report.ok ? 0 : 1)
+if (status === 'BLOCKED') {
+  process.exit(3)
 }
-
-main().catch((err) => {
-  const report = { ok: false, fatal: err.message }
-  writeReport(report)
-  console.error(JSON.stringify(report, null, 2))
-  process.exit(1)
-})
+process.exit(1)

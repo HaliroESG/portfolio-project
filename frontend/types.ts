@@ -5,7 +5,10 @@ export type GeoTimeframe = 'day' | 'month' | 'ytd';
 // Data Status Enum
 export type DataStatus = 'OK' | 'STALE' | 'LOW_CONFIDENCE' | 'PARTIAL';
 export type AssetType = 'Stock' | 'STOCK' | 'ETF' | 'Crypto' | 'CRYPTO' | 'Cash' | 'Forex' | 'Currency';
-// Add INSUFFICIENT_HISTORY to distinguish missing historical data from neutral/unknown
+// TrendState semantics:
+// - NEUTRAL: rule-based neutral (indicators available but not aligned bullish/bearish)
+// - UNKNOWN: indicators expected but missing/incoherent (data gap)
+// - INSUFFICIENT_HISTORY: not enough lookback to compute indicators
 export type TrendState = 'BULLISH' | 'BEARISH' | 'NEUTRAL' | 'UNKNOWN' | 'INSUFFICIENT_HISTORY';
 
 export interface PerformanceData {

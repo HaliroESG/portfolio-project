@@ -5,9 +5,14 @@ import useSWR from 'swr'
 import { supabase } from '../lib/supabase'
 import { TrendingUp, TrendingDown, AlertCircle, HelpCircle } from 'lucide-react'
 import { Tooltip } from './Tooltip'
-import { MacroIndicatorRow } from '../types'
-import { swrOptions, SWR_REFRESH } from '../lib/swrConfig'
+import {
+  MACRO_INDICATORS_REFRESH_MS,
+  MACRO_INDICATORS_SWR_KEY,
+  loadMacroIndicators,
+  type MacroIndicatorRow,
+} from '../lib/macroData'
 
+type MacroIndicator = MacroIndicatorRow
 
 const MACRO_CONFIG: Record<string, { 
   label: string
@@ -43,22 +48,15 @@ const MACRO_CONFIG: Record<string, {
 
 export function MacroStrip() {
   const { data } = useSWR(
-    'macro-indicators',
-    async () => {
-      const { data: rows, error } = await supabase
-        .from('macro_indicators')
-        .select('id,name,value,change_pct,last_update')
-        .in('id', ['^VIX', 'DX-Y.NYB', '^MOVE', '^TNX', 'SPREAD_10Y_2Y', 'MISERY_INDEX', 'JPY_VOLATILITY'])
-      if (error) throw error
-      return (rows ?? []) as MacroIndicatorRow[]
-    },
-    swrOptions(SWR_REFRESH.FAST)
+    MACRO_INDICATORS_SWR_KEY,
+    () => loadMacroIndicators(supabase),
+    { refreshInterval: MACRO_INDICATORS_REFRESH_MS, revalidateOnFocus: false }
   )
 
   const indicators = data ?? []
 
   // Define getIndicator function first to avoid hoisting issues
-  const getIndicator = (id: string): MacroIndicatorRow | undefined => {
+  const getIndicator = (id: string): MacroIndicator | undefined => {
     return indicators.find(i => i.id === id)
   }
 
@@ -69,7 +67,7 @@ export function MacroStrip() {
   const miseryIndex = getIndicator('MISERY_INDEX')?.value ?? null
   const jpyVolatility = getIndicator('JPY_VOLATILITY')?.value ?? null
 
-  const getTrendColor = (indicator: MacroIndicatorRow | undefined, config: typeof MACRO_CONFIG[string]): string => {
+  const getTrendColor = (indicator: MacroIndicator | undefined, config: typeof MACRO_CONFIG[string]): string => {
     if (!indicator || indicator.value === null) return 'text-slate-400'
     
     const value = indicator.value
@@ -103,7 +101,7 @@ export function MacroStrip() {
     return change >= 0 ? 'text-green-400' : 'text-red-400'
   }
 
-  const getTrendIcon = (indicator: MacroIndicatorRow | undefined) => {
+  const getTrendIcon = (indicator: MacroIndicator | undefined) => {
     if (!indicator || indicator.change_pct === null) return null
     const change = indicator.change_pct
     if (change > 0.001) {

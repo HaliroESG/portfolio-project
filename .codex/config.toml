@@ -1,0 +1,6 @@
+# Minimal project-scoped Codex config for this monorepo.
+# Goal: stable project-root detection from repo root and subfolders.
+
+# Root markers used when Codex searches parent directories for the project root.
+# `.git` anchors Git root; `AGENTS.md` anchors project instruction root.
+project_root_markers = [".git", "AGENTS.md"]

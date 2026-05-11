@@ -12,6 +12,7 @@ BACKEND_ROOT = os.path.dirname(CURRENT_DIR)
 sys.path.append(BACKEND_ROOT)
 
 from backtest.engine import run_backtest  # noqa: E402
+from etl_stats import build_etl_stats  # noqa: E402
 
 
 def get_env(name: str) -> str:
@@ -130,7 +131,14 @@ def main():
             "run_id": result.get("run_id"),
             "reused": result.get("reused"),
         }
-        finish_etl_run(supabase, etl_run_id, "SUCCESS", time.time() - started, stats=stats)
+        normalized_stats = build_etl_stats(
+            job_name,
+            stats,
+            items_total=1,
+            items_success=1,
+            items_failed=0,
+        )
+        finish_etl_run(supabase, etl_run_id, "SUCCESS", time.time() - started, stats=normalized_stats)
     except Exception as exc:
         finish_etl_run(
             supabase,

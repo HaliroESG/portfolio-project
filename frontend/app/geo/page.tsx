@@ -9,7 +9,11 @@ import { supabase } from '../../lib/supabase'
 import { Globe, Loader2 } from 'lucide-react'
 import { cn } from '../../lib/utils'
 import { Asset, CountryPerformance, GeoTimeframe, PortfolioOption } from '../../types'
-import { buildGeographicPerformance, loadPortfolioAggregation } from '../../lib/portfolioData'
+import {
+  PORTFOLIO_AGGREGATION_SWR_KEY,
+  buildGeographicPerformance,
+  loadPortfolioAggregation,
+} from '../../lib/portfolioData'
 import { stateFromList, stateLabel as dataStateLabel } from '../../lib/dataStates'
 import { swrOptions, SWR_REFRESH } from '../../lib/swrConfig'
 
@@ -36,7 +40,7 @@ export default function GeoPage() {
   }, [assets, timeframe])
 
   const { data: portfolioBundle, isLoading: bundleLoading } = useSWR(
-    'portfolio-aggregation',
+    PORTFOLIO_AGGREGATION_SWR_KEY,
     () => loadPortfolioAggregation(supabase),
     swrOptions(SWR_REFRESH.SLOW)
   )

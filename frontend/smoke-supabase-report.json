@@ -1,0 +1,82 @@
+{
+  "ok": false,
+  "status": "BLOCKED",
+  "checks": [
+    {
+      "name": "market_watch",
+      "ok": false,
+      "status": "BLOCKED",
+      "blocked_reason": "Technical schema drift: required columns for BL-001 are missing in market_watch.",
+      "error": "column market_watch.macd_line does not exist",
+      "fallback_selector_used": "ticker,last_update,data_status,last_price,currency",
+      "row_count": 39,
+      "sample": {
+        "ticker": "DOLLAR",
+        "last_update": "2026-04-09T16:38:08.700526+00:00",
+        "data_status": "OK",
+        "last_price": 1.083217978477478,
+        "currency": "USD"
+      }
+    },
+    {
+      "name": "currencies",
+      "ok": true,
+      "status": "PASS",
+      "row_count": 4,
+      "sample": {
+        "id": "USD",
+        "symbol": "$",
+        "rate_to_eur": 0.84960001707077,
+        "last_update": "2026-05-11T12:05:30.311414+00:00"
+      }
+    },
+    {
+      "name": "valuation_snapshots",
+      "ok": true,
+      "status": "PASS",
+      "row_count": 97,
+      "sample": {
+        "coverage_pct": 100,
+        "created_at": "2026-05-11T09:07:16.537826+00:00"
+      }
+    },
+    {
+      "name": "news_feed",
+      "ok": true,
+      "status": "PASS",
+      "row_count": 18,
+      "sample": {
+        "id": "c902244d-0649-4f06-ab7f-671f78540ff1",
+        "title": "Gold and silver prices today, Wednesday, May 6: Gold and silver prices up significantly this morning",
+        "impact_score": 10,
+        "published_at": "2026-05-06T10:44:04+00:00",
+        "ticker": "0JDT.L"
+      }
+    },
+    {
+      "name": "macro_indicators",
+      "ok": true,
+      "status": "PASS",
+      "row_count": 13,
+      "sample": {
+        "id": "10Y2Y",
+        "name": "Yield Curve 10Y-2Y",
+        "value": -0.15,
+        "last_update": "2026-01-18T17:26:13.500384+00:00"
+      }
+    },
+    {
+      "name": "etl_runs",
+      "ok": true,
+      "status": "PASS",
+      "row_count": 219,
+      "sample": {
+        "job_name": "news_sync",
+        "status": "SUCCESS",
+        "started_at": "2026-05-11T09:07:21.363287+00:00",
+        "finished_at": "2026-05-11T09:07:27.154374+00:00",
+        "duration_sec": 5.81
+      }
+    }
+  ]
+}

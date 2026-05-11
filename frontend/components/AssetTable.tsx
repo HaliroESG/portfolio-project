@@ -106,6 +106,12 @@ export function AssetTable({ assets, onHoverAsset, onSelectAsset, selectedAssetI
             const isSelected = selectedAssetId === asset.id;
             const volatility = asset.technical?.volatility_30d ?? calculateVolatility(asset);
             const trendState = asset.technical?.trend_state ?? 'UNKNOWN'
+            const trendStateLabel =
+              trendState === 'INSUFFICIENT_HISTORY'
+                ? 'NO HISTORY'
+                : trendState === 'NEUTRAL'
+                ? 'NEUTRAL (RULE)'
+                : trendState
             const trendChanged = asset.technical?.trend_changed ?? false
             const quantityCurrent = asset.quantity_current ?? asset.quantity ?? null
             const targetWeight = asset.target_weight_pct
@@ -195,7 +201,7 @@ export function AssetTable({ assets, onHoverAsset, onSelectAsset, selectedAssetI
                         ? "bg-orange-100 text-orange-700 border-orange-300 dark:bg-orange-950/30 dark:text-orange-400 dark:border-orange-800/60"
                         : "bg-slate-100 text-slate-600 border-slate-300 dark:bg-slate-800/40 dark:text-gray-400 dark:border-slate-700"
                     )}>
-                      {trendState === 'INSUFFICIENT_HISTORY' ? 'NO HISTORY' : trendState}
+                      {trendStateLabel}
                     </span>
                     {trendChanged && (
                       <span className="text-[9px] font-black text-amber-600 dark:text-amber-400 uppercase tracking-wider">
