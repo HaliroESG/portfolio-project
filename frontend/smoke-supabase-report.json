@@ -1,0 +1,82 @@
+{
+  "ok": false,
+  "status": "BLOCKED",
+  "checks": [
+    {
+      "name": "market_watch",
+      "ok": false,
+      "status": "BLOCKED",
+      "blocked_reason": "Technical schema drift: required columns for BL-001 are missing in market_watch.",
+      "error": "column market_watch.macd_line does not exist",
+      "fallback_selector_used": "ticker,last_update,data_status,last_price,currency",
+      "row_count": 39,
+      "sample": {
+        "ticker": "EIMI",
+        "last_update": "2026-03-05T11:18:19.014032+00:00",
+        "data_status": "OK",
+        "last_price": 0.8607000112533569,
+        "currency": "USD"
+      }
+    },
+    {
+      "name": "currencies",
+      "ok": true,
+      "status": "PASS",
+      "row_count": 4,
+      "sample": {
+        "id": "USD",
+        "symbol": "$",
+        "rate_to_eur": 0.861469984054565,
+        "last_update": "2026-03-07T08:08:51.262137+00:00"
+      }
+    },
+    {
+      "name": "valuation_snapshots",
+      "ok": true,
+      "status": "PASS",
+      "row_count": 33,
+      "sample": {
+        "coverage_pct": 100,
+        "created_at": "2026-03-07T08:09:44.077179+00:00"
+      }
+    },
+    {
+      "name": "news_feed",
+      "ok": true,
+      "status": "PASS",
+      "row_count": 21,
+      "sample": {
+        "id": "fa24a06d-53d1-4e6c-b8f9-1be38edf10e7",
+        "title": "Rumble Reports Fourth Quarter and Full Year 2025 Results",
+        "impact_score": 10,
+        "published_at": "2026-03-05T21:16:21+00:00",
+        "ticker": "AAPL"
+      }
+    },
+    {
+      "name": "macro_indicators",
+      "ok": true,
+      "status": "PASS",
+      "row_count": 13,
+      "sample": {
+        "id": "10Y2Y",
+        "name": "Yield Curve 10Y-2Y",
+        "value": -0.15,
+        "last_update": "2026-01-18T17:26:13.500384+00:00"
+      }
+    },
+    {
+      "name": "etl_runs",
+      "ok": true,
+      "status": "PASS",
+      "row_count": 27,
+      "sample": {
+        "job_name": "news_sync",
+        "status": "SUCCESS",
+        "started_at": "2026-03-07T08:09:48.649201+00:00",
+        "finished_at": "2026-03-07T08:09:53.721304+00:00",
+        "duration_sec": 5.09
+      }
+    }
+  ]
+}
