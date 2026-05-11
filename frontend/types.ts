@@ -193,3 +193,81 @@ export interface GovernanceTargetRow {
   tolerance_band: number
 }
 
+export type BrokerTransactionSide =
+  | 'BUY'
+  | 'SELL'
+  | 'DIVIDEND'
+  | 'FEE'
+  | 'TAX'
+  | 'INTEREST'
+  | 'TRANSFER'
+
+export interface BrokerTransactionRow {
+  id: number
+  broker: string
+  account_id: string
+  external_txn_id: string
+  idempotency_key: string
+  trade_date: string
+  settlement_date: string | null
+  symbol: string | null
+  isin: string | null
+  side: BrokerTransactionSide
+  quantity: number
+  price: number | null
+  gross_amount: number
+  fees: number
+  taxes: number
+  net_amount: number
+  currency: string
+  envelope: string | null
+  raw_type: string | null
+  source_file: string | null
+  created_at: string
+  updated_at: string
+}
+
+export type BrokerReconciliationState =
+  | 'MATCH'
+  | 'MISMATCH_QTY'
+  | 'MISMATCH_COST'
+  | 'MISSING_IN_LEDGER'
+  | 'LEDGER_ONLY'
+  | 'NOT_CHECKED'
+
+export type BrokerReconciliationRunStatus = 'MATCH' | 'MISMATCH' | 'NOT_CHECKED'
+
+export interface BrokerReconciliationRunRow {
+  id: string
+  broker: string
+  account_id: string
+  reconciliation_date: string
+  source_file: string | null
+  positions_file: string | null
+  mode: 'broker_snapshot' | 'ledger_rollup'
+  status: BrokerReconciliationRunStatus
+  parsed_count: number
+  position_count: number
+  state_counts: Record<string, number>
+  report_json: Record<string, unknown>
+  idempotency_key: string
+  created_at: string
+  updated_at: string
+}
+
+export interface BrokerReconciliationItemRow {
+  id: number
+  run_id: string
+  instrument_key: string
+  symbol: string | null
+  isin: string | null
+  currency: string | null
+  state: BrokerReconciliationState
+  ledger_quantity: number | null
+  broker_quantity: number | null
+  quantity_delta: number | null
+  ledger_average_cost: number | null
+  broker_average_cost: number | null
+  transaction_count: number | null
+  created_at: string
+}

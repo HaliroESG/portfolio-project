@@ -22,7 +22,7 @@ def _parse_date(value: str) -> datetime.date:
 
 def parse_ibkr_trades_csv(path: str | Path, account_id: str, envelope: Optional[str] = None) -> list[CanonicalTransaction]:
     transactions: list[CanonicalTransaction] = []
-    with open(path, "r", encoding="utf-8") as handle:
+    with open(path, "r", encoding="utf-8-sig") as handle:
         reader = csv.DictReader(handle)
         for idx, row in enumerate(reader, start=1):
             quantity = _parse_decimal(row.get("Quantity", "0"))

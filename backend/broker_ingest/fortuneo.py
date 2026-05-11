@@ -30,7 +30,7 @@ def _get(row: dict[str, str], *keys: str) -> str:
 
 def parse_fortuneo_csv(path: str | Path, account_id: str, envelope: Optional[str] = None) -> list[CanonicalTransaction]:
     transactions: list[CanonicalTransaction] = []
-    with open(path, "r", encoding="utf-8") as handle:
+    with open(path, "r", encoding="utf-8-sig") as handle:
         reader = csv.DictReader(handle)
         for idx, row in enumerate(reader, start=1):
             trade_date = _parse_date(_get(row, "trade_date", "date_operation"))
