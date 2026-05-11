@@ -298,3 +298,33 @@ data health panel
 
 
 ⸻
+
+
+## P0/P1 - New Strategic Wave (2026-05-11)
+
+### BL-010 - Broker ledger foundation (Fortuneo + IBKR)
+- Priority: P0
+- Status: TODO
+- Scope:
+  - canonical transaction schema in Supabase
+  - Fortuneo CSV ingestion v1
+  - IBKR Flex/API export ingestion v1
+  - daily reconciliation states (`MATCH`, `MISMATCH_QTY`, `MISMATCH_COST`, `MISSING_IN_LEDGER`)
+
+### BL-011 - Portfolio performance analytics upgrade
+- Priority: P1
+- Status: TODO
+- Scope:
+  - TWR / XIRR / benchmark-relative metrics
+  - attribution (asset/sector/geo/currency)
+  - risk metrics materialization (volatility, drawdown, Sharpe/Sortino)
+
+### BL-012 - Rebalance & arbitration assistant
+- Priority: P1
+- Status: TODO
+- Scope:
+  - rule engine (bands, cash-first, min ticket, fee-aware)
+  - recommendation states (`BUY`, `HOLD`, `REDUCE`, `EXIT`)
+  - simulation and post-trade reconciliation
+
+Reference architecture and full roadmap: `docs/roadmap_portfolio_intelligence.md`.
