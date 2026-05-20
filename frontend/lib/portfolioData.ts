@@ -92,6 +92,7 @@ interface CountryAccumulator {
 const DEFAULT_PORTFOLIO_ID = 'default'
 export const PORTFOLIO_AGGREGATION_SWR_KEY = 'portfolio-aggregation-v1'
 const SELECTOR_CACHE: Record<string, string> = {}
+const KNOWN_BAD_SELECTORS: Record<string, Set<string>> = {}
 const MARKET_WATCH_TECHNICAL_COLUMNS = [
   'macd_line',
   'macd_signal',
@@ -440,9 +441,10 @@ async function selectWithFallback(
   orderBy?: { column: string; ascending?: boolean }
 ): Promise<JsonRecord[]> {
   const cachedSelector = SELECTOR_CACHE[table]
-  const orderedSelectors = cachedSelector
+  const knownBadSelectors = KNOWN_BAD_SELECTORS[table] ?? new Set<string>()
+  const orderedSelectors = (cachedSelector
     ? [cachedSelector, ...selectors.filter((selector) => selector !== cachedSelector)]
-    : selectors
+    : selectors).filter((selector) => !knownBadSelectors.has(selector))
   let lastErrorMessage = ''
 
   for (const selector of orderedSelectors) {
@@ -456,6 +458,8 @@ async function selectWithFallback(
       return ((data ?? []) as unknown as JsonRecord[])
     }
     lastErrorMessage = error.message
+    if (!KNOWN_BAD_SELECTORS[table]) KNOWN_BAD_SELECTORS[table] = new Set<string>()
+    KNOWN_BAD_SELECTORS[table].add(selector)
   }
 
   if (lastErrorMessage) {
