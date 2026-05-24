@@ -3,7 +3,8 @@
 import { useEffect, useMemo, useState } from 'react'
 import { supabase } from '../lib/supabase'
 import { cn } from '../lib/utils'
-import { Activity, AlertTriangle, Clock, Database, Minus, TrendingDown, TrendingUp } from 'lucide-react'
+import { Activity, AlertTriangle, ChevronDown, Clock, Database, Minus, TrendingDown, TrendingUp } from 'lucide-react'
+import { resolveFreshness } from '../lib/dataFreshness'
 
 interface HealthItem {
   id: string
@@ -67,10 +68,10 @@ interface EtlJobView {
 type JsonRecord = Record<string, unknown>
 
 const FRESHNESS_SOURCES = [
-  { id: 'market', label: 'Market Watch', table: 'market_watch', field: 'last_update' },
-  { id: 'valuations', label: 'Valuation Snapshots', table: 'valuation_snapshots', field: 'created_at' },
-  { id: 'news', label: 'News Feed', table: 'news_feed', field: 'published_at' },
-  { id: 'macro', label: 'Macro Indicators', table: 'macro_indicators', field: 'last_update' },
+  { id: 'market', label: 'Market Watch', table: 'market_watch', field: 'last_update', staleAfterMinutes: 36 * 60, marketAware: true },
+  { id: 'valuations', label: 'Valuation Snapshots', table: 'valuation_snapshots', field: 'created_at', staleAfterMinutes: 7 * 24 * 60, marketAware: false },
+  { id: 'news', label: 'News Feed', table: 'news_feed', field: 'published_at', staleAfterMinutes: 48 * 60, marketAware: false },
+  { id: 'macro', label: 'Macro Indicators', table: 'macro_indicators', field: 'last_update', staleAfterMinutes: 36 * 60, marketAware: true },
 ] as const
 
 const ETL_HISTORY_LIMIT = 120
@@ -95,14 +96,13 @@ const MARKET_WATCH_TECHNICAL_COLUMNS = [
 ] as const
 let MARKET_WATCH_TECHNICAL_SCHEMA_AVAILABLE: boolean | null = null
 
-function computeStatus(ts: string | null): { status: HealthItem['status']; ageMinutes: number | null } {
-  if (!ts) return { status: 'MISSING', ageMinutes: null }
-  const date = new Date(ts)
-  if (Number.isNaN(date.getTime())) return { status: 'MISSING', ageMinutes: null }
-  const ageMs = Date.now() - date.getTime()
-  const ageMinutes = Math.max(0, Math.round(ageMs / 60000))
-  if (ageMinutes <= 60) return { status: 'LIVE', ageMinutes }
-  return { status: 'STALE', ageMinutes }
+function computeStatus(
+  ts: string | null,
+  staleAfterMinutes = 60,
+  marketAware = false
+): { status: HealthItem['status']; ageMinutes: number | null } {
+  const freshness = resolveFreshness(ts, staleAfterMinutes, { marketAware })
+  return { status: freshness.state, ageMinutes: freshness.ageMinutes }
 }
 
 function readNumber(value: unknown): number | null {
@@ -374,7 +374,11 @@ async function fetchFreshnessItems(): Promise<HealthItem[]> {
 
         const row = (data ?? null) as JsonRecord | null
         const timestamp = readString(row?.[source.field])
-        const { status, ageMinutes } = computeStatus(timestamp)
+        const { status, ageMinutes } = computeStatus(
+          timestamp,
+          source.staleAfterMinutes,
+          Boolean(source.marketAware)
+        )
         return {
           id: source.id,
           label: source.label,
@@ -546,6 +550,7 @@ export function DataHealthPanel() {
   const [items, setItems] = useState<HealthItem[]>([])
   const [etlJobViews, setEtlJobViews] = useState<EtlJobView[]>([])
   const [qualityMetrics, setQualityMetrics] = useState<QualityMetric[]>([])
+  const [expanded, setExpanded] = useState(false)
 
   useEffect(() => {
     async function fetchHealthData() {
@@ -566,6 +571,12 @@ export function DataHealthPanel() {
   }, [])
 
   const liveCount = useMemo(() => items.filter((i) => i.status === 'LIVE').length, [items])
+  const staleCount = useMemo(() => items.filter((i) => i.status === 'STALE').length, [items])
+  const missingCount = useMemo(() => items.filter((i) => i.status === 'MISSING').length, [items])
+  const criticalEtlCount = useMemo(
+    () => etlJobViews.filter((view) => view.qualityState === 'CRITICAL' || view.run.status === 'FAILED').length,
+    [etlJobViews]
+  )
   const latestFailedRun = useMemo(
     () =>
       etlJobViews
@@ -576,19 +587,52 @@ export function DataHealthPanel() {
   )
 
   return (
-    <div className="w-full bg-white dark:bg-[#0D1117]/50 border-2 border-slate-200 dark:border-white/5 rounded-3xl shadow-2xl p-4">
-      <div className="flex items-center justify-between mb-3">
+    <div className="w-full rounded-xl border border-slate-200 bg-white/80 p-3 shadow-sm dark:border-white/10 dark:bg-[#0D1117]/70">
+      <div className="flex flex-wrap items-center justify-between gap-3">
         <div className="flex items-center gap-2">
           <Database className="w-4 h-4 text-blue-600 dark:text-[#00FF88]" />
           <h3 className="text-[11px] font-black uppercase tracking-[0.18em] text-slate-500 dark:text-gray-400">Data Health</h3>
         </div>
-        <div className="flex items-center gap-2 text-[10px] font-black text-slate-600 dark:text-gray-400">
-          <Activity className="w-3 h-3" />
-          {liveCount}/{items.length || 4} live
+        <div className="flex flex-wrap items-center gap-2">
+          <span className="inline-flex items-center gap-1 rounded border border-slate-200 px-2 py-1 text-[10px] font-black uppercase tracking-wider text-slate-600 dark:border-white/10 dark:text-gray-300">
+            <Activity className="w-3 h-3" />
+            {liveCount}/{items.length || 4} live
+          </span>
+          {staleCount > 0 && (
+            <span className="rounded border border-amber-300 bg-amber-50 px-2 py-1 text-[10px] font-black uppercase tracking-wider text-amber-700 dark:border-amber-800 dark:bg-amber-950/20 dark:text-amber-300">
+              {staleCount} stale
+            </span>
+          )}
+          {missingCount > 0 && (
+            <span className="rounded border border-slate-300 bg-slate-50 px-2 py-1 text-[10px] font-black uppercase tracking-wider text-slate-600 dark:border-slate-700 dark:bg-slate-900/40 dark:text-gray-300">
+              {missingCount} missing
+            </span>
+          )}
+          {criticalEtlCount > 0 && (
+            <span className="rounded border border-red-300 bg-red-50 px-2 py-1 text-[10px] font-black uppercase tracking-wider text-red-700 dark:border-red-900/60 dark:bg-red-950/20 dark:text-red-300">
+              {criticalEtlCount} ETL critical
+            </span>
+          )}
+          <button
+            type="button"
+            onClick={() => setExpanded((value) => !value)}
+            className="inline-flex items-center gap-1 rounded border border-slate-200 bg-slate-50 px-2 py-1 text-[10px] font-black uppercase tracking-wider text-slate-600 transition hover:bg-slate-100 dark:border-white/10 dark:bg-white/5 dark:text-gray-300 dark:hover:bg-white/10"
+          >
+            Details
+            <ChevronDown className={cn('h-3 w-3 transition-transform', expanded && 'rotate-180')} />
+          </button>
         </div>
       </div>
 
-      <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+      {!expanded && latestFailedRun && (
+        <div className="mt-3 rounded-lg border border-red-400/60 bg-red-50 px-3 py-2 text-[11px] font-mono text-red-700 dark:bg-red-950/20 dark:text-red-300">
+          Latest ETL failure: {latestFailedRun.job_name} - {shortError(latestFailedRun.error)}
+        </div>
+      )}
+
+      {expanded && (
+        <>
+      <div className="mt-3 grid grid-cols-2 md:grid-cols-4 gap-3">
         {items.map((item) => (
           <div
             key={item.id}
@@ -760,6 +804,8 @@ export function DataHealthPanel() {
             })}
           </div>
         </div>
+      )}
+        </>
       )}
     </div>
   )

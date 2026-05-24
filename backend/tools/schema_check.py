@@ -28,6 +28,28 @@ CRITICAL_SCHEMA: dict[str, list[str]] = {
     "macro_indicators": ["id", "value", "last_update"],
     "portfolio_positions": ["portfolio_id", "ticker", "quantity_current", "target_weight_pct"],
     "portfolios": ["id", "name"],
+    "historical_prices": ["ticker", "date", "adj_close", "currency", "source", "updated_at"],
+    "historical_price_coverage": [
+        "ticker", "requested_start_date", "requested_end_date", "earliest_date",
+        "coverage_pct", "used_proxy", "updated_at",
+    ],
+    "backtest_runs": [
+        "id", "name", "created_at", "base_currency", "start_date", "end_date",
+        "rebalance_freq", "fee_bps", "inflation_adjusted", "config_json",
+        "requested_start_date", "requested_end_date", "start_date_effective",
+        "end_date_effective", "data_mode", "diagnostics_json",
+    ],
+    "backtest_portfolios": [
+        "run_id", "portfolio_key", "portfolio_id", "preset_key", "label", "role",
+        "weights_json", "start_date_effective", "created_at",
+    ],
+    "backtest_results": [
+        "run_id", "portfolio_key", "date", "nav", "drawdown", "returns_daily",
+    ],
+    "backtest_kpis": [
+        "run_id", "portfolio_key", "cagr", "vol", "sharpe", "sortino",
+        "max_drawdown", "calmar", "worst_year", "best_year",
+    ],
     "trident_equity_universe": [
         "instrument_key", "ticker", "name", "exchange", "country", "sector",
         "industry", "currency", "provider", "provider_symbol", "source_license_note",

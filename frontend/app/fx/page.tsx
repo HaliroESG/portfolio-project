@@ -4,11 +4,13 @@ import React, { useEffect, useMemo, useState } from 'react'
 import useSWR from 'swr'
 import { Sidebar } from '../../components/Sidebar'
 import { Header } from '../../components/Header'
+import { EmptyState } from '../../components/EmptyState'
 import { supabase } from '../../lib/supabase'
 import { ArrowRightLeft, TrendingDown, TrendingUp } from 'lucide-react'
 import { cn } from '../../lib/utils'
 import { stateLabel as dataStateLabel, UnifiedDataState } from '../../lib/dataStates'
 import { swrOptions, SWR_REFRESH } from '../../lib/swrConfig'
+import { formatSyncTime, resolveFreshness } from '../../lib/dataFreshness'
 
 type FxState = 'LIVE' | 'STALE' | 'CACHED' | 'EMPTY'
 
@@ -34,6 +36,7 @@ interface MarketWatchAssetRow {
   perf_week_local?: number | null
   perf_month_local?: number | null
   last_price: number | null
+  last_update: string | null
 }
 
 const FX_CACHE_KEY = 'fx_pairs_cache_v1'
@@ -100,16 +103,19 @@ function saveFxCache(values: CurrencyData[]): void {
   window.localStorage.setItem(FX_CACHE_KEY, JSON.stringify(values))
 }
 
+function latestTimestamp(values: Array<string | null | undefined>): string | null {
+  return values
+    .filter((value): value is string => Boolean(value))
+    .sort((a, b) => new Date(b).getTime() - new Date(a).getTime())[0] ?? null
+}
+
 function resolveFxState(lastUpdate: string | null): FxState {
-  if (!lastUpdate) return 'STALE'
-  const diffMs = Date.now() - new Date(lastUpdate).getTime()
-  if (Number.isNaN(diffMs)) return 'STALE'
-  const diffHours = diffMs / (1000 * 60 * 60)
-  return diffHours <= 24 ? 'LIVE' : 'STALE'
+  return resolveFreshness(lastUpdate, 36 * 60, { marketAware: true }).state === 'LIVE' ? 'LIVE' : 'STALE'
 }
 
 export default function FXPage() {
   const [lastSync, setLastSync] = useState('')
+  const [lastSyncIso, setLastSyncIso] = useState<string | null>(null)
   const [currencies, setCurrencies] = useState<CurrencyData[]>([])
   const [loading, setLoading] = useState(true)
   const [marketNote, setMarketNote] = useState('')
@@ -127,7 +133,7 @@ export default function FXPage() {
         selectWithFallback<MarketWatchAssetRow>(
           'market_watch',
           [
-            'ticker, currency, perf_day_eur, last_price',
+            'ticker, currency, perf_day_eur, last_price, last_update',
           ],
           { notNullColumn: 'currency' }
         ),
@@ -179,12 +185,9 @@ export default function FXPage() {
             }
           })
 
-          const latestUpdate = typedCurrencies
-            .map((currency) => currency.last_update)
-            .filter((value): value is string => !!value)
-            .reduce((max, update) => (new Date(update) > new Date(max) ? update : max), typedCurrencies[0]?.last_update || new Date().toISOString())
-
-          setLastSync(new Date(latestUpdate).toLocaleTimeString('fr-FR'))
+          const latestUpdate = latestTimestamp(typedCurrencies.map((currency) => currency.last_update))
+          setLastSync(latestUpdate ? new Date(latestUpdate).toLocaleTimeString('fr-FR') : '')
+          setLastSyncIso(latestUpdate)
           nextFxState = resolveFxState(latestUpdate)
           setFxState(nextFxState)
           saveFxCache(resolvedCurrencies)
@@ -213,15 +216,23 @@ export default function FXPage() {
           )
 
           if (resolvedCurrencies.length > 0) {
-            nextFxState = 'STALE'
+            const latestUpdate = latestTimestamp(performanceSource.map((asset) => asset.last_update))
+            setLastSync(latestUpdate ? new Date(latestUpdate).toLocaleTimeString('fr-FR') : '')
+            setLastSyncIso(latestUpdate)
+            nextFxState = resolveFxState(latestUpdate)
             setFxState(nextFxState)
           } else {
             const cached = readFxCache()
             if (cached.length > 0) {
               resolvedCurrencies = cached
+              const latestUpdate = latestTimestamp(cached.map((currency) => currency.last_update))
+              setLastSync(latestUpdate ? new Date(latestUpdate).toLocaleTimeString('fr-FR') : '')
+              setLastSyncIso(latestUpdate)
               nextFxState = 'CACHED'
               setFxState(nextFxState)
             } else {
+              setLastSync('')
+              setLastSyncIso(null)
               nextFxState = 'EMPTY'
               setFxState(nextFxState)
             }
@@ -258,8 +269,13 @@ export default function FXPage() {
         const cached = readFxCache()
         if (cached.length > 0) {
           setCurrencies(cached)
+          const latestUpdate = latestTimestamp(cached.map((currency) => currency.last_update))
+          setLastSync(latestUpdate ? new Date(latestUpdate).toLocaleTimeString('fr-FR') : '')
+          setLastSyncIso(latestUpdate)
           setFxState('CACHED')
         } else {
+          setLastSync('')
+          setLastSyncIso(null)
           setFxState('EMPTY')
         }
       } finally {
@@ -287,13 +303,26 @@ export default function FXPage() {
     return { text: 'No Feed', color: 'text-red-400', dot: 'bg-red-400' }
   }, [fxState])
 
+  const freshnessLabel = useMemo(() => {
+    if (!lastSyncIso) return 'No source timestamp'
+    const freshness = resolveFreshness(lastSyncIso, 36 * 60, { marketAware: true })
+    return freshness.isMarketClosedGrace ? `${freshness.label} (market closed)` : freshness.label
+  }, [lastSyncIso])
+
+  const sourceLabel = useMemo(() => {
+    if (fxState === 'CACHED') return 'Browser cache fallback'
+    if ((data?.currencies?.length ?? 0) > 0) return 'Supabase currencies'
+    if (currencies.length > 0) return 'Inferred from market_watch'
+    return 'No source rows'
+  }, [currencies.length, data?.currencies?.length, fxState])
+
   return (
     <div className="flex h-screen bg-slate-50 dark:bg-[#080A0F] transition-colors duration-500">
       <Sidebar />
       <div className="flex-1 flex flex-col">
-        <Header lastSync={lastSync} />
-        <main className="flex-1 p-12 overflow-y-auto">
-          <div className="max-w-7xl mx-auto grid grid-cols-1 lg:grid-cols-12 gap-12">
+        <Header lastSync={lastSync} lastSyncIso={lastSyncIso} />
+        <main className="flex-1 p-8 overflow-y-auto">
+          <div className="max-w-7xl mx-auto grid grid-cols-1 lg:grid-cols-12 gap-6">
             <div className="lg:col-span-8 space-y-6">
               <div className="flex items-center justify-between gap-4">
                 <div className="flex items-center gap-3">
@@ -305,6 +334,19 @@ export default function FXPage() {
                   <span className={`text-[10px] font-black uppercase tracking-wider ${stateLabel.color}`}>{stateLabel.text}</span>
                   <span className="text-[10px] text-slate-500 dark:text-gray-400">· {dataStateLabel(unifiedState)}</span>
                 </div>
+              </div>
+
+              <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
+                {[
+                  ['Source', sourceLabel],
+                  ['Freshness', freshnessLabel],
+                  ['Pairs', currencies.length.toString()],
+                ].map(([label, value]) => (
+                  <div key={label} className="rounded-xl border border-slate-200 dark:border-white/10 bg-white/80 dark:bg-white/[0.03] px-4 py-3">
+                    <div className="text-[9px] font-black uppercase tracking-wider text-slate-500 dark:text-gray-500">{label}</div>
+                    <div className="mt-1 text-xs font-mono font-black text-slate-950 dark:text-white">{value}</div>
+                  </div>
+                ))}
               </div>
 
               <div className="bg-white dark:bg-[#0D1117]/50 rounded-3xl border-2 border-slate-200 dark:border-white/5 shadow-2xl overflow-hidden">
@@ -329,18 +371,22 @@ export default function FXPage() {
                       </tr>
                     </thead>
                     <tbody className="divide-y divide-slate-200 dark:divide-white/5">
-                      {loading ? (
-                        <tr>
-                          <td colSpan={3} className="p-8 text-center text-slate-500 dark:text-gray-400">
-                            Loading currencies...
-                          </td>
-                        </tr>
-                      ) : currencies.length === 0 ? (
-                        <tr>
-                          <td colSpan={3} className="p-8 text-center text-slate-500 dark:text-gray-400">
-                            No currency data available
-                          </td>
-                        </tr>
+                    {loading ? (
+                      <tr>
+                        <td colSpan={3} className="p-8 text-center text-slate-500 dark:text-gray-400">
+                          <EmptyState title="Loading FX data" message="Reading currencies and market_watch rows from Supabase." tone="loading" />
+                        </td>
+                      </tr>
+                    ) : currencies.length === 0 ? (
+                      <tr>
+                        <td colSpan={3} className="p-8 text-center text-slate-500 dark:text-gray-400">
+                          <EmptyState
+                            title="No FX source data"
+                            message="Supabase returned no currency rows and no inferable market_watch FX rows."
+                            tone="warning"
+                          />
+                        </td>
+                      </tr>
                       ) : (
                         currencies.map((currency) => {
                           const change = currency.change_pct || 0
@@ -393,7 +439,7 @@ export default function FXPage() {
               </div>
             </div>
 
-            <div className="lg:col-span-4 pt-12">
+            <div className="lg:col-span-4">
               <div className="p-8 bg-slate-950 dark:bg-[#0A0D12] rounded-3xl shadow-2xl border-2 border-slate-800 dark:border-white/5 text-white">
                 <h3 className="text-[#00FF88] font-black uppercase text-xl mb-4 tracking-tighter flex items-center gap-2">
                   <ArrowRightLeft className="w-5 h-5" />
@@ -402,13 +448,23 @@ export default function FXPage() {
                 <p className="text-slate-300 dark:text-gray-300 text-sm leading-relaxed">
                   {marketNote || 'Analyzing currency market trends...'}
                 </p>
-                <div className="mt-6 pt-6 border-t border-slate-800 flex items-center justify-between gap-3">
-                  <p className="text-[10px] font-mono text-slate-500 uppercase tracking-wider">
-                    Last Update: {lastSync || 'N/A'}
-                  </p>
-                  <span className={`text-[10px] font-black uppercase tracking-wider ${stateLabel.color}`}>
-                    {stateLabel.text}
-                  </span>
+                <div className="mt-6 pt-6 border-t border-slate-800 space-y-3">
+                  <div className="flex items-center justify-between gap-3">
+                    <p className="text-[10px] font-mono text-slate-500 uppercase tracking-wider">Last Update</p>
+                    <span className="text-[10px] font-mono text-slate-300">
+                      {formatSyncTime(lastSyncIso, lastSync || 'N/A')}
+                    </span>
+                  </div>
+                  <div className="flex items-center justify-between gap-3">
+                    <p className="text-[10px] font-mono text-slate-500 uppercase tracking-wider">State</p>
+                    <span className={`text-[10px] font-black uppercase tracking-wider ${stateLabel.color}`}>
+                      {stateLabel.text}
+                    </span>
+                  </div>
+                  <div className="flex items-center justify-between gap-3">
+                    <p className="text-[10px] font-mono text-slate-500 uppercase tracking-wider">Source</p>
+                    <span className="text-[10px] font-mono text-slate-300">{sourceLabel}</span>
+                  </div>
                 </div>
               </div>
             </div>

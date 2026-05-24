@@ -17,6 +17,12 @@ export interface TridentBundle {
   exchanges: string[]
   sectors: string[]
   lastUpdateIso: string | null
+  sourceCounts: {
+    universe: number
+    financials: number
+    results: number
+    criteria: number
+  }
 }
 
 const SCREENER_SELECTOR = [
@@ -214,12 +220,19 @@ function sortedUnique(values: Array<string | null>): string[] {
 }
 
 export async function loadTridentBundle(supabase: SupabaseClient): Promise<TridentBundle> {
-  const { data, error } = await supabase
-    .from('trident_screener_latest')
-    .select(SCREENER_SELECTOR)
-    .order('score', { ascending: false, nullsFirst: false })
-    .limit(1000)
+  const [screenerResponse, universeCount, financialsCount, resultsCount, criteriaCount] = await Promise.all([
+    supabase
+      .from('trident_screener_latest')
+      .select(SCREENER_SELECTOR)
+      .order('score', { ascending: false, nullsFirst: false })
+      .limit(1000),
+    supabase.from('trident_equity_universe').select('*', { count: 'exact', head: true }),
+    supabase.from('trident_financial_annual').select('*', { count: 'exact', head: true }),
+    supabase.from('trident_results').select('*', { count: 'exact', head: true }),
+    supabase.from('trident_criterion_results').select('*', { count: 'exact', head: true }),
+  ])
 
+  const { data, error } = screenerResponse
   if (error) throw error
 
   const rows = ((data ?? []) as unknown as JsonRecord[])
@@ -264,5 +277,11 @@ export async function loadTridentBundle(supabase: SupabaseClient): Promise<Tride
     exchanges: sortedUnique(rows.map((row) => row.exchange)),
     sectors: sortedUnique(rows.map((row) => row.sector)),
     lastUpdateIso,
+    sourceCounts: {
+      universe: universeCount.count ?? 0,
+      financials: financialsCount.count ?? 0,
+      results: resultsCount.count ?? 0,
+      criteria: criteriaCount.count ?? 0,
+    },
   }
 }

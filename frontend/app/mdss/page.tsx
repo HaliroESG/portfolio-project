@@ -113,17 +113,21 @@ export default function MDSSPage() {
     return map
   }, [indicators])
 
-  const lastSync = useMemo(() => {
+  const { lastSync, lastSyncIso } = useMemo(() => {
     const latest = indicators
       .map((indicator) => indicator.last_update)
       .filter((value): value is string => Boolean(value))
       .sort((a, b) => new Date(b).getTime() - new Date(a).getTime())[0]
-    return latest ? new Date(latest).toLocaleTimeString('fr-FR') : ''
+    return {
+      lastSync: latest ? new Date(latest).toLocaleTimeString('fr-FR') : '',
+      lastSyncIso: latest ?? null,
+    }
   }, [indicators])
 
   const get = (id: string) => indicatorMap.get(id)
 
   const vix = get('^VIX')?.value ?? null
+  const vixIndicator = get('^VIX')
   const spread = get('SPREAD_10Y_2Y')?.value ?? null
   const misery = get('MISERY_INDEX')?.value ?? null
   const tnx = get('^TNX')?.value ?? null
@@ -142,6 +146,19 @@ export default function MDSSPage() {
   const liquidityStatus: PillarStatus =
     (dxy !== null && dxy >= 105) || (move !== null && move >= 110) || (jpyVol !== null && jpyVol >= 1.8) ? 'red' :
     (dxy !== null && dxy >= 102) || (move !== null && move >= 95) || (jpyVol !== null && jpyVol >= 1.3) ? 'amber' : 'green'
+
+  const macroHealthStatus =
+    vixIndicator?.threshold_red !== null &&
+    vixIndicator?.threshold_red !== undefined &&
+    vix !== null &&
+    vix >= vixIndicator.threshold_red
+      ? 'STRESS'
+      : vixIndicator?.threshold_amber !== null &&
+        vixIndicator?.threshold_amber !== undefined &&
+        vix !== null &&
+        vix >= vixIndicator.threshold_amber
+        ? 'CAUTION'
+        : 'NORMAL'
 
   const growthIndicators: PillarIndicator[] = [
     {
@@ -198,18 +215,27 @@ export default function MDSSPage() {
   ]
 
   const tacticalSignal =
-    growthStatus === 'red' || inflationStatus === 'red' || liquidityStatus === 'red'
-      ? 'Conditions restrictives détectées: réduire le risque directionnel, privilégier la qualité et conserver un buffer de cash.'
-      : growthStatus === 'amber' || inflationStatus === 'amber' || liquidityStatus === 'amber'
-        ? 'Régime mixte: maintenir une allocation diversifiée et surveiller le spread 10Y-2Y et le dollar.'
-        : 'Régime globalement stable: conserver la stratégie de rebalancing avec suivi hebdomadaire des signaux.'
+    macroHealthStatus === 'NORMAL'
+      ? {
+          title: 'No Tactical Rebalance Required',
+          message: 'Normal volatility regime: keep the current allocation policy and monitor pillar warnings without forcing a tactical move.',
+        }
+      : growthStatus === 'red' || inflationStatus === 'red' || liquidityStatus === 'red'
+        ? {
+            title: 'Tactical Risk Reduction Signal',
+            message: 'Restrictive conditions detected: reduce directional risk, prefer quality assets and keep a cash buffer.',
+          }
+        : {
+            title: 'Tactical Watchlist',
+            message: 'Mixed regime: keep diversification in place and monitor the 10Y-2Y spread, the dollar and volatility before changing allocation.',
+          }
 
   return (
     <div className="flex h-screen bg-slate-50 dark:bg-[#080A0F] text-slate-900 dark:text-gray-300 font-sans overflow-hidden transition-colors duration-500">
       <Sidebar />
 
       <div className="flex-1 flex flex-col min-w-0">
-        <Header lastSync={lastSync} />
+        <Header lastSync={lastSync} lastSyncIso={lastSyncIso} />
 
         <main className="flex-1 p-8 overflow-y-auto space-y-8 custom-scrollbar">
           
@@ -270,9 +296,9 @@ export default function MDSSPage() {
                 <ShieldAlert className="text-[#00FF88] animate-pulse" size={32} />
              </div>
              <div>
-               <h4 className="text-white font-black uppercase tracking-tighter text-xl">Tactical Rebalancing Signal</h4>
+               <h4 className="text-white font-black uppercase tracking-tighter text-xl">{tacticalSignal.title}</h4>
                <p className="text-gray-400 text-sm max-w-lg mt-2 font-medium">
-                  {tacticalSignal}
+                  {tacticalSignal.message}
                </p>
              </div>
           </div>

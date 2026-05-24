@@ -10,6 +10,7 @@ import { DrawdownChart } from '../../components/DrawdownChart'
 import { KpiComparisonTable } from '../../components/KpiComparisonTable'
 import { PortfolioSelectGrid, PortfolioCard } from '../../components/PortfolioSelectGrid'
 import { DataStateBadge, DataState } from '../../components/DataStateBadge'
+import { EmptyState } from '../../components/EmptyState'
 import { BacktestKpi, BacktestPortfolio, BacktestResult, BacktestRun, CompareSelection } from '../../types'
 
 const CHART_COLORS = [
@@ -115,6 +116,11 @@ function parseNumeric(value: unknown): number | null {
   return null
 }
 
+function isMissingBacktestContract(error: unknown): boolean {
+  const message = error instanceof Error ? error.message : String(error ?? '')
+  return message.includes('backtest_') && message.includes('schema cache')
+}
+
 async function fetchResultsForPortfolio(runId: string, portfolioKey: string): Promise<BacktestResult[]> {
   const pageSize = 5000
   let offset = 0
@@ -215,7 +221,11 @@ export default function CompareClient() {
         }
       } catch (err) {
         console.error('Backtest runs fetch error', err)
-        setError('Unable to load backtest runs.')
+        setError(
+          isMissingBacktestContract(err)
+            ? 'Backtest contract is not deployed. Apply the backtest Supabase migration before using this screen.'
+            : 'Unable to load backtest runs.'
+        )
       } finally {
         setLoading(false)
       }
@@ -293,7 +303,11 @@ export default function CompareClient() {
         setSelectedKeys(defaults.length > 0 ? defaults : portfolioList.map((p) => p.portfolio_key))
       } catch (err) {
         console.error('Backtest run fetch error', err)
-        setError('Unable to load backtest run data.')
+        setError(
+          isMissingBacktestContract(err)
+            ? 'Backtest contract is not deployed. Apply the backtest Supabase migration before using this screen.'
+            : 'Unable to load backtest run data.'
+        )
       } finally {
         setLoading(false)
       }
@@ -330,6 +344,7 @@ export default function CompareClient() {
     () => computeDataState(loading, runs, selectedRun),
     [loading, runs, selectedRun]
   )
+  const badgeState: DataState = error ? 'ERROR' : dataState
 
   const portfoliosWithCoverage = useMemo(() => {
     if (!selectedRun) return []
@@ -398,6 +413,7 @@ export default function CompareClient() {
   const lastSync = selectedRun?.created_at
     ? new Date(selectedRun.created_at).toLocaleTimeString('fr-FR')
     : undefined
+  const lastSyncIso = selectedRun?.created_at ?? null
 
   const shareLink = useMemo(() => {
     if (typeof window === 'undefined') return ''
@@ -446,7 +462,7 @@ export default function CompareClient() {
     <div className="flex h-screen bg-slate-50 dark:bg-[#080A0F] transition-colors duration-500">
       <Sidebar />
       <div className="flex-1 flex flex-col">
-        <Header lastSync={lastSync} />
+        <Header lastSync={lastSync} lastSyncIso={lastSyncIso} />
         <main className="flex-1 p-10 overflow-y-auto">
           <div className="max-w-6xl mx-auto space-y-6">
             <div className="flex items-center justify-between gap-4">
@@ -458,13 +474,19 @@ export default function CompareClient() {
                   Target vs presets · Multi-portfolio comparison
                 </p>
               </div>
-              <DataStateBadge state={dataState} />
+              <DataStateBadge state={badgeState} />
             </div>
 
             {error && (
-              <div className="rounded-2xl border border-red-300 bg-red-50 p-3 text-sm font-mono text-red-700 dark:border-red-800/60 dark:bg-red-950/30 dark:text-red-300">
-                {error}
-              </div>
+              <EmptyState tone="error" title="Comparison unavailable" message={error} />
+            )}
+
+            {!error && !loading && runs.length === 0 && (
+              <EmptyState
+                tone="warning"
+                title="No comparison source runs"
+                message="The comparison contract is readable, but no backtest run exists yet. Generate a backtest before comparing target, current, and preset portfolios."
+              />
             )}
 
             <div className="flex flex-wrap items-center justify-between gap-4">
@@ -531,9 +553,10 @@ export default function CompareClient() {
             />
 
             {chartPayload.dates.length === 0 ? (
-              <div className="rounded-3xl border-2 border-slate-200 dark:border-white/5 bg-white dark:bg-[#0D1117]/50 shadow-2xl p-6 text-sm font-mono text-slate-500 dark:text-gray-400">
-                No comparison data available.
-              </div>
+              <EmptyState
+                title="No comparison data available"
+                message="Select at least two portfolios from a populated run, or generate a backtest with target/current and baseline portfolios."
+              />
             ) : (
               <div className="space-y-6">
                 <BacktestChart dates={chartPayload.dates} series={chartPayload.navSeries} title="Performance (NAV)" />

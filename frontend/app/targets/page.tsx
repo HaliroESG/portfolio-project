@@ -1,12 +1,12 @@
 "use client"
 
-import React, { useEffect, useMemo, useState } from 'react'
+import React, { useMemo, useState } from 'react'
 import useSWR from 'swr'
 import { Sidebar } from '../../components/Sidebar'
 import { Header } from '../../components/Header'
+import { EmptyState } from '../../components/EmptyState'
 import { supabase } from '../../lib/supabase'
-import { cn } from '../../lib/utils'
-import { Save, Target } from 'lucide-react'
+import { LockKeyhole, Target } from 'lucide-react'
 
 interface PortfolioRow {
   id: string
@@ -21,6 +21,7 @@ interface PositionRow {
   currency: string | null
   quantity_current: number | null
   target_weight_pct: number | null
+  updated_at: string | null
 }
 
 interface PositionDraft extends PositionRow {
@@ -33,10 +34,7 @@ function formatPortfolioName(portfolio: PortfolioRow): string {
 }
 
 export default function TargetsPage() {
-  const [selectedPortfolioId, setSelectedPortfolioId] = useState<string>('')
-  const [drafts, setDrafts] = useState<Record<string, PositionDraft>>({})
-  const [statusMessage, setStatusMessage] = useState<string>('')
-  const [saving, setSaving] = useState(false)
+  const [selectedPortfolioIdOverride, setSelectedPortfolioIdOverride] = useState<string>('')
 
   const { data: portfolios } = useSWR('portfolios', async () => {
     const { data, error } = await supabase.from('portfolios').select('id,name')
@@ -44,18 +42,14 @@ export default function TargetsPage() {
     return (data ?? []) as PortfolioRow[]
   })
 
-  useEffect(() => {
-    if (!portfolios || portfolios.length === 0) return
-    if (selectedPortfolioId) return
-    setSelectedPortfolioId(portfolios[0].id)
-  }, [portfolios, selectedPortfolioId])
+  const selectedPortfolioId = selectedPortfolioIdOverride || portfolios?.[0]?.id || ''
 
-  const { data: positions, mutate } = useSWR(
+  const { data: positions } = useSWR(
     selectedPortfolioId ? ['positions', selectedPortfolioId] : null,
     async () => {
       const { data, error } = await supabase
         .from('portfolio_positions')
-        .select('portfolio_id,ticker,name,instrument_type,currency,quantity_current,target_weight_pct')
+        .select('portfolio_id,ticker,name,instrument_type,currency,quantity_current,target_weight_pct,updated_at')
         .eq('portfolio_id', selectedPortfolioId)
         .order('ticker', { ascending: true })
       if (error) throw error
@@ -63,10 +57,9 @@ export default function TargetsPage() {
     }
   )
 
-  useEffect(() => {
-    if (!positions) return
+  const drafts = useMemo(() => {
     const nextDrafts: Record<string, PositionDraft> = {}
-    positions.forEach((row) => {
+    ;(positions ?? []).forEach((row) => {
       nextDrafts[row.ticker] = {
         ...row,
         targetDraft:
@@ -75,7 +68,7 @@ export default function TargetsPage() {
             : '',
       }
     })
-    setDrafts(nextDrafts)
+    return nextDrafts
   }, [positions])
 
   const grouped = useMemo(() => {
@@ -88,74 +81,38 @@ export default function TargetsPage() {
     return Array.from(groups.entries()).sort((a, b) => a[0].localeCompare(b[0], 'en'))
   }, [drafts])
 
-  const totalTarget = useMemo(() => {
-    return Object.values(drafts).reduce((sum, row) => {
-      const value = Number.parseFloat(row.targetDraft)
-      return sum + (Number.isFinite(value) ? value : 0)
-    }, 0)
+  const targetStats = useMemo(() => {
+    const rows = Object.values(drafts)
+    const configured = rows.filter((row) => row.targetDraft.trim() !== '' && Number.isFinite(Number.parseFloat(row.targetDraft)))
+    const totalTarget = configured.reduce((sum, row) => sum + Number.parseFloat(row.targetDraft), 0)
+
+    return {
+      positions: rows.length,
+      configured: configured.length,
+      missing: rows.length - configured.length,
+      totalTarget,
+      ready: rows.length > 0 && rows.length === configured.length && Math.abs(totalTarget - 100) <= 0.05,
+    }
   }, [drafts])
 
-  const handleDraftChange = (ticker: string, value: string) => {
-    setDrafts((prev) => {
-      const current = prev[ticker]
-      if (!current) return prev
-      return { ...prev, [ticker]: { ...current, targetDraft: value } }
-    })
-  }
+  const { lastSync, lastSyncIso } = useMemo(() => {
+    if (!positions || positions.length === 0) return { lastSync: '', lastSyncIso: null as string | null }
+    const latest = positions
+      .map((position) => position.updated_at)
+      .filter((value): value is string => Boolean(value))
+      .sort((a, b) => new Date(b).getTime() - new Date(a).getTime())[0]
 
-  const handleSave = async () => {
-    if (!positions || positions.length === 0) return
-    setSaving(true)
-    setStatusMessage('')
-
-    try {
-      const updates = Object.values(drafts)
-        .map((row) => {
-          const nextValue = row.targetDraft.trim() === '' ? null : Number.parseFloat(row.targetDraft)
-          const currentValue = row.target_weight_pct
-          const normalizedNext = nextValue !== null && Number.isFinite(nextValue) ? nextValue : null
-          const normalizedCurrent = currentValue !== null && currentValue !== undefined ? currentValue : null
-
-          const changed = normalizedNext !== normalizedCurrent
-          if (!changed) return null
-
-          return {
-            portfolio_id: row.portfolio_id,
-            ticker: row.ticker,
-            target_weight_pct: normalizedNext,
-          }
-        })
-        .filter((item): item is { portfolio_id: string; ticker: string; target_weight_pct: number | null } => item !== null)
-
-      for (const update of updates) {
-        const { error } = await supabase
-          .from('portfolio_positions')
-          .update({ target_weight_pct: update.target_weight_pct })
-          .eq('portfolio_id', update.portfolio_id)
-          .eq('ticker', update.ticker)
-        if (error) throw error
-      }
-
-      setStatusMessage(updates.length > 0 ? 'Targets saved.' : 'No changes to save.')
-      mutate()
-    } catch (error) {
-      console.error('Error saving targets', error)
-      setStatusMessage('Save failed. Check RLS policies or Supabase permissions.')
-    } finally {
-      setSaving(false)
+    return {
+      lastSync: latest ? new Date(latest).toLocaleTimeString('fr-FR') : '',
+      lastSyncIso: latest ?? null,
     }
-  }
-
-  const lastSync = useMemo(() => {
-    if (!positions || positions.length === 0) return ''
-    return new Date().toLocaleTimeString('fr-FR')
   }, [positions])
 
   return (
     <div className="flex h-screen bg-slate-50 dark:bg-[#080A0F] transition-colors duration-500">
       <Sidebar />
       <div className="flex-1 flex flex-col">
-        <Header lastSync={lastSync} />
+        <Header lastSync={lastSync} lastSyncIso={lastSyncIso} />
         <main className="flex-1 p-10 overflow-y-auto">
           <div className="max-w-6xl mx-auto space-y-6">
             <div className="flex items-center justify-between gap-4">
@@ -168,7 +125,7 @@ export default function TargetsPage() {
                   <span className="text-[9px] font-black uppercase tracking-wider text-slate-500 dark:text-gray-400">Portfolio</span>
                   <select
                     value={selectedPortfolioId}
-                    onChange={(event) => setSelectedPortfolioId(event.target.value)}
+                    onChange={(event) => setSelectedPortfolioIdOverride(event.target.value)}
                     className="bg-transparent text-[10px] font-black text-slate-900 dark:text-white outline-none"
                   >
                     {(portfolios ?? []).map((portfolio) => (
@@ -178,34 +135,45 @@ export default function TargetsPage() {
                     ))}
                   </select>
                 </div>
-                <button
-                  onClick={handleSave}
-                  disabled={saving}
-                  className={cn(
-                    'px-4 py-2 rounded-lg text-[10px] font-black uppercase tracking-wider transition-colors flex items-center gap-2',
-                    saving
-                      ? 'bg-slate-200 text-slate-500 dark:bg-white/10 dark:text-gray-500'
-                      : 'bg-[#00FF88] text-black hover:bg-[#00e07b]'
-                  )}
-                >
-                  <Save size={12} />
-                  {saving ? 'Saving...' : 'Save'}
-                </button>
+                <div className="px-4 py-2 rounded-lg text-[10px] font-black uppercase tracking-wider flex items-center gap-2 bg-slate-200 text-slate-600 dark:bg-white/10 dark:text-gray-400 border border-slate-300 dark:border-white/10">
+                  <LockKeyhole size={12} />
+                  Read only
+                </div>
               </div>
             </div>
 
-            <div className="flex items-center justify-between text-[11px] font-mono text-slate-500 dark:text-gray-400">
-              <span>Total target: {totalTarget.toFixed(2)}%</span>
-              {statusMessage && <span>{statusMessage}</span>}
+            <div className="grid grid-cols-2 md:grid-cols-5 gap-3">
+              {[
+                ['Positions', targetStats.positions.toString()],
+                ['Configured', targetStats.configured.toString()],
+                ['Missing targets', targetStats.missing.toString()],
+                ['Total target', `${targetStats.totalTarget.toFixed(2)}%`],
+                ['State', targetStats.ready ? 'READY' : 'NOT READY'],
+              ].map(([label, value]) => (
+                <div key={label} className="rounded-xl border border-slate-200 dark:border-white/10 bg-white/80 dark:bg-white/[0.03] px-4 py-3">
+                  <div className="text-[9px] font-black uppercase tracking-wider text-slate-500 dark:text-gray-500">{label}</div>
+                  <div className="mt-1 text-sm font-mono font-black text-slate-950 dark:text-white">{value}</div>
+                </div>
+              ))}
+            </div>
+
+            <div className="rounded-xl border border-amber-300/70 dark:border-amber-500/30 bg-amber-50 dark:bg-amber-950/20 px-4 py-3 text-xs font-mono text-amber-800 dark:text-amber-300">
+              Targets are read-only in the frontend. Updates must come from a backend/service-role workflow or a future auth-gated route.
             </div>
 
             <div className="space-y-6">
+              {grouped.length === 0 && (
+                <EmptyState
+                  title="No portfolio positions"
+                  message="No positions are available for this portfolio. Target validation starts once Supabase returns portfolio_positions rows."
+                />
+              )}
               {grouped.map(([group, rows]) => (
                 <div key={group} className="bg-white dark:bg-[#0D1117]/50 rounded-3xl border-2 border-slate-200 dark:border-white/5 shadow-2xl overflow-hidden">
                   <div className="px-6 py-4 border-b-2 border-slate-200 dark:border-white/5 flex items-center justify-between">
                     <h2 className="text-sm font-black uppercase tracking-tighter text-slate-950 dark:text-white">{group}</h2>
                     <span className="text-[10px] font-mono text-slate-500 dark:text-gray-400">
-                      {rows.length} positions
+                      {rows.length} positions - {rows.filter((row) => row.targetDraft.trim() === '').length} missing
                     </span>
                   </div>
                   <div className="overflow-x-auto">
@@ -229,8 +197,9 @@ export default function TargetsPage() {
                                 <input
                                   type="number"
                                   value={row.targetDraft}
-                                  onChange={(event) => handleDraftChange(row.ticker, event.target.value)}
-                                  className="w-24 rounded-lg border border-slate-200 dark:border-white/10 bg-white dark:bg-[#0A0D12] px-2 py-1 text-right text-sm font-mono font-bold text-slate-950 dark:text-white"
+                                  readOnly
+                                  disabled
+                                  className="w-24 rounded-lg border border-slate-200 dark:border-white/10 bg-slate-100 dark:bg-[#0A0D12] px-2 py-1 text-right text-sm font-mono font-bold text-slate-500 dark:text-gray-500 cursor-not-allowed"
                                   placeholder="--"
                                   min={0}
                                   max={100}

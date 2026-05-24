@@ -32,8 +32,8 @@ export default function CurrenciesPage() {
     { refreshInterval: 300000, revalidateOnFocus: false }
   )
 
-  const { currencyPairs, lastSync } = useMemo(() => {
-    if (!data || data.length === 0) return { currencyPairs: [], lastSync: '' }
+  const { currencyPairs, lastSync, lastSyncIso } = useMemo(() => {
+    if (!data || data.length === 0) return { currencyPairs: [], lastSync: '', lastSyncIso: null as string | null }
 
     const pairs = data
       .filter((item) => {
@@ -71,6 +71,7 @@ export default function CurrenciesPage() {
     return {
       currencyPairs: pairs,
       lastSync: new Date(latest).toLocaleTimeString('fr-FR'),
+      lastSyncIso: latest,
     }
   }, [data])
 
@@ -78,7 +79,7 @@ export default function CurrenciesPage() {
     <div className="flex h-screen bg-slate-50 dark:bg-[#080A0F] transition-colors duration-500">
       <Sidebar />
       <div className="flex-1 flex flex-col">
-        <Header lastSync={lastSync} />
+        <Header lastSync={lastSync} lastSyncIso={lastSyncIso} />
         <main className="flex-1 p-12 overflow-y-auto">
           <div className="max-w-7xl mx-auto space-y-6">
             <div className="flex items-center gap-3">

@@ -2,65 +2,20 @@
 
 import React from 'react'
 import { ThemeToggle } from './ThemeToggle'
+import { formatSyncTime, resolveFreshness } from '../lib/dataFreshness'
 
 interface HeaderProps {
   lastSync?: string;
+  lastSyncIso?: string | null;
   coveragePct?: number | null;
 }
 
-function isRecentSync(lastSync: string): boolean {
-  if (!lastSync || lastSync === '--:--:--') return false
-  
-  try {
-    // Parse the time string (format: "HH:MM:SS" from fr-FR locale)
-    const parts = lastSync.split(':')
-    if (parts.length < 2) return false
-    
-    const hours = parseInt(parts[0], 10)
-    const minutes = parseInt(parts[1], 10)
-    
-    if (isNaN(hours) || isNaN(minutes)) return false
-    
-    const now = new Date()
-    const syncTime = new Date()
-    syncTime.setHours(hours, minutes, 0, 0)
-    
-    // Calculate difference in hours
-    const diffMs = now.getTime() - syncTime.getTime()
-    const diffHours = diffMs / (1000 * 60 * 60)
-    
-    // If sync time appears to be in the future (same day, later time), it's recent
-    if (diffMs < 0) {
-      // Check if it's the same day - if so, it's recent
-      return now.getDate() === syncTime.getDate() && 
-             now.getMonth() === syncTime.getMonth() && 
-             now.getFullYear() === syncTime.getFullYear()
-    }
-    
-    // If sync was within last 24 hours, it's recent
-    // Also handle case where sync might be from today but earlier in the day
-    if (diffHours < 24 && diffHours >= 0) {
-      return true
-    }
-    
-    // If sync is more than 24h old but same calendar day, still consider recent
-    // (handles edge case where sync happened early today)
-    if (now.getDate() === syncTime.getDate() && 
-        now.getMonth() === syncTime.getMonth() && 
-        now.getFullYear() === syncTime.getFullYear()) {
-      return true
-    }
-    
-    return false
-  } catch {
-    return false
-  }
-}
-
-export function Header({ lastSync, coveragePct }: HeaderProps) {
-  // Utiliser nullish coalescing pour donner une valeur par défaut de 100 si coveragePct est null/undefined
+export function Header({ lastSync, lastSyncIso, coveragePct }: HeaderProps) {
   const safeCoveragePct = coveragePct ?? 100
   const showCoverageWarning = safeCoveragePct < 90
+  const freshness = resolveFreshness(lastSyncIso, 36 * 60, { marketAware: true })
+  const isRecent = lastSyncIso ? freshness.state === 'LIVE' : Boolean(lastSync && lastSync !== '--:--:--')
+  const displaySync = formatSyncTime(lastSyncIso, lastSync)
 
   return (
     <>
@@ -68,7 +23,7 @@ export function Header({ lastSync, coveragePct }: HeaderProps) {
       {showCoverageWarning && (
         <div className="bg-amber-50 dark:bg-amber-950/30 border-b border-amber-200 dark:border-amber-800/50 px-8 py-2 sticky top-0 z-50">
           <div className="flex items-center gap-2 text-sm font-bold text-amber-800 dark:text-amber-400">
-            <span>⚠️</span>
+            <span>!</span>
             <span>
               Portfolio Coverage: {safeCoveragePct.toFixed(1)}% - Some assets are unpriced
             </span>
@@ -89,7 +44,7 @@ export function Header({ lastSync, coveragePct }: HeaderProps) {
           <div className="hidden md:flex flex-col border-l border-slate-200 dark:border-white/10 pl-6">
             <span className="text-[9px] text-slate-500 dark:text-gray-500 font-black uppercase tracking-[0.2em]">Last Sync</span>
             <div className="flex items-center gap-2">
-              {lastSync && isRecentSync(lastSync) ? (
+              {isRecent ? (
                 <div className="relative">
                   <div className="w-2 h-2 rounded-full bg-[#00FF88] animate-pulse"></div>
                   <div className="absolute inset-0 w-2 h-2 rounded-full bg-[#00FF88] animate-ping opacity-75"></div>
@@ -98,8 +53,13 @@ export function Header({ lastSync, coveragePct }: HeaderProps) {
                 <div className="w-2 h-2 rounded-full bg-slate-400 dark:bg-gray-600"></div>
               )}
               <span className="text-xs font-mono font-black text-slate-950 dark:text-gray-300">
-                {lastSync || '--:--:--'}
+                {displaySync}
               </span>
+              {lastSyncIso && freshness.isMarketClosedGrace && (
+                <span className="text-[9px] font-mono font-bold uppercase text-slate-500 dark:text-gray-500">
+                  market closed
+                </span>
+              )}
             </div>
           </div>
         </div>

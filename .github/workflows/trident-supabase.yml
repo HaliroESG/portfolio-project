@@ -144,6 +144,11 @@ jobs:
           psql "$SUPABASE_DB_URL" \
             -v ON_ERROR_STOP=1 \
             -f backend/sql/20260210_market_watch_phase2_technicals.sql \
+            -f backend/sql/20260222_historical_prices.sql \
+            -f backend/sql/20260222_backtest_model.sql \
+            -f backend/sql/20260222_backtest_common_start.sql \
+            -f backend/sql/20260222_backtest_portfolio_key_relax.sql \
+            -f backend/sql/20260222_backtest_config_hash_idx.sql \
             -f backend/sql/20260524_trident_screener.sql
 
       - name: Post-migration schema check
@@ -173,12 +178,17 @@ jobs:
         working-directory: ./frontend
         run: npm ci
 
-      - name: Supabase smoke with service-role read key
+      - name: Supabase smoke with anon read key
         working-directory: ./frontend
         env:
           NEXT_PUBLIC_SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
-          NEXT_PUBLIC_SUPABASE_ANON_KEY: ${{ secrets.SUPABASE_SERVICE_KEY }}
-        run: npm run smoke:supabase -- --output=smoke-supabase-report.json
+          NEXT_PUBLIC_SUPABASE_ANON_KEY: ${{ secrets.SUPABASE_ANON_KEY }}
+        run: |
+          if [ -z "$NEXT_PUBLIC_SUPABASE_URL" ] || [ -z "$NEXT_PUBLIC_SUPABASE_ANON_KEY" ]; then
+            echo "::error::Supabase smoke requires SUPABASE_URL and SUPABASE_ANON_KEY."
+            exit 2
+          fi
+          npm run smoke:supabase -- --output=smoke-supabase-report.json
 
       - name: Upload Supabase reports
         if: always()

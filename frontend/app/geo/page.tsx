@@ -25,6 +25,7 @@ function getDisplayedPerformance(country: CountryPerformance, timeframe: GeoTime
 
 export default function GeoPage() {
   const [lastSync, setLastSync] = useState('')
+  const [lastSyncIso, setLastSyncIso] = useState<string | null>(null)
   const [assetsByPortfolio, setAssetsByPortfolio] = useState<Record<string, Asset[]>>({ ALL: [] })
   const [portfolioOptions, setPortfolioOptions] = useState<PortfolioOption[]>([])
   const [selectedPortfolioId, setSelectedPortfolioId] = useState<string>('ALL')
@@ -50,6 +51,7 @@ export default function GeoPage() {
     setAssetsByPortfolio(portfolioBundle.assetsByPortfolio)
     setPortfolioOptions(portfolioBundle.portfolioOptions)
     setLastSync(portfolioBundle.lastSync)
+    setLastSyncIso(portfolioBundle.lastSyncIso)
 
     if (selectedPortfolioId !== 'ALL' && !portfolioBundle.assetsByPortfolio[selectedPortfolioId]) {
       setSelectedPortfolioId('ALL')
@@ -66,7 +68,7 @@ export default function GeoPage() {
     <div className="flex h-screen bg-slate-100 dark:bg-[#080A0F] text-slate-900 transition-colors duration-500">
       <Sidebar />
       <div className="flex-1 flex flex-col min-w-0">
-        <Header lastSync={lastSync} />
+        <Header lastSync={lastSync} lastSyncIso={lastSyncIso} />
         <main className="flex-1 p-8 flex flex-col gap-8">
           <div className="flex justify-between items-center gap-4">
             <div><h1 className="text-4xl font-black uppercase tracking-tighter text-slate-950 dark:text-white">

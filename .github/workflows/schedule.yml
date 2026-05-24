@@ -55,9 +55,22 @@ jobs:
           MARKETAUX_API_KEY: ${{ secrets.MARKETAUX_API_KEY }}
         run: python news_sync.py
 
+      - name: Sync Historical Prices
+        working-directory: ./backend
+        env:
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_KEY: ${{ secrets.SUPABASE_SERVICE_KEY }}
+        run: python historical_prices_sync.py
+
+      - name: Generate Production Reference Backtest
+        working-directory: ./backend
+        env:
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_KEY: ${{ secrets.SUPABASE_SERVICE_KEY }}
+        run: python scripts/run_backtest.py --run-name "Production Reference" --start-date 2024-01-01 --include-presets baseline
+
   schema-parity-check:
     runs-on: ubuntu-latest
-    continue-on-error: true
 
     steps:
       - name: Checkout code
@@ -72,17 +85,16 @@ jobs:
         run: python --version
 
       - name: Run schema parity check (read-only)
-        if: ${{ secrets.SUPABASE_URL != '' && secrets.SUPABASE_SERVICE_KEY != '' }}
         working-directory: ./backend
         env:
           SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
           SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_KEY }}
-        run: python tools/schema_check.py --pretty --output schema-check.json
-
-      - name: Skip schema parity check (missing secrets)
-        if: ${{ secrets.SUPABASE_URL == '' || secrets.SUPABASE_SERVICE_KEY == '' }}
         run: |
-          echo "schema-parity-check skipped: missing SUPABASE_URL or SUPABASE_SERVICE_KEY"
+          if [ -z "$SUPABASE_URL" ] || [ -z "$SUPABASE_SERVICE_ROLE_KEY" ]; then
+            echo "::error::schema-parity-check requires SUPABASE_URL and SUPABASE_SERVICE_KEY."
+            exit 2
+          fi
+          python tools/schema_check.py --pretty --output schema-check.json
 
       - name: Upload schema report artifact
         if: always()
@@ -95,7 +107,6 @@ jobs:
 
   anon-supabase-smoke:
     runs-on: ubuntu-latest
-    continue-on-error: true
 
     steps:
       - name: Checkout code
@@ -110,18 +121,17 @@ jobs:
         working-directory: ./frontend
         run: npm ci
 
-      - name: Run ANON Supabase smoke (when secrets present)
-        if: ${{ secrets.SUPABASE_URL != '' && secrets.SUPABASE_ANON_KEY != '' }}
+      - name: Run ANON Supabase smoke
         working-directory: ./frontend
         env:
           NEXT_PUBLIC_SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
           NEXT_PUBLIC_SUPABASE_ANON_KEY: ${{ secrets.SUPABASE_ANON_KEY }}
-        run: npm run smoke:supabase -- --output=smoke-supabase-report.json
-
-      - name: Skip ANON smoke (missing secrets)
-        if: ${{ secrets.SUPABASE_URL == '' || secrets.SUPABASE_ANON_KEY == '' }}
-        working-directory: ./frontend
-        run: node scripts/smoke-supabase.mjs --ci-skip-missing-env --output=smoke-supabase-report.json
+        run: |
+          if [ -z "$NEXT_PUBLIC_SUPABASE_URL" ] || [ -z "$NEXT_PUBLIC_SUPABASE_ANON_KEY" ]; then
+            echo "::error::anon-supabase-smoke requires SUPABASE_URL and SUPABASE_ANON_KEY."
+            exit 2
+          fi
+          npm run smoke:supabase -- --output=smoke-supabase-report.json
 
       - name: Upload ANON smoke report artifact
         if: always()
@@ -129,42 +139,4 @@ jobs:
         with:
           name: anon-supabase-smoke-report
           path: frontend/smoke-supabase-report.json
-          if-no-files-found: warn
-
-
-  # Week 2 strategy:
-  # - Enable repository variable SCHEMA_CHECK_ENFORCE=true
-  # - This job becomes blocking on main (continue-on-error is NOT set)
-  schema-parity-check-enforced:
-    if: ${{ github.ref == 'refs/heads/main' && vars.SCHEMA_CHECK_ENFORCE == 'true' }}
-    runs-on: ubuntu-latest
-
-    steps:
-      - name: Checkout code
-        uses: actions/checkout@v3
-
-      - name: Set up Python
-        uses: actions/setup-python@v4
-        with:
-          python-version: '3.11'
-
-      - name: Run schema parity check (blocking, secrets present)
-        if: ${{ secrets.SUPABASE_URL != '' && secrets.SUPABASE_SERVICE_KEY != '' }}
-        working-directory: ./backend
-        env:
-          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
-          SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_KEY }}
-        run: python tools/schema_check.py --pretty --output schema-check.json
-
-      - name: Skip enforced schema check (missing secrets)
-        if: ${{ secrets.SUPABASE_URL == '' || secrets.SUPABASE_SERVICE_KEY == '' }}
-        run: |
-          echo "schema-parity-check-enforced skipped: missing SUPABASE_URL or SUPABASE_SERVICE_KEY"
-
-      - name: Upload schema report artifact
-        if: always()
-        uses: actions/upload-artifact@v4
-        with:
-          name: schema-check-report-enforced
-          path: backend/schema-check.json
           if-no-files-found: warn

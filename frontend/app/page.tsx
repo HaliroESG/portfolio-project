@@ -48,6 +48,7 @@ export default function PortfolioDashboard() {
     [portfolioBundle]
   )
   const lastSync = portfolioBundle?.lastSync ?? ''
+  const lastSyncIso = portfolioBundle?.lastSyncIso ?? null
   const effectivePortfolioId =
     selectedPortfolioId !== 'ALL' && assetsByPortfolio[selectedPortfolioId] ? selectedPortfolioId : 'ALL'
   const assets = useMemo(() => {
@@ -97,7 +98,7 @@ export default function PortfolioDashboard() {
     <div className="flex h-screen bg-slate-100 dark:bg-[#080A0F] text-slate-950 dark:text-gray-300 transition-colors duration-500">
       <Sidebar />
       <div className="flex-1 flex flex-col min-w-0">
-        <Header lastSync={lastSync} coveragePct={coveragePct} />
+        <Header lastSync={lastSync} lastSyncIso={lastSyncIso} coveragePct={coveragePct} />
         <HotNewsTickerTape />
         <div className="px-6 mt-3"><DataHealthPanel /></div>
         <MacroStrip />

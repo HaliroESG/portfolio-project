@@ -1,7 +1,7 @@
 import React from 'react'
 import { cn } from '../lib/utils'
 
-export type DataState = 'LOADING' | 'LIVE' | 'STALE' | 'NO_DATA'
+export type DataState = 'LOADING' | 'LIVE' | 'STALE' | 'NO_DATA' | 'ERROR'
 
 interface DataStateBadgeProps {
   state: DataState
@@ -12,6 +12,8 @@ export function DataStateBadge({ state, label }: DataStateBadgeProps) {
   const tone =
     state === 'LIVE'
       ? 'bg-green-100 text-green-700 border-green-300 dark:bg-green-900/40 dark:text-green-300'
+      : state === 'ERROR'
+        ? 'bg-red-100 text-red-700 border-red-300 dark:bg-red-900/40 dark:text-red-300'
       : state === 'STALE'
         ? 'bg-amber-100 text-amber-700 border-amber-300 dark:bg-amber-900/40 dark:text-amber-300'
         : state === 'NO_DATA'

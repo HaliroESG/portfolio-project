@@ -105,6 +105,34 @@ async function marketWatchCheck() {
   }
 }
 
+async function tridentLatestCheck() {
+  const check = await q('trident_screener_latest', () =>
+    supabase
+      .from('trident_screener_latest')
+      .select('instrument_key,ticker,score,confidence,overall_state,latest_roic,latest_net_debt_to_ebitda,updated_at', { count: 'exact' })
+      .limit(5)
+  )
+
+  if (check.ok && check.row_count === 0) {
+    if (process.env.REQUIRE_TRIDENT_ROWS === 'true') {
+      return {
+        ...check,
+        ok: false,
+        status: 'FAIL',
+        error: 'Trident is enabled but trident_screener_latest returned zero rows.',
+      }
+    }
+
+    return {
+      ...check,
+      feature_state: 'UNCONFIGURED_OR_EMPTY',
+      warning: 'Trident schema is readable but no provider rows were returned.',
+    }
+  }
+
+  return check
+}
+
 const checks = await Promise.all([
   marketWatchCheck(),
   q('currencies', () => supabase.from('currencies').select('id,symbol,rate_to_eur,last_update', { count: 'exact' }).limit(5)),
@@ -112,8 +140,14 @@ const checks = await Promise.all([
   q('news_feed', () => supabase.from('news_feed').select('id,title,impact_score,published_at,ticker', { count: 'exact' }).limit(5)),
   q('macro_indicators', () => supabase.from('macro_indicators').select('id,name,value,last_update', { count: 'exact' }).limit(5)),
   q('etl_runs', () => supabase.from('etl_runs').select('job_name,status,started_at,finished_at,duration_sec', { count: 'exact' }).order('started_at', { ascending: false }).limit(5)),
-  q('trident_screener_latest', () => supabase.from('trident_screener_latest').select('instrument_key,ticker,score,confidence,overall_state,latest_roic,latest_net_debt_to_ebitda,updated_at', { count: 'exact' }).limit(5)),
+  tridentLatestCheck(),
   q('trident_criterion_results', () => supabase.from('trident_criterion_results').select('instrument_key,horizon_years,criterion_key,category,status,actual,threshold', { count: 'exact' }).limit(5)),
+  q('historical_prices', () => supabase.from('historical_prices').select('ticker,date,adj_close,currency,source,updated_at', { count: 'exact' }).limit(5)),
+  q('historical_price_coverage', () => supabase.from('historical_price_coverage').select('ticker,requested_start_date,requested_end_date,earliest_date,coverage_pct,used_proxy,updated_at', { count: 'exact' }).limit(5)),
+  q('backtest_runs', () => supabase.from('backtest_runs').select('id,name,created_at,base_currency,start_date,end_date,start_date_effective,end_date_effective,data_mode', { count: 'exact' }).order('created_at', { ascending: false }).limit(5)),
+  q('backtest_portfolios', () => supabase.from('backtest_portfolios').select('run_id,portfolio_key,portfolio_id,preset_key,label,role,start_date_effective', { count: 'exact' }).limit(5)),
+  q('backtest_results', () => supabase.from('backtest_results').select('run_id,portfolio_key,date,nav,drawdown,returns_daily', { count: 'exact' }).limit(5)),
+  q('backtest_kpis', () => supabase.from('backtest_kpis').select('run_id,portfolio_key,cagr,vol,sharpe,sortino,max_drawdown,calmar,worst_year,best_year', { count: 'exact' }).limit(5)),
 ])
 
 const hasFail = checks.some((c) => c.status === 'FAIL')

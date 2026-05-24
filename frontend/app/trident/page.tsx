@@ -14,6 +14,7 @@ import {
 } from 'lucide-react'
 import { Header } from '../../components/Header'
 import { Sidebar } from '../../components/Sidebar'
+import { EmptyState } from '../../components/EmptyState'
 import { supabase } from '../../lib/supabase'
 import { loadTridentBundle } from '../../lib/tridentData'
 import { swrOptions, SWR_REFRESH } from '../../lib/swrConfig'
@@ -180,12 +181,13 @@ export default function TridentPage() {
   const failCount = rows.filter((row) => row.overall_state === 'FAIL').length
   const partialCount = rows.filter((row) => row.overall_state === 'PARTIAL').length
   const lastSync = lastSyncLabel(data?.lastUpdateIso)
+  const sourceCounts = data?.sourceCounts
 
   return (
     <div className="flex h-screen bg-slate-100 dark:bg-[#080A0F] text-slate-950 dark:text-gray-200 transition-colors duration-500">
       <Sidebar />
       <div className="flex-1 min-w-0 flex flex-col">
-        <Header lastSync={lastSync} coveragePct={rows.length > 0 ? 100 : null} />
+        <Header lastSync={lastSync} lastSyncIso={data?.lastUpdateIso ?? null} coveragePct={rows.length > 0 ? 100 : null} />
         <main className="flex-1 min-h-0 p-5 flex flex-col gap-4 overflow-hidden">
           <section className="flex items-center justify-between gap-4">
             <div>
@@ -197,6 +199,11 @@ export default function TridentPage() {
                 <span>{passCount} pass</span>
                 <span>{failCount} fail</span>
                 <span>{partialCount} partial</span>
+                {sourceCounts && (
+                  <span>
+                    source {sourceCounts.universe} universe / {sourceCounts.financials} financial rows
+                  </span>
+                )}
               </div>
             </div>
 
@@ -262,17 +269,35 @@ export default function TridentPage() {
           </section>
 
           {error ? (
-            <div className="flex flex-1 items-center justify-center rounded-lg border border-red-200 bg-red-50 text-sm font-bold text-red-700 dark:border-red-900/60 dark:bg-red-950/20 dark:text-red-300">
-              Trident tables are unavailable or unreadable. Apply the Supabase migration before using this screen.
-            </div>
+            <EmptyState
+              tone="error"
+              className="flex-1"
+              title="Trident schema unreadable"
+              message="The Trident tables or view are unavailable to the frontend. Apply the Supabase migration and verify anon SELECT grants before using this screen."
+            />
           ) : isLoading ? (
-            <div className="flex flex-1 items-center justify-center rounded-lg border border-slate-200 bg-white text-sm font-mono text-slate-500 dark:border-white/10 dark:bg-[#0D1117] dark:text-gray-400">
-              Loading Trident screener...
-            </div>
+            <EmptyState tone="loading" className="flex-1" title="Loading Trident screener" message="Reading backend-computed Trident rows from Supabase." />
+          ) : rows.length === 0 && sourceCounts?.universe === 0 ? (
+            <EmptyState
+              tone="warning"
+              className="flex-1"
+              title="Trident provider not configured"
+              message="The Trident schema is available, but the equity universe is empty. Configure TRIDENT_UNIVERSE_CSV and TRIDENT_FINANCIALS_CSV, then run the backend Trident sync."
+            />
+          ) : rows.length === 0 && sourceCounts && sourceCounts.universe > 0 && sourceCounts.results === 0 ? (
+            <EmptyState
+              tone="warning"
+              className="flex-1"
+              title="No Trident results computed"
+              message="The equity universe exists, but no result rows were written. Run the backend Trident computation and verify its etl_runs status."
+            />
           ) : filteredRows.length === 0 ? (
-            <div className="flex flex-1 items-center justify-center rounded-lg border border-slate-200 bg-white text-sm font-bold text-slate-500 dark:border-white/10 dark:bg-[#0D1117] dark:text-gray-400">
-              No Trident rows match the current filters.
-            </div>
+            <EmptyState
+              tone="neutral"
+              className="flex-1"
+              title="No rows match these filters"
+              message="The screener has backend-computed rows, but the current search, state, score, or market filters exclude all of them."
+            />
           ) : (
             <section className="grid flex-1 min-h-0 grid-cols-[minmax(640px,1fr)_420px] gap-4 overflow-hidden">
               <div className="min-h-0 overflow-hidden rounded-lg border border-slate-200 bg-white dark:border-white/10 dark:bg-[#0D1117]">
