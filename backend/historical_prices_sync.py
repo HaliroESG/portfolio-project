@@ -249,7 +249,7 @@ def convert_prices_to_eur(
     if fx_series is None or fx_series.empty:
         return None
     fx_aligned = fx_series.reindex(prices.index, method="ffill")
-    fx_aligned = fx_aligned.fillna(method="bfill")
+    fx_aligned = fx_aligned.bfill()
     fx_aligned = fx_aligned.replace([np.inf, -np.inf], np.nan)
     fx_aligned = fx_aligned.dropna()
     if fx_aligned.empty:
