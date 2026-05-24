@@ -119,7 +119,10 @@ try {
     'frontend.trident_regression_chart_present',
     hasAll(tridentPage, [
       "import { TridentRegressionChart } from '../../components/TridentRegressionChart'",
-      '<TridentRegressionChart ticker={selectedRow.ticker} assetCurrency={selectedRow.currency} />',
+      '<TridentRegressionChart',
+      'ticker={selectedRow.ticker}',
+      'instrumentKey={selectedRow.instrument_key}',
+      'assetCurrency={selectedRow.currency}',
     ]),
     'Trident selected-row panel should render the regression price chart.'
   )
@@ -148,6 +151,7 @@ try {
       'Local unavailable',
       'Short history',
       'Insufficient history',
+      'price history not backfilled or unavailable',
       'computeRegressionChartModel(displayPoints, scaleMode)',
     ]) && hasAll(regressionChart, [
       'computeRegressionChartModel',

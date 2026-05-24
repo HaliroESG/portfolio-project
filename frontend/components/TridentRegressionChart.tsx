@@ -222,9 +222,11 @@ function buildRegressionRenderChart(
 
 export function TridentRegressionChart({
   ticker,
+  instrumentKey,
   assetCurrency,
 }: {
   ticker: string
+  instrumentKey?: string | null
   assetCurrency: string | null
 }) {
   const [horizon, setHorizon] = useState<PriceHistoryHorizon>('MAX')
@@ -290,6 +292,11 @@ export function TridentRegressionChart({
   )
   const sources = Array.from(new Set(displayPoints.map((point) => point.source).filter(Boolean)))
   const sourceLabel = sources.length > 1 ? `${sources[0]} +${sources.length - 1}` : sources[0] ?? 'unknown'
+  const providerSymbol = useMemo(() => {
+    const rawProviderSymbol = instrumentKey?.includes(':') ? instrumentKey.split(':').slice(1).join(':') : null
+    const normalized = rawProviderSymbol?.trim().toUpperCase()
+    return normalized && normalized !== ticker.toUpperCase() ? normalized : ticker
+  }, [instrumentKey, ticker])
   const renderRegressionSvg = (renderChart: RegressionRenderChart, className: string, idSuffix: string, density: 'inline' | 'fullscreen') => {
     if (!model) return null
     const gradientId = `tridentRegressionBand-${safeId(ticker)}-${idSuffix}`
@@ -509,7 +516,7 @@ export function TridentRegressionChart({
             <AlertTriangle className="h-4 w-4 text-amber-600 dark:text-amber-400" />
             <div className="text-xs font-black uppercase text-amber-800 dark:text-amber-300">No price history</div>
             <div className="text-[10px] font-mono text-amber-700/80 dark:text-amber-300/80">
-              {ticker} has no usable {effectiveMode === 'LOCAL' ? 'local' : 'EUR'} series.
+              {ticker} / {providerSymbol}: price history not backfilled or unavailable.
             </div>
           </div>
         )}

@@ -524,7 +524,11 @@ export default function TridentPage() {
                         </div>
                       )}
 
-                      <TridentRegressionChart ticker={selectedRow.ticker} assetCurrency={selectedRow.currency} />
+                      <TridentRegressionChart
+                        ticker={selectedRow.ticker}
+                        instrumentKey={selectedRow.instrument_key}
+                        assetCurrency={selectedRow.currency}
+                      />
                     </div>
 
                     <div className="border-b border-slate-200 p-3 dark:border-white/10">
