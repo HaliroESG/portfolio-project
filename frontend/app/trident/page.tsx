@@ -182,6 +182,7 @@ export default function TridentPage() {
   const partialCount = rows.filter((row) => row.overall_state === 'PARTIAL').length
   const lastSync = lastSyncLabel(data?.lastUpdateIso)
   const sourceCounts = data?.sourceCounts
+  const hasUniverseOnlyRows = rows.length > 0 && sourceCounts?.financials === 0
 
   return (
     <div className="flex h-screen bg-slate-100 dark:bg-[#080A0F] text-slate-950 dark:text-gray-200 transition-colors duration-500">
@@ -214,6 +215,11 @@ export default function TridentPage() {
               <span className="rounded border border-amber-300 bg-amber-50 px-3 py-1.5 text-amber-700 dark:border-amber-800 dark:bg-amber-950/30 dark:text-amber-300">
                 Missing != Fail
               </span>
+              {hasUniverseOnlyRows && (
+                <span className="rounded border border-slate-300 bg-slate-50 px-3 py-1.5 text-slate-600 dark:border-white/10 dark:bg-white/5 dark:text-gray-300">
+                  Universe only
+                </span>
+              )}
             </div>
           </section>
 
@@ -267,6 +273,12 @@ export default function TridentPage() {
               </select>
             </div>
           </section>
+
+          {hasUniverseOnlyRows && (
+            <div className="rounded-lg border border-amber-300 bg-amber-50 px-3 py-2 text-xs font-semibold text-amber-800 dark:border-amber-900/60 dark:bg-amber-950/20 dark:text-amber-300">
+              Trident is populated from portfolio positions, but annual financial statements are not configured. Rows are marked NO_DATA until a CSV or licensed financial provider is connected.
+            </div>
+          )}
 
           {error ? (
             <EmptyState

@@ -161,7 +161,7 @@ jobs:
         env:
           SUPABASE_KEY: ${{ secrets.SUPABASE_SERVICE_KEY }}
         run: |
-          if [ -z "$TRIDENT_UNIVERSE_CSV" ] || [ -z "$TRIDENT_FINANCIALS_CSV" ]; then
+          if [ "$TRIDENT_PROVIDER" = "csv" ] && { [ -z "$TRIDENT_UNIVERSE_CSV" ] || [ -z "$TRIDENT_FINANCIALS_CSV" ]; }; then
             echo "::error::TRIDENT_UNIVERSE_CSV and TRIDENT_FINANCIALS_CSV repository variables are required for CSV provider."
             exit 2
           fi

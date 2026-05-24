@@ -1,4 +1,32 @@
-from trident_screener import FinancialRecord, compute_trident_for_instrument
+from trident_screener import (
+    FinancialRecord,
+    PortfolioSeedDataProvider,
+    compute_trident_for_instrument,
+)
+
+
+class _FakeResponse:
+    def __init__(self, data):
+        self.data = data
+
+
+class _FakeTable:
+    def __init__(self, rows):
+        self.rows = rows
+
+    def select(self, *_args, **_kwargs):
+        return self
+
+    def execute(self):
+        return _FakeResponse(self.rows)
+
+
+class _FakeSupabase:
+    def __init__(self, tables):
+        self.tables = tables
+
+    def table(self, name):
+        return _FakeTable(self.tables.get(name, []))
 
 
 def build_records(
@@ -71,6 +99,62 @@ def test_partial_data_keeps_missing_visible_without_frontend_guessing():
     assert result.result_row["confidence"] < 100
     assert result.result_row["horizons"]["3"]["status"] == "missing"
     assert criterion_rows(result, 3, "revenue_cagr")[0]["status"] == "missing"
+
+
+def test_empty_financial_history_keeps_no_data_explicit():
+    result = compute_trident_for_instrument("portfolio_seed:aapl", [])
+
+    assert result.result_row["overall_state"] == "NO_DATA"
+    assert result.result_row["score"] == 0
+    assert result.result_row["confidence"] == 0
+    assert result.result_row["latest_fiscal_year"] is None
+    assert criterion_rows(result, 1, "revenue_cagr")[0]["status"] == "missing"
+
+
+def test_portfolio_seed_provider_builds_equity_universe_without_financials():
+    supabase = _FakeSupabase(
+        {
+            "portfolio_positions": [
+                {
+                    "ticker": "CW8.PA",
+                    "name": "MSCI World ETF",
+                    "instrument_type": "ETF",
+                    "currency": "EUR",
+                    "updated_at": "2026-05-24T10:00:00+00:00",
+                },
+                {
+                    "ticker": "AAPL",
+                    "name": "Apple older",
+                    "instrument_type": "STOCK",
+                    "currency": "USD",
+                    "updated_at": "2026-01-01T10:00:00+00:00",
+                },
+                {
+                    "ticker": "AAPL",
+                    "name": "Apple",
+                    "instrument_type": "ACTION",
+                    "currency": "USD",
+                    "updated_at": "2026-05-24T10:00:00+00:00",
+                },
+                {
+                    "ticker": "AI.PA",
+                    "name": "Air Liquide",
+                    "instrument_type": "ACTION",
+                    "currency": "EUR",
+                    "updated_at": "2026-05-24T10:00:00+00:00",
+                },
+            ],
+            "market_watch": [],
+        }
+    )
+    provider = PortfolioSeedDataProvider(supabase)
+
+    universe = provider.fetch_universe()
+
+    assert [record.ticker for record in universe] == ["AAPL", "AI.PA"]
+    assert universe[0].country == "US"
+    assert universe[1].exchange == "Euronext Paris"
+    assert provider.fetch_financials(universe) == []
 
 
 def test_roic_failure_is_eliminating():

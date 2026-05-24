@@ -585,13 +585,26 @@ export function DataHealthPanel() {
         .sort((left, right) => new Date(right.started_at).getTime() - new Date(left.started_at).getTime())[0] ?? null,
     [etlJobViews]
   )
+  const collapsedSummary = useMemo(() => {
+    if (items.length === 0 && etlJobViews.length === 0) return 'Loading health summary. Details stay collapsed by default.'
+    const issueCount = staleCount + missingCount + criticalEtlCount
+    if (issueCount === 0) return 'Summary only. Expand for source freshness, quality signals, and ETL runs.'
+    return `Summary only. ${issueCount} issue${issueCount > 1 ? 's' : ''} visible in the detailed drilldown.`
+  }, [criticalEtlCount, etlJobViews.length, items.length, missingCount, staleCount])
 
   return (
     <div className="w-full rounded-xl border border-slate-200 bg-white/80 p-3 shadow-sm dark:border-white/10 dark:bg-[#0D1117]/70">
       <div className="flex flex-wrap items-center justify-between gap-3">
-        <div className="flex items-center gap-2">
-          <Database className="w-4 h-4 text-blue-600 dark:text-[#00FF88]" />
-          <h3 className="text-[11px] font-black uppercase tracking-[0.18em] text-slate-500 dark:text-gray-400">Data Health</h3>
+        <div>
+          <div className="flex items-center gap-2">
+            <Database className="w-4 h-4 text-blue-600 dark:text-[#00FF88]" />
+            <h3 className="text-[11px] font-black uppercase tracking-[0.18em] text-slate-500 dark:text-gray-400">Data Health</h3>
+          </div>
+          {!expanded && (
+            <p className="mt-1 text-[10px] font-mono text-slate-500 dark:text-gray-500">
+              {collapsedSummary}
+            </p>
+          )}
         </div>
         <div className="flex flex-wrap items-center gap-2">
           <span className="inline-flex items-center gap-1 rounded border border-slate-200 px-2 py-1 text-[10px] font-black uppercase tracking-wider text-slate-600 dark:border-white/10 dark:text-gray-300">
@@ -616,9 +629,10 @@ export function DataHealthPanel() {
           <button
             type="button"
             onClick={() => setExpanded((value) => !value)}
+            aria-expanded={expanded}
             className="inline-flex items-center gap-1 rounded border border-slate-200 bg-slate-50 px-2 py-1 text-[10px] font-black uppercase tracking-wider text-slate-600 transition hover:bg-slate-100 dark:border-white/10 dark:bg-white/5 dark:text-gray-300 dark:hover:bg-white/10"
           >
-            Details
+            {expanded ? 'Hide details' : 'Show details'}
             <ChevronDown className={cn('h-3 w-3 transition-transform', expanded && 'rotate-180')} />
           </button>
         </div>

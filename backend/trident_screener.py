@@ -15,6 +15,27 @@ from etl_stats import build_etl_stats
 
 HORIZONS = (1, 3, 5, 10)
 TRIDENT_JOB_NAME = "trident_screener_sync"
+PORTFOLIO_SEED_EQUITY_TYPES = {"ACTION", "COMMON_STOCK", "EQUITY", "SHARE", "STOCK"}
+PORTFOLIO_SEED_EXCLUDED_NAME_MARKERS = (
+    " ETF",
+    "ETC",
+    "ISHARES",
+    "LYXOR",
+    "MSCI",
+    "S&P",
+    "GOLD",
+    "OVERNIGHT",
+)
+TICKER_MARKET_HINTS = {
+    ".AS": ("Euronext Amsterdam", "NL"),
+    ".BR": ("Euronext Brussels", "BE"),
+    ".DE": ("Xetra", "DE"),
+    ".L": ("London Stock Exchange", "GB"),
+    ".MC": ("Bolsa de Madrid", "ES"),
+    ".MI": ("Borsa Italiana", "IT"),
+    ".PA": ("Euronext Paris", "FR"),
+    ".SW": ("SIX Swiss Exchange", "CH"),
+}
 
 
 @dataclass(frozen=True)
@@ -273,6 +294,124 @@ class CsvStockDataProvider:
                     )
                 )
         return records
+
+
+def row_timestamp_score(row: dict[str, Any]) -> float:
+    text = clean_string(row.get("updated_at"))
+    if not text:
+        return 0.0
+    try:
+        return datetime.fromisoformat(text.replace("Z", "+00:00")).timestamp()
+    except ValueError:
+        return 0.0
+
+
+def infer_market_from_ticker(
+    ticker: str,
+    currency: str | None = None,
+) -> tuple[str | None, str | None]:
+    upper = ticker.upper()
+    for suffix, market in TICKER_MARKET_HINTS.items():
+        if upper.endswith(suffix):
+            return market
+    if "." not in upper and currency == "USD":
+        return "US listed", "US"
+    return None, None
+
+
+def is_portfolio_seed_equity(row: dict[str, Any], name: str | None) -> bool:
+    instrument_type = clean_string(row.get("instrument_type"))
+    if instrument_type:
+        normalized_type = instrument_type.upper().replace(" ", "_")
+        if normalized_type not in PORTFOLIO_SEED_EQUITY_TYPES:
+            return False
+
+    label = f" {name or ''} ".upper()
+    if any(marker in label for marker in PORTFOLIO_SEED_EXCLUDED_NAME_MARKERS):
+        return False
+    return True
+
+
+class PortfolioSeedDataProvider:
+    provider_name = "portfolio_seed"
+    source_license_note = (
+        "Universe seeded from Supabase portfolio_positions; annual financial "
+        "statements are not configured, so NO_DATA rows are explicit."
+    )
+
+    def __init__(self, supabase: Any, source_license_note: str | None = None) -> None:
+        self.supabase = supabase
+        if source_license_note:
+            self.source_license_note = source_license_note
+
+    def _fetch_rows(self, table_name: str, selector: str) -> list[dict[str, Any]]:
+        response = self.supabase.table(table_name).select(selector).execute()
+        data = getattr(response, "data", None) or []
+        return [row for row in data if isinstance(row, dict)]
+
+    def fetch_universe(self) -> list[UniverseRecord]:
+        portfolio_rows = self._fetch_rows(
+            "portfolio_positions",
+            "ticker,name,instrument_type,currency,updated_at",
+        )
+        market_rows = self._fetch_rows(
+            "market_watch",
+            "ticker,name,currency,updated_at",
+        )
+        market_by_ticker = {
+            str(row["ticker"]).upper(): row
+            for row in market_rows
+            if clean_string(row.get("ticker"))
+        }
+
+        records_by_ticker: dict[str, UniverseRecord] = {}
+        sorted_rows = sorted(portfolio_rows, key=row_timestamp_score, reverse=True)
+        for row in sorted_rows:
+            ticker = clean_string(row.get("ticker"))
+            if not ticker:
+                continue
+            ticker = ticker.upper()
+            if ticker in records_by_ticker:
+                continue
+
+            market_row = market_by_ticker.get(ticker, {})
+            name = clean_string(row.get("name")) or clean_string(market_row.get("name"))
+            if not is_portfolio_seed_equity(row, name):
+                continue
+
+            currency = normalize_currency(row.get("currency")) or normalize_currency(
+                market_row.get("currency")
+            )
+            exchange, country = infer_market_from_ticker(ticker, currency)
+            instrument_key = make_instrument_key(self.provider_name, ticker).lower()
+            records_by_ticker[ticker] = UniverseRecord(
+                instrument_key=instrument_key,
+                ticker=ticker,
+                name=name,
+                exchange=exchange,
+                country=country,
+                sector=None,
+                industry=None,
+                currency=currency,
+                isin=None,
+                provider=self.provider_name,
+                provider_symbol=ticker,
+                source_license_note=self.source_license_note,
+                is_active=True,
+            )
+
+        if not records_by_ticker:
+            raise RuntimeError(
+                "portfolio_seed provider found no eligible equity rows in portfolio_positions."
+            )
+
+        return sorted(
+            records_by_ticker.values(),
+            key=lambda record: record.ticker,
+        )
+
+    def fetch_financials(self, universe: list[UniverseRecord]) -> list[FinancialRecord]:
+        return []
 
 
 def annualized_growth(start_value: float | None, end_value: float | None, years: int) -> float | None:
@@ -1056,11 +1195,18 @@ def finish_etl_run(
 
 def build_provider_from_args(args: argparse.Namespace) -> StockDataProvider:
     provider_name = (args.provider or os.environ.get("TRIDENT_PROVIDER") or "csv").lower()
+    if provider_name == "portfolio_seed":
+        return PortfolioSeedDataProvider(
+            get_supabase_client(),
+            source_license_note=os.environ.get("TRIDENT_SOURCE_LICENSE_NOTE"),
+        )
+
     if provider_name != "csv":
         raise RuntimeError(
             "Aucun provider fiable/licencié n'est configuré dans ce repo pour "
-            f"TRIDENT_PROVIDER={provider_name}. Utiliser provider=csv ou ajouter "
-            "une implémentation provider explicite avec ses droits d'usage."
+            f"TRIDENT_PROVIDER={provider_name}. Utiliser provider=csv, "
+            "portfolio_seed, ou ajouter une implémentation provider explicite "
+            "avec ses droits d'usage."
         )
 
     universe_csv = args.universe_csv or os.environ.get("TRIDENT_UNIVERSE_CSV")
