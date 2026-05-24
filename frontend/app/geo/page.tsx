@@ -2,8 +2,7 @@
 
 import React, { useEffect, useMemo, useState } from 'react'
 import useSWR from 'swr'
-import { Sidebar } from '../../components/Sidebar'
-import { Header } from '../../components/Header'
+import { AppShell } from '../../components/AppShell'
 import { GeographicMap } from '../../components/GeographicMap'
 import { supabase } from '../../lib/supabase'
 import { Globe, Loader2 } from 'lucide-react'
@@ -65,17 +64,14 @@ export default function GeoPage() {
   const geoState = stateFromList({ loading, count: regions.length })
 
   return (
-    <div className="flex h-screen bg-slate-100 dark:bg-[#080A0F] text-slate-900 transition-colors duration-500">
-      <Sidebar />
-      <div className="flex-1 flex flex-col min-w-0">
-        <Header lastSync={lastSync} lastSyncIso={lastSyncIso} />
-        <main className="flex-1 p-8 flex flex-col gap-8">
-          <div className="flex justify-between items-center gap-4">
-            <div><h1 className="text-4xl font-black uppercase tracking-tighter text-slate-950 dark:text-white">
+    <AppShell lastSync={lastSync} lastSyncIso={lastSyncIso}>
+        <main className="flex flex-col gap-5 p-4 sm:p-6 lg:gap-8 lg:p-8">
+          <div className="flex flex-wrap items-center justify-between gap-4">
+            <div><h1 className="text-2xl font-black uppercase tracking-tighter text-slate-950 dark:text-white sm:text-4xl">
               Global <span className="text-[#00FF88]">Exposure</span>
             </h1><p className="text-xs text-slate-500 dark:text-gray-400 mt-1">{dataStateLabel(geoState)}</p></div>
 
-            <div className="flex items-center gap-3">
+            <div className="flex flex-wrap items-center gap-3">
               <div className="flex items-center gap-2 rounded-lg bg-slate-200/70 dark:bg-white/10 px-2 py-1">
                 <span className="text-[9px] font-black uppercase tracking-wider text-slate-500 dark:text-gray-400">Portfolio</span>
                 <select
@@ -117,8 +113,8 @@ export default function GeoPage() {
             </div>
           </div>
 
-          <div className="flex-1 grid grid-cols-12 gap-8">
-            <div className="col-span-9 bg-white dark:bg-black/20 rounded-3xl border-2 border-slate-200 dark:border-white/5 shadow-2xl dark:shadow-inner p-4 relative overflow-hidden">
+          <div className="grid grid-cols-1 gap-5 xl:grid-cols-12 xl:gap-8">
+            <div className="min-h-[420px] rounded-2xl border border-slate-200 bg-white p-3 shadow-xl dark:border-white/5 dark:bg-black/20 dark:shadow-inner sm:min-h-[560px] lg:rounded-3xl lg:border-2 lg:p-4 xl:col-span-9">
               <div className="w-full h-full rounded-2xl bg-white dark:bg-transparent transition-colors scale-100">
                 {loading ? (
                   <div className="flex items-center justify-center h-full">
@@ -142,7 +138,7 @@ export default function GeoPage() {
               </div>
             </div>
 
-            <div className="col-span-3 space-y-6">
+            <div className="space-y-6 xl:col-span-3">
               <div className="p-6 bg-white dark:bg-[#0D1117]/50 rounded-3xl border-2 border-slate-200 dark:border-white/5 shadow-xl">
                 <h3 className="text-sm font-black uppercase mb-6 text-slate-950 dark:text-white">Regional Performance</h3>
                 <div className="space-y-4">
@@ -199,7 +195,6 @@ export default function GeoPage() {
             </div>
           </div>
         </main>
-      </div>
-    </div>
+    </AppShell>
   )
 }

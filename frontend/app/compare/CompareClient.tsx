@@ -1,10 +1,9 @@
 "use client"
 
 import React, { useEffect, useMemo, useRef, useState } from 'react'
-import { usePathname, useRouter, useSearchParams } from 'next/navigation'
+import { usePathname, useSearchParams } from 'next/navigation'
 import { supabase } from '../../lib/supabase'
-import { Sidebar } from '../../components/Sidebar'
-import { Header } from '../../components/Header'
+import { AppShell } from '../../components/AppShell'
 import { BacktestChart, LineSeries } from '../../components/BacktestChart'
 import { DrawdownChart } from '../../components/DrawdownChart'
 import { KpiComparisonTable } from '../../components/KpiComparisonTable'
@@ -189,7 +188,6 @@ function downsampleSeries(dates: string[], series: LineSeries[], maxPoints = 120
 }
 
 export default function CompareClient() {
-  const router = useRouter()
   const pathname = usePathname()
   const searchParams = useSearchParams()
   const skipUrlSync = useRef(false)
@@ -455,15 +453,16 @@ export default function CompareClient() {
     selection.portfolios.forEach((item) => {
       params.append('p', `${item.role}:${item.key}`)
     })
-    router.replace(`${pathname}?${params.toString()}`, { scroll: false })
-  }, [selectedRunId, selectedKeys, portfolios, router, pathname, searchParams])
+    const nextSearch = params.toString()
+    const currentSearch = window.location.search.replace(/^\?/, '')
+    if (nextSearch !== currentSearch) {
+      window.history.replaceState(null, '', `${pathname}?${nextSearch}`)
+    }
+  }, [selectedRunId, selectedKeys, portfolios, pathname, searchParams])
 
   return (
-    <div className="flex h-screen bg-slate-50 dark:bg-[#080A0F] transition-colors duration-500">
-      <Sidebar />
-      <div className="flex-1 flex flex-col">
-        <Header lastSync={lastSync} lastSyncIso={lastSyncIso} />
-        <main className="flex-1 p-10 overflow-y-auto">
+    <AppShell lastSync={lastSync} lastSyncIso={lastSyncIso} className="bg-slate-50">
+        <main className="p-4 sm:p-6 lg:p-10">
           <div className="max-w-6xl mx-auto space-y-6">
             <div className="flex items-center justify-between gap-4">
               <div>
@@ -573,7 +572,6 @@ export default function CompareClient() {
             )}
           </div>
         </main>
-      </div>
-    </div>
+    </AppShell>
   )
 }

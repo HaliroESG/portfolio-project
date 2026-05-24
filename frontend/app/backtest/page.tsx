@@ -2,8 +2,7 @@
 
 import React, { useEffect, useMemo, useState } from 'react'
 import { supabase } from '../../lib/supabase'
-import { Sidebar } from '../../components/Sidebar'
-import { Header } from '../../components/Header'
+import { AppShell } from '../../components/AppShell'
 import { BacktestChart, LineSeries } from '../../components/BacktestChart'
 import { DrawdownChart } from '../../components/DrawdownChart'
 import { KpiComparisonTable } from '../../components/KpiComparisonTable'
@@ -331,11 +330,8 @@ export default function BacktestPage() {
   const lastSyncIso = selectedRun?.created_at ?? null
 
   return (
-    <div className="flex h-screen bg-slate-50 dark:bg-[#080A0F] transition-colors duration-500">
-      <Sidebar />
-      <div className="flex-1 flex flex-col">
-        <Header lastSync={lastSync} lastSyncIso={lastSyncIso} />
-        <main className="flex-1 p-10 overflow-y-auto">
+    <AppShell lastSync={lastSync} lastSyncIso={lastSyncIso} className="bg-slate-50">
+        <main className="p-4 sm:p-6 lg:p-10">
           <div className="max-w-6xl mx-auto space-y-6">
             <div className="flex items-center justify-between gap-4">
               <div>
@@ -489,7 +485,6 @@ export default function BacktestPage() {
             </div>
           </div>
         </main>
-      </div>
-    </div>
+    </AppShell>
   )
 }

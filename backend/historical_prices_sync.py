@@ -11,6 +11,7 @@ from supabase import create_client
 
 from backtest.presets import get_preset_tickers, get_proxy_map
 from etl_stats import build_etl_stats
+from supabase_key_guard import require_backend_supabase_key
 
 BASE_CURRENCY = "EUR"
 DEFAULT_START_DATE = "1999-01-01"
@@ -63,7 +64,7 @@ def get_env(name: str) -> str:
 
 def get_supabase_client():
     supabase_url = get_env("SUPABASE_URL")
-    supabase_key = get_env("SUPABASE_KEY")
+    supabase_key = require_backend_supabase_key(os.environ)
     return create_client(supabase_url, supabase_key)
 
 

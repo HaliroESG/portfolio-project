@@ -3,7 +3,7 @@
 import { useEffect, useMemo, useState } from 'react'
 import { supabase } from '../lib/supabase'
 import { cn } from '../lib/utils'
-import { Activity, AlertTriangle, ChevronDown, Clock, Database, Minus, TrendingDown, TrendingUp } from 'lucide-react'
+import { Activity, AlertTriangle, ChevronDown, Clock, Database, Minus, TrendingDown, TrendingUp, X } from 'lucide-react'
 import { resolveFreshness } from '../lib/dataFreshness'
 
 interface HealthItem {
@@ -645,8 +645,29 @@ export function DataHealthPanel() {
       )}
 
       {expanded && (
-        <>
-      <div className="mt-3 grid grid-cols-2 md:grid-cols-4 gap-3">
+        <div className="fixed inset-0 z-[80] bg-black/50 p-3 backdrop-blur-sm sm:p-6" role="dialog" aria-modal="true" aria-label="Data health details">
+          <div className="mx-auto flex h-full max-w-6xl flex-col overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-2xl dark:border-white/10 dark:bg-[#080A0F]">
+            <div className="flex items-center justify-between gap-3 border-b border-slate-200 px-4 py-3 dark:border-white/10">
+              <div className="flex min-w-0 items-center gap-2">
+                <Database className="h-4 w-4 shrink-0 text-blue-600 dark:text-[#00FF88]" />
+                <div className="min-w-0">
+                  <div className="text-[11px] font-black uppercase tracking-[0.18em] text-slate-700 dark:text-gray-300">Data Health Details</div>
+                  <div className="truncate text-[10px] font-mono text-slate-500 dark:text-gray-500">
+                    {liveCount}/{items.length || 4} live · {criticalEtlCount} ETL critical
+                  </div>
+                </div>
+              </div>
+              <button
+                type="button"
+                aria-label="Close data health details"
+                onClick={() => setExpanded(false)}
+                className="inline-flex h-8 w-8 shrink-0 items-center justify-center rounded-lg border border-slate-200 bg-slate-50 text-slate-500 transition hover:bg-slate-100 hover:text-slate-900 dark:border-white/10 dark:bg-white/5 dark:text-gray-300 dark:hover:bg-white/10 dark:hover:text-white"
+              >
+                <X className="h-4 w-4" />
+              </button>
+            </div>
+            <div className="min-h-0 flex-1 overflow-auto p-4">
+      <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-4">
         {items.map((item) => (
           <div
             key={item.id}
@@ -819,7 +840,9 @@ export function DataHealthPanel() {
           </div>
         </div>
       )}
-        </>
+            </div>
+          </div>
+        </div>
       )}
     </div>
   )

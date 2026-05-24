@@ -3,16 +3,13 @@
 import React, { useMemo, useState } from 'react'
 import useSWR from 'swr'
 import { supabase } from '../lib/supabase'
-import { Sidebar } from '../components/Sidebar'
-import { Header } from '../components/Header'
+import { AppShell } from '../components/AppShell'
 import { AssetTable } from '../components/AssetTable'
 import { GeographicMap } from '../components/GeographicMap'
-import { CurrencyWidget } from '../components/CurrencyWidget'
 import { MacroStrip } from '../components/MacroStrip'
 import { AssetDetailDrawer } from '../components/AssetDetailDrawer'
 import { HotNewsTickerTape } from '../components/HotNewsTickerTape'
 import { GovernanceWidget } from '../components/GovernanceWidget'
-import { PortfolioTrendPanel } from '../components/PortfolioTrendPanel'
 import { DataHealthPanel } from '../components/DataHealthPanel'
 import { Asset, GeoTimeframe } from '../types'
 import {
@@ -95,19 +92,16 @@ export default function PortfolioDashboard() {
   const dashboardState = stateFromList({ loading: loadingBundle, count: assets.length })
 
   return (
-    <div className="flex h-screen bg-slate-100 dark:bg-[#080A0F] text-slate-950 dark:text-gray-300 transition-colors duration-500">
-      <Sidebar />
-      <div className="flex-1 flex flex-col min-w-0">
-        <Header lastSync={lastSync} lastSyncIso={lastSyncIso} coveragePct={coveragePct} />
+    <AppShell lastSync={lastSync} lastSyncIso={lastSyncIso} coveragePct={coveragePct} contentClassName="flex flex-col">
         <HotNewsTickerTape />
-        <div className="px-6 mt-3"><DataHealthPanel /></div>
+        <div className="px-3 pt-3 sm:px-5 lg:px-6"><DataHealthPanel /></div>
         <MacroStrip />
-        <main className="flex-1 p-6 overflow-hidden flex flex-col gap-6">
-          <div className="flex-1 flex gap-6 min-h-0">
-            <div className="w-[65%] flex flex-col">
-              <div className="flex items-center justify-between mb-2 px-1 gap-3">
+        <main className="flex flex-1 flex-col gap-4 p-3 sm:p-5 lg:gap-6 lg:p-6">
+          <div className="grid flex-1 grid-cols-1 gap-4 lg:grid-cols-[minmax(0,1.75fr)_minmax(320px,1fr)] lg:gap-6">
+            <div className="flex h-[560px] min-h-0 flex-col lg:h-[calc(100vh-380px)] lg:min-h-[360px] lg:max-h-[640px]">
+              <div className="mb-2 flex flex-wrap items-center justify-between gap-3 px-1">
                 <div className="flex items-center gap-2"><h2 className="text-[10px] font-black text-slate-500 uppercase tracking-[0.2em]">Portfolio Matrix</h2><span className="text-[10px] text-slate-400 dark:text-gray-500">{dataStateLabel(dashboardState)}</span></div>
-                <div className="flex items-center gap-3">
+                <div className="flex flex-wrap items-center gap-2 sm:gap-3">
                   <div className="flex items-center gap-2 rounded-lg bg-slate-200/70 dark:bg-white/10 px-2 py-1">
                     <span className="text-[9px] font-black uppercase tracking-wider text-slate-500 dark:text-gray-400">Portfolio</span>
                     <select
@@ -155,7 +149,7 @@ export default function PortfolioDashboard() {
                 </div>
               </div>
 
-              <div className="flex-1 bg-white dark:bg-[#0D1117]/50 rounded-3xl border-2 border-slate-200 dark:border-white/5 shadow-2xl overflow-hidden">
+              <div className="min-h-0 flex-1 overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-xl dark:border-white/5 dark:bg-[#0D1117]/50 lg:rounded-3xl lg:border-2 lg:shadow-2xl">
                 {loadingBundle ? (
                   <div className="h-full w-full flex items-center justify-center text-sm font-mono text-slate-500 dark:text-gray-400">
                     Loading portfolio matrix...
@@ -173,9 +167,9 @@ export default function PortfolioDashboard() {
               </div>
             </div>
 
-            <div className="w-[35%] flex flex-col gap-6">
-              <div className="flex-1 flex flex-col">
-                <div className="flex items-center justify-between mb-2 px-1">
+            <div className="flex flex-col gap-4 lg:gap-6">
+              <div className="flex min-h-[360px] flex-col lg:min-h-[300px]">
+                <div className="mb-2 flex items-center justify-between px-1">
                   <h2 className="text-[10px] font-black text-slate-500 uppercase tracking-[0.2em]">Regional Exposure</h2>
                   <div className="flex items-center gap-1">
                     {(
@@ -201,7 +195,7 @@ export default function PortfolioDashboard() {
                   </div>
                 </div>
 
-                <div className="flex-1 bg-white dark:bg-[#0D1117]/50 rounded-3xl border-2 border-slate-200 dark:border-white/5 shadow-2xl dark:shadow-inner overflow-hidden">
+                <div className="min-h-0 flex-1 overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-xl dark:border-white/5 dark:bg-[#0D1117]/50 dark:shadow-inner lg:rounded-3xl lg:border-2 lg:shadow-2xl">
                   <div className="w-full h-full bg-white dark:bg-transparent rounded-2xl overflow-hidden scale-100">
                     <GeographicMap
                       regions={geoData.regions}
@@ -213,17 +207,12 @@ export default function PortfolioDashboard() {
                 </div>
               </div>
 
-              <PortfolioTrendPanel />
-
               <GovernanceWidget assets={assets} selectedPortfolioId={selectedPortfolioId} />
             </div>
           </div>
-
-          <CurrencyWidget />
         </main>
-      </div>
 
       <AssetDetailDrawer asset={selectedAsset} isOpen={selectedAsset !== null} onClose={() => setSelectedAsset(null)} />
-    </div>
+    </AppShell>
   )
 }

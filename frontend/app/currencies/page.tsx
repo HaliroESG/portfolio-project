@@ -2,8 +2,7 @@
 
 import React, { useMemo } from 'react'
 import useSWR from 'swr'
-import { Sidebar } from '../../components/Sidebar'
-import { Header } from '../../components/Header'
+import { AppShell } from '../../components/AppShell'
 import { supabase } from '../../lib/supabase'
 import { ArrowRightLeft, TrendingUp, TrendingDown } from 'lucide-react'
 import { cn } from '../../lib/utils'
@@ -76,11 +75,8 @@ export default function CurrenciesPage() {
   }, [data])
 
   return (
-    <div className="flex h-screen bg-slate-50 dark:bg-[#080A0F] transition-colors duration-500">
-      <Sidebar />
-      <div className="flex-1 flex flex-col">
-        <Header lastSync={lastSync} lastSyncIso={lastSyncIso} />
-        <main className="flex-1 p-12 overflow-y-auto">
+    <AppShell lastSync={lastSync} lastSyncIso={lastSyncIso} className="bg-slate-50">
+        <main className="p-4 sm:p-6 lg:p-12">
           <div className="max-w-7xl mx-auto space-y-6">
             <div className="flex items-center gap-3">
               <ArrowRightLeft className="text-[#00FF88]" />
@@ -178,7 +174,6 @@ export default function CurrenciesPage() {
             </div>
           </div>
         </main>
-      </div>
-    </div>
+    </AppShell>
   )
 }

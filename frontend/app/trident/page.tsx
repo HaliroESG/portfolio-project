@@ -4,17 +4,18 @@ import React, { useMemo, useState } from 'react'
 import useSWR from 'swr'
 import {
   AlertTriangle,
+  ArrowDown,
+  ArrowUp,
   CheckCircle2,
+  ChevronsUpDown,
   Clock3,
   CircleHelp,
   MinusCircle,
   Search,
   ShieldAlert,
-  SlidersHorizontal,
   XCircle,
 } from 'lucide-react'
-import { Header } from '../../components/Header'
-import { Sidebar } from '../../components/Sidebar'
+import { AppShell } from '../../components/AppShell'
 import { EmptyState } from '../../components/EmptyState'
 import { TridentRegressionChart } from '../../components/TridentRegressionChart'
 import { supabase } from '../../lib/supabase'
@@ -31,7 +32,9 @@ import {
   TridentScreenerRow,
 } from '../../types'
 
-type SortKey = 'score' | 'growth' | 'profitability' | 'roic' | 'debt'
+type SortKey = 'company' | 'market' | 'sector' | 'score' | 'growth' | 'profitability' | 'roic' | 'debt' | 'state'
+type SortDirection = 'asc' | 'desc'
+type SortConfig = { key: SortKey; direction: SortDirection }
 type ScoreFilter = 'ALL' | '80' | '60' | '40'
 type Horizon = 1 | 3 | 5 | 10
 
@@ -43,6 +46,23 @@ const CATEGORIES: Array<{ key: TridentCategory; label: string }> = [
   { key: 'capital', label: 'Capital' },
   { key: 'health', label: 'Health' },
 ]
+const DEFAULT_SORT_DIRECTIONS: Record<SortKey, SortDirection> = {
+  company: 'asc',
+  market: 'asc',
+  sector: 'asc',
+  score: 'desc',
+  growth: 'desc',
+  profitability: 'desc',
+  roic: 'desc',
+  debt: 'asc',
+  state: 'asc',
+}
+const STATE_SORT_RANK: Record<TridentOverallState, number> = {
+  QUALIFIED: 0,
+  WATCHLIST: 1,
+  REJECTED: 2,
+  NO_DATA: 3,
+}
 
 function formatPct(value: number | null | undefined): string {
   if (value === null || value === undefined || Number.isNaN(value)) return '--'
@@ -125,12 +145,100 @@ function criterionBadge(status: TridentCriterionStatus) {
   }
 }
 
-function scoreForSort(row: TridentScreenerRow, sortKey: SortKey): number {
-  if (sortKey === 'growth') return row.growth_score ?? -1
-  if (sortKey === 'profitability') return row.profitability_score ?? -1
-  if (sortKey === 'roic') return row.latest_roic ?? -1
-  if (sortKey === 'debt') return row.latest_net_debt_to_ebitda ?? Number.POSITIVE_INFINITY
-  return row.score ?? -1
+function compareText(left: string | null | undefined, right: string | null | undefined, direction: SortDirection = 'asc'): number {
+  const leftValue = left?.trim() || ''
+  const rightValue = right?.trim() || ''
+  if (!leftValue && !rightValue) return 0
+  if (!leftValue) return 1
+  if (!rightValue) return -1
+  const multiplier = direction === 'asc' ? 1 : -1
+  return leftValue.localeCompare(rightValue, 'en', { sensitivity: 'base' }) * multiplier
+}
+
+function compareNumber(left: number | null | undefined, right: number | null | undefined, direction: SortDirection): number {
+  const leftMissing = left === null || left === undefined || Number.isNaN(left)
+  const rightMissing = right === null || right === undefined || Number.isNaN(right)
+  if (leftMissing && rightMissing) return 0
+  if (leftMissing) return 1
+  if (rightMissing) return -1
+  const multiplier = direction === 'asc' ? 1 : -1
+  return (left - right) * multiplier
+}
+
+function compareTridentRows(left: TridentScreenerRow, right: TridentScreenerRow, sortConfig: SortConfig): number {
+  const direction = sortConfig.direction
+  let result = 0
+
+  if (sortConfig.key === 'company') {
+    result = compareText(left.name ?? left.ticker, right.name ?? right.ticker, direction)
+  }
+  if (sortConfig.key === 'market') {
+    result = compareText(left.country, right.country, direction) || compareText(left.exchange, right.exchange, direction)
+  }
+  if (sortConfig.key === 'sector') {
+    result = compareText(left.sector, right.sector, direction) || compareText(left.industry, right.industry, direction)
+  }
+  if (sortConfig.key === 'score') result = compareNumber(left.score, right.score, direction)
+  if (sortConfig.key === 'growth') result = compareNumber(left.growth_score, right.growth_score, direction)
+  if (sortConfig.key === 'profitability') result = compareNumber(left.profitability_score, right.profitability_score, direction)
+  if (sortConfig.key === 'roic') result = compareNumber(left.latest_roic, right.latest_roic, direction)
+  if (sortConfig.key === 'debt') result = compareNumber(left.latest_net_debt_to_ebitda, right.latest_net_debt_to_ebitda, direction)
+  if (sortConfig.key === 'state') {
+    const leftRank = left.overall_state ? STATE_SORT_RANK[left.overall_state] : 4
+    const rightRank = right.overall_state ? STATE_SORT_RANK[right.overall_state] : 4
+    result = (leftRank - rightRank) * (direction === 'asc' ? 1 : -1)
+  }
+
+  if (result === 0) {
+    result = compareText(left.name ?? left.ticker, right.name ?? right.ticker)
+  }
+
+  return result
+}
+
+function sortIcon(active: boolean, direction: SortDirection) {
+  if (!active) return <ChevronsUpDown className="h-3 w-3 opacity-50" />
+  return direction === 'asc' ? <ArrowUp className="h-3 w-3" /> : <ArrowDown className="h-3 w-3" />
+}
+
+function SortableHeader({
+  label,
+  sortKey,
+  sortConfig,
+  align = 'left',
+  className,
+  onSort,
+}: {
+  label: string
+  sortKey: SortKey
+  sortConfig: SortConfig
+  align?: 'left' | 'right' | 'center'
+  className?: string
+  onSort: (sortKey: SortKey) => void
+}) {
+  const active = sortConfig.key === sortKey
+
+  return (
+    <th
+      aria-sort={active ? (sortConfig.direction === 'asc' ? 'ascending' : 'descending') : 'none'}
+      className={cn('p-0', className)}
+    >
+      <button
+        type="button"
+        onClick={() => onSort(sortKey)}
+        className={cn(
+          'flex w-full items-center gap-1.5 px-3 py-3 transition-colors hover:bg-slate-200/70 dark:hover:bg-white/5',
+          align === 'right' && 'justify-end text-right',
+          align === 'center' && 'justify-center text-center',
+          align === 'left' && 'justify-start text-left',
+          active && 'text-blue-700 dark:text-[#00FF88]'
+        )}
+      >
+        <span>{label}</span>
+        {sortIcon(active, sortConfig.direction)}
+      </button>
+    </th>
+  )
 }
 
 function summaryNumber(row: TridentScreenerRow, key: string): number {
@@ -159,7 +267,7 @@ export default function TridentPage() {
   const [sector, setSector] = useState('ALL')
   const [state, setState] = useState<'ALL' | TridentOverallState>('ALL')
   const [scoreFilter, setScoreFilter] = useState<ScoreFilter>('ALL')
-  const [sortKey, setSortKey] = useState<SortKey>('score')
+  const [sortConfig, setSortConfig] = useState<SortConfig>({ key: 'score', direction: 'desc' })
   const [selectedKey, setSelectedKey] = useState<string | null>(null)
   const [horizon, setHorizon] = useState<Horizon>(3)
   const [detailWidth, setDetailWidth] = usePersistedPanelWidth(TRIDENT_DETAIL_WIDTH)
@@ -189,12 +297,9 @@ export default function TridentPage() {
         return true
       })
       .sort((left, right) => {
-        const leftValue = scoreForSort(left, sortKey)
-        const rightValue = scoreForSort(right, sortKey)
-        if (sortKey === 'debt') return leftValue - rightValue
-        return rightValue - leftValue
+        return compareTridentRows(left, right, sortConfig)
       })
-  }, [country, exchange, rows, scoreFilter, search, sector, sortKey, state])
+  }, [country, exchange, rows, scoreFilter, search, sector, sortConfig, state])
 
   const selectedRow = useMemo(() => {
     return filteredRows.find((row) => row.instrument_key === selectedKey) ?? filteredRows[0] ?? null
@@ -223,6 +328,19 @@ export default function TridentPage() {
   const coveragePct = typeof lastRunStats.coverage_pct === 'number' ? lastRunStats.coverage_pct : null
   const staleRun = isStaleRun(data?.lastBackendRun?.finished_at ?? data?.lastUpdateIso)
 
+  const handleSort = (nextSortKey: SortKey) => {
+    if (selectedRow && selectedRow.instrument_key !== selectedKey) {
+      setSelectedKey(selectedRow.instrument_key)
+    }
+
+    setSortConfig((current) => {
+      if (current.key === nextSortKey) {
+        return { key: nextSortKey, direction: current.direction === 'asc' ? 'desc' : 'asc' }
+      }
+      return { key: nextSortKey, direction: DEFAULT_SORT_DIRECTIONS[nextSortKey] }
+    })
+  }
+
   const handleDetailResizePointerDown = (event: React.PointerEvent<HTMLButtonElement>) => {
     event.preventDefault()
     const startX = event.clientX
@@ -250,17 +368,14 @@ export default function TridentPage() {
   }
 
   return (
-    <div className="flex h-screen bg-slate-100 dark:bg-[#080A0F] text-slate-950 dark:text-gray-200 transition-colors duration-500">
-      <Sidebar />
-      <div className="flex-1 min-w-0 flex flex-col">
-        <Header lastSync={lastSync} lastSyncIso={data?.lastUpdateIso ?? null} coveragePct={coveragePct} />
-        <main className="flex-1 min-h-0 p-5 flex flex-col gap-4 overflow-hidden">
-          <section className="flex items-center justify-between gap-4">
-            <div>
+    <AppShell lastSync={lastSync} lastSyncIso={data?.lastUpdateIso ?? null} coveragePct={coveragePct}>
+        <main className="flex min-h-[calc(100vh-4rem)] flex-col gap-4 p-3 sm:p-5">
+          <section className="flex flex-wrap items-start justify-between gap-4">
+            <div className="min-w-0">
               <h1 className="text-sm font-black uppercase tracking-[0.24em] text-slate-900 dark:text-white">
                 Trident Screener
               </h1>
-              <div className="mt-1 flex items-center gap-3 text-[10px] font-mono text-slate-500 dark:text-gray-500">
+              <div className="mt-1 flex flex-wrap items-center gap-x-3 gap-y-1 text-[10px] font-mono text-slate-500 dark:text-gray-500">
                 <span>{rows.length} instruments</span>
                 <span>{qualifiedCount} qualified</span>
                 <span>{watchlistCount} watchlist</span>
@@ -278,7 +393,7 @@ export default function TridentPage() {
               </div>
             </div>
 
-            <div className="flex items-center gap-2 text-[10px] font-black uppercase tracking-widest">
+            <div className="flex flex-wrap items-center gap-2 text-[10px] font-black uppercase tracking-widest">
               <span className="rounded border border-slate-300 bg-white px-3 py-1.5 text-slate-600 dark:border-white/10 dark:bg-white/5 dark:text-gray-300">
                 Backend computed
               </span>
@@ -299,8 +414,8 @@ export default function TridentPage() {
             </div>
           </section>
 
-          <section className="flex items-center gap-2 rounded-lg border border-slate-200 bg-white px-3 py-3 dark:border-white/10 dark:bg-[#0D1117]">
-            <div className="relative min-w-[240px] flex-1">
+          <section className="flex flex-wrap items-center gap-2 rounded-lg border border-slate-200 bg-white px-3 py-3 dark:border-white/10 dark:bg-[#0D1117]">
+            <div className="relative min-w-full flex-1 sm:min-w-[240px]">
               <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" />
               <input
                 value={search}
@@ -334,20 +449,6 @@ export default function TridentPage() {
               <option value="60">Score &gt;= 60</option>
               <option value="40">Score &gt;= 40</option>
             </select>
-            <div className="flex h-9 items-center gap-2 rounded-md border border-slate-200 bg-slate-50 px-2 dark:border-white/10 dark:bg-black/20">
-              <SlidersHorizontal className="h-4 w-4 text-slate-500" />
-              <select
-                value={sortKey}
-                onChange={(event) => setSortKey(event.target.value as SortKey)}
-                className="bg-transparent text-xs font-black uppercase outline-none dark:text-white"
-              >
-                <option value="score">Score</option>
-                <option value="growth">Growth</option>
-                <option value="profitability">Profitability</option>
-                <option value="roic">ROIC</option>
-                <option value="debt">Debt</option>
-              </select>
-            </div>
           </section>
 
           {hasUniverseOnlyRows && (
@@ -388,26 +489,77 @@ export default function TridentPage() {
             />
           ) : (
             <section
-              className="grid flex-1 min-h-0 grid-cols-1 gap-4 overflow-auto xl:grid-cols-[minmax(560px,1fr)_14px_minmax(var(--trident-detail-min),var(--trident-detail-width))] xl:gap-0 xl:overflow-hidden"
+              className="grid flex-1 min-h-0 grid-cols-1 gap-4 overflow-visible 2xl:grid-cols-[minmax(680px,1fr)_14px_minmax(var(--trident-detail-min),var(--trident-detail-width))] 2xl:gap-0 2xl:overflow-hidden"
               style={{
                 '--trident-detail-width': `${detailWidth}px`,
                 '--trident-detail-min': `${TRIDENT_DETAIL_WIDTH.min}px`,
               } as React.CSSProperties}
             >
-              <div className="min-h-0 overflow-hidden rounded-lg border border-slate-200 bg-white dark:border-white/10 dark:bg-[#0D1117] xl:rounded-r-none">
-                <div className="h-full overflow-auto">
-                  <table className="w-full border-collapse text-left">
+              <div className="h-[560px] min-h-0 overflow-hidden rounded-lg border border-slate-200 bg-white dark:border-white/10 dark:bg-[#0D1117] 2xl:h-[calc(100vh-260px)] 2xl:rounded-r-none">
+                <div className="block h-full overflow-auto p-2 md:hidden">
+                  <div className="space-y-2">
+                    {filteredRows.map((row) => {
+                      const isSelected = row.instrument_key === selectedRow?.instrument_key
+                      const failTotal = row.criteria_fail_count ?? summaryNumber(row, 'criteria_fail')
+                      const missingTotal = row.criteria_missing_count ?? summaryNumber(row, 'criteria_missing')
+                      return (
+                        <button
+                          key={row.instrument_key}
+                          type="button"
+                          onClick={() => setSelectedKey(row.instrument_key)}
+                          className={cn(
+                            'w-full rounded-lg border p-3 text-left transition-colors',
+                            isSelected
+                              ? 'border-[#00FF88]/40 bg-[#00FF88]/10'
+                              : 'border-slate-200 bg-slate-50 hover:bg-white dark:border-white/10 dark:bg-black/20 dark:hover:bg-white/5'
+                          )}
+                        >
+                          <div className="flex items-start justify-between gap-3">
+                            <div className="min-w-0">
+                              <div className="truncate text-sm font-black text-slate-950 dark:text-white">{row.name ?? row.ticker}</div>
+                              <div className="mt-1 flex flex-wrap gap-2 text-[10px] font-mono text-slate-500">
+                                <span>{row.ticker}</span>
+                                <span>{row.country ?? '--'}</span>
+                                <span>{row.currency ?? '--'}</span>
+                              </div>
+                            </div>
+                            <span
+                              title={stateHelp(row.overall_state)}
+                              className={cn('shrink-0 rounded border px-2 py-0.5 text-[9px] font-black uppercase tracking-wider', stateBadgeClass(row.overall_state))}
+                            >
+                              {stateLabel(row.overall_state)}
+                            </span>
+                          </div>
+                          <div className="mt-3 grid grid-cols-4 gap-2 text-center">
+                            <MetricTile label="Score" value={formatScore(row.score)} />
+                            <MetricTile label="Growth" value={formatScore(row.growth_score)} />
+                            <MetricTile label="ROIC" value={formatPct(row.latest_roic)} />
+                            <MetricTile label="Debt" value={formatRatio(row.latest_net_debt_to_ebitda)} />
+                          </div>
+                          {(failTotal > 0 || missingTotal > 0) && (
+                            <div className="mt-2 text-[10px] font-mono text-slate-500">
+                              Fail {failTotal} · Missing {missingTotal}
+                            </div>
+                          )}
+                        </button>
+                      )
+                    })}
+                  </div>
+                </div>
+
+                <div className="hidden h-full overflow-auto md:block">
+                  <table className="min-w-[1180px] w-full border-collapse text-left">
                     <thead className="sticky top-0 z-10 bg-slate-100 text-[10px] font-black uppercase tracking-widest text-slate-600 dark:bg-[#101722] dark:text-gray-400">
                       <tr>
-                        <th className="w-[250px] px-3 py-3">Company</th>
-                        <th className="px-3 py-3">Market</th>
-                        <th className="px-3 py-3">Sector</th>
-                        <th className="px-3 py-3 text-right">Score</th>
-                        <th className="px-3 py-3 text-right">Growth</th>
-                        <th className="px-3 py-3 text-right">Profit</th>
-                        <th className="px-3 py-3 text-right">ROIC</th>
-                        <th className="px-3 py-3 text-right">Debt</th>
-                        <th className="px-3 py-3 text-center">State</th>
+                        <SortableHeader label="Company" sortKey="company" sortConfig={sortConfig} className="sticky left-0 z-20 w-[280px] bg-slate-100 dark:bg-[#101722]" onSort={handleSort} />
+                        <SortableHeader label="Market" sortKey="market" sortConfig={sortConfig} onSort={handleSort} />
+                        <SortableHeader label="Sector" sortKey="sector" sortConfig={sortConfig} onSort={handleSort} />
+                        <SortableHeader label="Score" sortKey="score" sortConfig={sortConfig} align="right" onSort={handleSort} />
+                        <SortableHeader label="Growth" sortKey="growth" sortConfig={sortConfig} align="right" onSort={handleSort} />
+                        <SortableHeader label="Profit" sortKey="profitability" sortConfig={sortConfig} align="right" onSort={handleSort} />
+                        <SortableHeader label="ROIC" sortKey="roic" sortConfig={sortConfig} align="right" onSort={handleSort} />
+                        <SortableHeader label="Debt" sortKey="debt" sortConfig={sortConfig} align="right" onSort={handleSort} />
+                        <SortableHeader label="State" sortKey="state" sortConfig={sortConfig} align="center" onSort={handleSort} />
                       </tr>
                     </thead>
                     <tbody className="divide-y divide-slate-100 dark:divide-white/5">
@@ -424,7 +576,7 @@ export default function TridentPage() {
                               isSelected && 'bg-blue-50 dark:bg-[#00FF88]/10'
                             )}
                           >
-                            <td className="px-3 py-3">
+                            <td className={cn('sticky left-0 z-[1] px-3 py-3', isSelected ? 'bg-blue-50 dark:bg-[#142217]' : 'bg-white dark:bg-[#0D1117]')}>
                               <div className="min-w-0">
                                 <div className="truncate text-sm font-black text-slate-950 dark:text-white">{row.name ?? row.ticker}</div>
                                 <div className="mt-0.5 flex items-center gap-2 text-[10px] font-mono text-slate-500">
@@ -479,12 +631,12 @@ export default function TridentPage() {
                 title="Drag to resize detail panel"
                 onPointerDown={handleDetailResizePointerDown}
                 onKeyDown={handleDetailResizeKeyDown}
-                className="group hidden min-h-0 cursor-ew-resize items-center justify-center border-y border-slate-200 bg-slate-100/60 transition-colors hover:bg-slate-200 focus:outline-none focus-visible:ring-2 focus-visible:ring-blue-500 dark:border-white/10 dark:bg-[#080A0F] dark:hover:bg-white/5 dark:focus-visible:ring-[#00FF88] xl:flex"
+                className="group hidden min-h-0 cursor-ew-resize items-center justify-center border-y border-slate-200 bg-slate-100/60 transition-colors hover:bg-slate-200 focus:outline-none focus-visible:ring-2 focus-visible:ring-blue-500 dark:border-white/10 dark:bg-[#080A0F] dark:hover:bg-white/5 dark:focus-visible:ring-[#00FF88] 2xl:flex"
               >
                 <span className="h-20 w-1 rounded-full bg-slate-300 transition-colors group-hover:bg-slate-500 group-focus-visible:bg-blue-500 dark:bg-white/20 dark:group-hover:bg-[#00FF88] dark:group-focus-visible:bg-[#00FF88]" />
               </button>
 
-              <aside className="relative min-h-0 overflow-hidden rounded-lg border border-slate-200 bg-white dark:border-white/10 dark:bg-[#0D1117] xl:rounded-l-none">
+              <aside className="relative h-[70vh] min-h-[520px] overflow-hidden rounded-lg border border-slate-200 bg-white dark:border-white/10 dark:bg-[#0D1117] 2xl:h-[calc(100vh-260px)] 2xl:min-h-0 2xl:rounded-l-none">
                 {selectedRow && (
                   <div className="flex h-full flex-col">
                     <div className="border-b border-slate-200 p-4 dark:border-white/10">
@@ -630,8 +782,7 @@ export default function TridentPage() {
             </section>
           )}
         </main>
-      </div>
-    </div>
+    </AppShell>
   )
 }
 
@@ -651,7 +802,7 @@ function FilterSelect({
       aria-label={label}
       value={value}
       onChange={(event) => onChange(event.target.value)}
-      className="h-9 max-w-[160px] rounded-md border border-slate-200 bg-slate-50 px-2 text-xs font-black uppercase outline-none dark:border-white/10 dark:bg-black/20 dark:text-white"
+      className="h-9 min-w-[120px] flex-1 rounded-md border border-slate-200 bg-slate-50 px-2 text-xs font-black uppercase outline-none dark:border-white/10 dark:bg-black/20 dark:text-white sm:max-w-[170px] sm:flex-none"
     >
       <option value="ALL">{label}</option>
       {options.map((option) => (

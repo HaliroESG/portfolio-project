@@ -1,16 +1,19 @@
 "use client"
 
 import React from 'react'
+import { Menu } from 'lucide-react'
 import { ThemeToggle } from './ThemeToggle'
+import { CurrencyWidget } from './CurrencyWidget'
 import { formatSyncTime, resolveFreshness } from '../lib/dataFreshness'
 
 interface HeaderProps {
   lastSync?: string;
   lastSyncIso?: string | null;
   coveragePct?: number | null;
+  onMenuClick?: () => void;
 }
 
-export function Header({ lastSync, lastSyncIso, coveragePct }: HeaderProps) {
+export function Header({ lastSync, lastSyncIso, coveragePct, onMenuClick }: HeaderProps) {
   const safeCoveragePct = coveragePct ?? 100
   const showCoverageWarning = safeCoveragePct < 90
   const freshness = resolveFreshness(lastSyncIso, 36 * 60, { marketAware: true })
@@ -31,13 +34,22 @@ export function Header({ lastSync, lastSyncIso, coveragePct }: HeaderProps) {
         </div>
       )}
       
-      <header className={`h-16 border-b border-slate-200 dark:border-[#1a1d24] bg-white/80 dark:bg-[#0B0E14]/50 backdrop-blur-md flex items-center justify-between px-8 sticky ${showCoverageWarning ? 'top-[42px]' : 'top-0'} z-40 transition-colors`}>
-        <div className="flex items-center space-x-6">
-          <div className="flex flex-col">
-            <h2 className="text-sm font-black tracking-widest text-slate-900 dark:text-white uppercase">
+      <header className={`h-16 border-b border-slate-200 dark:border-[#1a1d24] bg-white/85 dark:bg-[#0B0E14]/75 backdrop-blur-md flex items-center justify-between gap-3 px-3 sm:px-5 lg:px-8 sticky ${showCoverageWarning ? 'top-[42px]' : 'top-0'} z-40 transition-colors`}>
+        <div className="flex min-w-0 items-center gap-3 sm:gap-6">
+          <button
+            type="button"
+            aria-label="Open navigation"
+            onClick={onMenuClick}
+            className="inline-flex h-9 w-9 shrink-0 items-center justify-center rounded-lg border border-slate-200 bg-white text-slate-600 transition hover:bg-slate-100 dark:border-white/10 dark:bg-white/5 dark:text-gray-300 dark:hover:bg-white/10 md:hidden"
+          >
+            <Menu size={17} />
+          </button>
+
+          <div className="flex min-w-0 flex-col">
+            <h2 className="truncate text-xs font-black uppercase tracking-widest text-slate-900 dark:text-white sm:text-sm">
               Market Intelligence <span className="text-[#00FF88]">v1.1</span>
             </h2>
-            <span className="text-[10px] font-mono text-slate-400 dark:text-gray-500">REAL-TIME DATA STREAM</span>
+            <span className="hidden text-[10px] font-mono text-slate-400 dark:text-gray-500 sm:inline">REAL-TIME DATA STREAM</span>
           </div>
 
           {/* DATA FRESHNESS INDICATOR */}
@@ -64,7 +76,8 @@ export function Header({ lastSync, lastSyncIso, coveragePct }: HeaderProps) {
           </div>
         </div>
 
-        <div className="flex items-center gap-4">
+        <div className="flex shrink-0 items-center gap-2 sm:gap-3">
+          <CurrencyWidget />
           <ThemeToggle />
         </div>
       </header>

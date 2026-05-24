@@ -1,24 +1,24 @@
 # Product Backlog - Portfolio Project
 
-Last update: 2026-03-07
+Last update: 2026-05-25
 
 ## P0 - Data Reliability and Signal Quality
 
 BL-001 — Explicit Technical State Semantics
 
 Priority: P0
-Status: BLOCKED (live schema)
+Status: ACTIVE (schema verified, signal completeness incomplete)
 
 Problem
 
-The frontend now implements explicit technical-state semantics (NEUTRAL / UNKNOWN / INSUFFICIENT_HISTORY / NO HISTORY).
-However, the live Supabase schema is missing technical indicator columns in market_watch (e.g. macd_line), which blocks full live completeness validation.
+The frontend implements explicit technical-state semantics (NEUTRAL / UNKNOWN / INSUFFICIENT_HISTORY / NO HISTORY).
+The live Supabase schema now exposes the technical indicator columns in `market_watch`, but the latest smoke sample still has null RSI/MACD/momentum values and Data Health reports technical coverage at 0/39.
 
 Scope
 	•	Verify presence of technical columns in market_watch
-	•	Apply migration if missing
+	•	Apply migration only if a target environment is still missing the columns
 	•	Re-run Supabase smoke tests
-	•	Confirm technical-state completeness in dashboard and asset drawer
+	•	Confirm technical-state completeness/backfill in dashboard and asset drawer
 
 Implementation (already in repo)
 	•	Technical-state semantics implemented in technical_state.py
@@ -31,15 +31,13 @@ Validation required
 	•	Dashboard asset drawer technical-state rendering
 	•	Data health panel coverage metrics
 
-Blocking dependency
+Current dependency
 
-Apply migration:
-
-backend/sql/20260210_market_watch_phase2_technicals.sql
+Backfill or repair technical indicator generation for `market_watch`; the schema migration is no longer the observed blocker on the current environment.
 
 Acceptance criteria
 	•	Supabase smoke test passes
-	•	Technical indicators available in market_watch
+	•	Technical indicators available and populated in market_watch
 	•	Frontend technical-state semantics render correctly
 	•	No runtime 400 errors on technical selectors
 
@@ -282,15 +280,15 @@ Frontend lint	PASS
 TypeScript compile	PASS
 Frontend build	PASS
 Critical flow validator	PASS
-Supabase smoke	FAIL
+Supabase smoke	PASS
 Backend pytest	PASS
 Backend syntax compile	PASS
 Runtime smoke routes	PASS
 Manual write tests (/targets)	NOT RUN
 
-Blocking error:
+Current blocking issue:
 
-column market_watch.macd_line does not exist
+`historical_prices_trident_sync` latest ETL run fails with a row-level security write error on `historical_prices`. The fix must keep writes on backend secret/service credentials and must not add public INSERT/UPSERT policies for `anon`.
 
 
 ⸻
@@ -307,9 +305,7 @@ BL-009	DONE
 
 Next Action (P0)
 
-Apply or verify the following migration on the target Supabase environment:
-
-backend/sql/20260210_market_watch_phase2_technicals.sql
+Verify the scheduler/backend secret used for Trident historical price sync, rerun the sync, then backfill technical indicators for `market_watch`.
 
 Then re-run:
 

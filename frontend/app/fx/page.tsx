@@ -2,8 +2,7 @@
 
 import React, { useEffect, useMemo, useState } from 'react'
 import useSWR from 'swr'
-import { Sidebar } from '../../components/Sidebar'
-import { Header } from '../../components/Header'
+import { AppShell } from '../../components/AppShell'
 import { EmptyState } from '../../components/EmptyState'
 import { supabase } from '../../lib/supabase'
 import { ArrowRightLeft, TrendingDown, TrendingUp } from 'lucide-react'
@@ -317,11 +316,8 @@ export default function FXPage() {
   }, [currencies.length, data?.currencies?.length, fxState])
 
   return (
-    <div className="flex h-screen bg-slate-50 dark:bg-[#080A0F] transition-colors duration-500">
-      <Sidebar />
-      <div className="flex-1 flex flex-col">
-        <Header lastSync={lastSync} lastSyncIso={lastSyncIso} />
-        <main className="flex-1 p-8 overflow-y-auto">
+    <AppShell lastSync={lastSync} lastSyncIso={lastSyncIso} className="bg-slate-50">
+        <main className="p-4 sm:p-6 lg:p-8">
           <div className="max-w-7xl mx-auto grid grid-cols-1 lg:grid-cols-12 gap-6">
             <div className="lg:col-span-8 space-y-6">
               <div className="flex items-center justify-between gap-4">
@@ -470,7 +466,6 @@ export default function FXPage() {
             </div>
           </div>
         </main>
-      </div>
-    </div>
+    </AppShell>
   )
 }

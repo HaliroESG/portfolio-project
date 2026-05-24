@@ -10,8 +10,7 @@ import {
   type MacroIndicatorRow,
 } from '../../lib/macroData'
 
-import { Sidebar } from '../../components/Sidebar'
-import { Header } from '../../components/Header'
+import { AppShell } from '../../components/AppShell'
 import { MacroHealth } from '../../components/MacroHealth'
 
 import {
@@ -231,13 +230,8 @@ export default function MDSSPage() {
           }
 
   return (
-    <div className="flex h-screen bg-slate-50 dark:bg-[#080A0F] text-slate-900 dark:text-gray-300 font-sans overflow-hidden transition-colors duration-500">
-      <Sidebar />
-
-      <div className="flex-1 flex flex-col min-w-0">
-        <Header lastSync={lastSync} lastSyncIso={lastSyncIso} />
-
-        <main className="flex-1 p-8 overflow-y-auto space-y-8 custom-scrollbar">
+    <AppShell lastSync={lastSync} lastSyncIso={lastSyncIso} className="bg-slate-50 text-slate-900 dark:text-gray-300">
+        <main className="space-y-8 p-4 sm:p-6 lg:p-8">
           
           <div className="flex flex-col md:flex-row md:items-end justify-between gap-4">
             <div>
@@ -304,7 +298,6 @@ export default function MDSSPage() {
           </div>
 
         </main>
-      </div>
-    </div>
+    </AppShell>
   )
 }

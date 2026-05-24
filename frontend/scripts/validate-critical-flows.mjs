@@ -179,7 +179,6 @@ try {
 
   const backtestChart = read('frontend/components/BacktestChart.tsx')
   const drawdownChart = read('frontend/components/DrawdownChart.tsx')
-  const portfolioTrendPanel = read('frontend/components/PortfolioTrendPanel.tsx')
   const geographicMap = read('frontend/components/GeographicMap.tsx')
   addCheck(
     'frontend.general_charts_fullscreen',
@@ -191,10 +190,6 @@ try {
       "import { FullscreenChartButton } from './FullscreenChart'",
       '<FullscreenChartButton title={title}>',
       "renderChartSvg('h-auto')",
-    ]) && hasAll(portfolioTrendPanel, [
-      "import { FullscreenChartButton } from './FullscreenChart'",
-      '<FullscreenChartButton title="Portfolio Momentum">',
-      "renderTrendSvg('h-auto', 'fullscreen')",
     ]) && hasAll(geographicMap, [
       "import { FullscreenChartButton } from './FullscreenChart'",
       '<FullscreenChartButton title="Geographic View">',
