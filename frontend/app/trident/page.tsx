@@ -238,6 +238,17 @@ export default function TridentPage() {
     window.addEventListener('pointerup', onEnd)
   }
 
+  const handleDetailResizeKeyDown = (event: React.KeyboardEvent<HTMLButtonElement>) => {
+    if (event.key === 'ArrowLeft') {
+      event.preventDefault()
+      setDetailWidth(detailWidth + 20)
+    }
+    if (event.key === 'ArrowRight') {
+      event.preventDefault()
+      setDetailWidth(detailWidth - 20)
+    }
+  }
+
   return (
     <div className="flex h-screen bg-slate-100 dark:bg-[#080A0F] text-slate-950 dark:text-gray-200 transition-colors duration-500">
       <Sidebar />
@@ -377,13 +388,13 @@ export default function TridentPage() {
             />
           ) : (
             <section
-              className="grid flex-1 min-h-0 grid-cols-1 gap-4 overflow-auto xl:grid-cols-[minmax(560px,1fr)_minmax(var(--trident-detail-min),var(--trident-detail-width))] xl:overflow-hidden"
+              className="grid flex-1 min-h-0 grid-cols-1 gap-4 overflow-auto xl:grid-cols-[minmax(560px,1fr)_14px_minmax(var(--trident-detail-min),var(--trident-detail-width))] xl:gap-0 xl:overflow-hidden"
               style={{
                 '--trident-detail-width': `${detailWidth}px`,
                 '--trident-detail-min': `${TRIDENT_DETAIL_WIDTH.min}px`,
               } as React.CSSProperties}
             >
-              <div className="min-h-0 overflow-hidden rounded-lg border border-slate-200 bg-white dark:border-white/10 dark:bg-[#0D1117]">
+              <div className="min-h-0 overflow-hidden rounded-lg border border-slate-200 bg-white dark:border-white/10 dark:bg-[#0D1117] xl:rounded-r-none">
                 <div className="h-full overflow-auto">
                   <table className="w-full border-collapse text-left">
                     <thead className="sticky top-0 z-10 bg-slate-100 text-[10px] font-black uppercase tracking-widest text-slate-600 dark:bg-[#101722] dark:text-gray-400">
@@ -462,16 +473,18 @@ export default function TridentPage() {
                 </div>
               </div>
 
-              <aside className="relative min-h-0 overflow-hidden rounded-lg border border-slate-200 bg-white dark:border-white/10 dark:bg-[#0D1117]">
-                <button
-                  type="button"
-                  aria-label="Resize Trident detail panel"
-                  title="Resize detail panel"
-                  onPointerDown={handleDetailResizePointerDown}
-                  className="absolute -left-3 top-0 z-20 hidden h-full w-3 cursor-ew-resize items-center justify-center xl:flex"
-                >
-                  <span className="h-16 w-1 rounded-full bg-slate-300 transition-colors hover:bg-slate-500 dark:bg-white/20 dark:hover:bg-[#00FF88]" />
-                </button>
+              <button
+                type="button"
+                aria-label="Resize Trident detail separator"
+                title="Drag to resize detail panel"
+                onPointerDown={handleDetailResizePointerDown}
+                onKeyDown={handleDetailResizeKeyDown}
+                className="group hidden min-h-0 cursor-ew-resize items-center justify-center border-y border-slate-200 bg-slate-100/60 transition-colors hover:bg-slate-200 focus:outline-none focus-visible:ring-2 focus-visible:ring-blue-500 dark:border-white/10 dark:bg-[#080A0F] dark:hover:bg-white/5 dark:focus-visible:ring-[#00FF88] xl:flex"
+              >
+                <span className="h-20 w-1 rounded-full bg-slate-300 transition-colors group-hover:bg-slate-500 group-focus-visible:bg-blue-500 dark:bg-white/20 dark:group-hover:bg-[#00FF88] dark:group-focus-visible:bg-[#00FF88]" />
+              </button>
+
+              <aside className="relative min-h-0 overflow-hidden rounded-lg border border-slate-200 bg-white dark:border-white/10 dark:bg-[#0D1117] xl:rounded-l-none">
                 {selectedRow && (
                   <div className="flex h-full flex-col">
                     <div className="border-b border-slate-200 p-4 dark:border-white/10">
@@ -490,24 +503,6 @@ export default function TridentPage() {
                         >
                           {stateLabel(selectedRow.overall_state)}
                         </span>
-                      </div>
-
-                      <div className="mt-3 hidden items-center gap-2 rounded-md border border-slate-200 bg-slate-50 px-2 py-2 dark:border-white/10 dark:bg-black/20 xl:flex">
-                        <label htmlFor="trident-detail-width" className="text-[9px] font-black uppercase tracking-wider text-slate-500">
-                          Panel
-                        </label>
-                        <input
-                          id="trident-detail-width"
-                          type="range"
-                          min={TRIDENT_DETAIL_WIDTH.min}
-                          max={TRIDENT_DETAIL_WIDTH.max}
-                          step={20}
-                          value={detailWidth}
-                          onChange={(event) => setDetailWidth(Number(event.target.value))}
-                          className="h-1 min-w-0 flex-1 accent-blue-600 dark:accent-[#00FF88]"
-                          aria-label="Trident detail panel width"
-                        />
-                        <span className="w-12 text-right text-[9px] font-mono text-slate-500">{detailWidth}px</span>
                       </div>
 
                       <div className="mt-4 grid grid-cols-4 gap-2">

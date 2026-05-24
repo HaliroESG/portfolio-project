@@ -123,7 +123,7 @@ export function BacktestChart({ dates, series, title = 'NAV (EUR)' }: BacktestCh
             <div className="space-y-4">
               {legend}
               <div className="rounded-2xl border border-slate-200 bg-slate-50 p-3 dark:border-white/5 dark:bg-[#080A0F]">
-                {renderChartSvg('h-[70vh] min-h-[420px]')}
+                {renderChartSvg('h-auto')}
               </div>
             </div>
           </FullscreenChartButton>

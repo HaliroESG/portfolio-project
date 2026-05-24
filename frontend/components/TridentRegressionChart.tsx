@@ -16,6 +16,7 @@ import {
   REGRESSION_MIN_POINTS,
   computeRegressionChartModel,
 } from '../lib/regressionChart'
+import type { RegressionChartModel } from '../lib/regressionChart'
 import { cn } from '../lib/utils'
 import { FullscreenChartButton } from './FullscreenChart'
 
@@ -86,6 +87,139 @@ function safeId(value: string): string {
   return value.replace(/[^A-Za-z0-9]/g, '')
 }
 
+interface RegressionChartGeometry {
+  width: number
+  height: number
+  left: number
+  right: number
+  top: number
+  bottom: number
+}
+
+interface RegressionRenderChart extends RegressionChartGeometry {
+  points: RegressionChartModel['points']
+  getX: (index: number) => number
+  getY: (price: number) => number
+  pricePath: string
+  regressionPath: string
+  plus1Path: string
+  plus2Path: string
+  minus1Path: string
+  minus2Path: string
+  ma200Path: string
+  band2Path: string
+  band1Path: string
+  yTicks: Array<{ price: number; y: number }>
+  xTicks: Array<{ date: string; x: number }>
+}
+
+function buildRegressionRenderChart(
+  model: RegressionChartModel,
+  scaleMode: RegressionScaleMode,
+  showMa200: boolean,
+  geometry: RegressionChartGeometry,
+): RegressionRenderChart {
+  const { width, height, left, right, top, bottom } = geometry
+  const points = model.points
+
+  const prices = points.flatMap((point) => [
+    point.price,
+    point.regression,
+    point.plus1,
+    point.plus2,
+    point.minus1,
+    point.minus2,
+    showMa200 ? point.ma200 : null,
+  ]).filter((value): value is number => value !== null && value > 0 && Number.isFinite(value))
+
+  const toScaleValue = (price: number) => scaleMode === 'LOG' ? Math.log(price) : price
+  const scaleValues = prices.map(toScaleValue)
+  const minScale = Math.min(...scaleValues)
+  const maxScale = Math.max(...scaleValues)
+  const padding = Math.max((maxScale - minScale) * 0.06, 0.0001)
+  const yMin = minScale - padding
+  const yMax = maxScale + padding
+  const yRange = Math.max(yMax - yMin, 0.0001)
+
+  const getX = (index: number) => {
+    const ratio = points.length > 1 ? index / (points.length - 1) : 0
+    return left + ratio * (width - left - right)
+  }
+  const getY = (price: number) => {
+    const scaled = toScaleValue(price)
+    const ratio = (scaled - yMin) / yRange
+    return bottom - ratio * (bottom - top)
+  }
+
+  const pricePath = pathFromPoints(points, (point, index) => ({ x: getX(index), y: getY(point.price) }))
+  const regressionPath = pathFromPoints(points, (point, index) => ({ x: getX(index), y: getY(point.regression) }))
+  const plus1Path = pathFromPoints(points, (point, index) => point.plus1 ? { x: getX(index), y: getY(point.plus1) } : null)
+  const plus2Path = pathFromPoints(points, (point, index) => point.plus2 ? { x: getX(index), y: getY(point.plus2) } : null)
+  const minus1Path = pathFromPoints(points, (point, index) => point.minus1 ? { x: getX(index), y: getY(point.minus1) } : null)
+  const minus2Path = pathFromPoints(points, (point, index) => point.minus2 ? { x: getX(index), y: getY(point.minus2) } : null)
+  const ma200Path = pathFromPoints(points, (point, index) => point.ma200 ? { x: getX(index), y: getY(point.ma200) } : null)
+
+  const band2Top = points
+    .map((point, index) => point.plus2 ? `${index === 0 ? 'M' : 'L'} ${getX(index).toFixed(2)} ${getY(point.plus2).toFixed(2)}` : '')
+    .filter(Boolean)
+    .join(' ')
+  const band2Bottom = [...points]
+    .reverse()
+    .map((point, reverseIndex) => {
+      if (!point.minus2) return ''
+      const index = points.length - 1 - reverseIndex
+      return `L ${getX(index).toFixed(2)} ${getY(point.minus2).toFixed(2)}`
+    })
+    .filter(Boolean)
+    .join(' ')
+  const band1Top = points
+    .map((point, index) => point.plus1 ? `${index === 0 ? 'M' : 'L'} ${getX(index).toFixed(2)} ${getY(point.plus1).toFixed(2)}` : '')
+    .filter(Boolean)
+    .join(' ')
+  const band1Bottom = [...points]
+    .reverse()
+    .map((point, reverseIndex) => {
+      if (!point.minus1) return ''
+      const index = points.length - 1 - reverseIndex
+      return `L ${getX(index).toFixed(2)} ${getY(point.minus1).toFixed(2)}`
+    })
+    .filter(Boolean)
+    .join(' ')
+
+  const yTicks = [0, 0.25, 0.5, 0.75, 1].map((ratio) => {
+    const scaled = yMin + ratio * yRange
+    const price = scaleMode === 'LOG' ? Math.exp(scaled) : scaled
+    return { price, y: bottom - ratio * (bottom - top) }
+  })
+  const xTicks = [0, 0.5, 1].map((ratio) => {
+    const index = Math.min(points.length - 1, Math.max(0, Math.round(ratio * (points.length - 1))))
+    return { date: points[index].date, x: getX(index) }
+  })
+
+  return {
+    width,
+    height,
+    left,
+    right,
+    top,
+    bottom,
+    points,
+    getX,
+    getY,
+    pricePath,
+    regressionPath,
+    plus1Path,
+    plus2Path,
+    minus1Path,
+    minus2Path,
+    ma200Path,
+    band2Path: `${band2Top} ${band2Bottom} Z`,
+    band1Path: `${band1Top} ${band1Bottom} Z`,
+    yTicks,
+    xTicks,
+  }
+}
+
 export function TridentRegressionChart({
   ticker,
   assetCurrency,
@@ -125,111 +259,25 @@ export function TridentRegressionChart({
     [displayPoints, scaleMode],
   )
 
-  const chart = useMemo(() => {
+  const charts = useMemo(() => {
     if (!model) return null
-    const width = 360
-    const height = 240
-    const left = 36
-    const right = 12
-    const top = 18
-    const bottom = 202
-    const points = model.points
-
-    const prices = points.flatMap((point) => [
-      point.price,
-      point.regression,
-      point.plus1,
-      point.plus2,
-      point.minus1,
-      point.minus2,
-      showMa200 ? point.ma200 : null,
-    ]).filter((value): value is number => value !== null && value > 0 && Number.isFinite(value))
-
-    const toScaleValue = (price: number) => scaleMode === 'LOG' ? Math.log(price) : price
-    const scaleValues = prices.map(toScaleValue)
-    const minScale = Math.min(...scaleValues)
-    const maxScale = Math.max(...scaleValues)
-    const padding = Math.max((maxScale - minScale) * 0.06, 0.0001)
-    const yMin = minScale - padding
-    const yMax = maxScale + padding
-    const yRange = Math.max(yMax - yMin, 0.0001)
-
-    const getX = (index: number) => {
-      const ratio = points.length > 1 ? index / (points.length - 1) : 0
-      return left + ratio * (width - left - right)
-    }
-    const getY = (price: number) => {
-      const scaled = toScaleValue(price)
-      const ratio = (scaled - yMin) / yRange
-      return bottom - ratio * (bottom - top)
-    }
-
-    const pricePath = pathFromPoints(points, (point, index) => ({ x: getX(index), y: getY(point.price) }))
-    const regressionPath = pathFromPoints(points, (point, index) => ({ x: getX(index), y: getY(point.regression) }))
-    const plus1Path = pathFromPoints(points, (point, index) => point.plus1 ? { x: getX(index), y: getY(point.plus1) } : null)
-    const plus2Path = pathFromPoints(points, (point, index) => point.plus2 ? { x: getX(index), y: getY(point.plus2) } : null)
-    const minus1Path = pathFromPoints(points, (point, index) => point.minus1 ? { x: getX(index), y: getY(point.minus1) } : null)
-    const minus2Path = pathFromPoints(points, (point, index) => point.minus2 ? { x: getX(index), y: getY(point.minus2) } : null)
-    const ma200Path = pathFromPoints(points, (point, index) => point.ma200 ? { x: getX(index), y: getY(point.ma200) } : null)
-
-    const band2Top = points
-      .map((point, index) => point.plus2 ? `${index === 0 ? 'M' : 'L'} ${getX(index).toFixed(2)} ${getY(point.plus2).toFixed(2)}` : '')
-      .filter(Boolean)
-      .join(' ')
-    const band2Bottom = [...points]
-      .reverse()
-      .map((point, reverseIndex) => {
-        if (!point.minus2) return ''
-        const index = points.length - 1 - reverseIndex
-        return `L ${getX(index).toFixed(2)} ${getY(point.minus2).toFixed(2)}`
-      })
-      .filter(Boolean)
-      .join(' ')
-    const band1Top = points
-      .map((point, index) => point.plus1 ? `${index === 0 ? 'M' : 'L'} ${getX(index).toFixed(2)} ${getY(point.plus1).toFixed(2)}` : '')
-      .filter(Boolean)
-      .join(' ')
-    const band1Bottom = [...points]
-      .reverse()
-      .map((point, reverseIndex) => {
-        if (!point.minus1) return ''
-        const index = points.length - 1 - reverseIndex
-        return `L ${getX(index).toFixed(2)} ${getY(point.minus1).toFixed(2)}`
-      })
-      .filter(Boolean)
-      .join(' ')
-
-    const yTicks = [0, 0.25, 0.5, 0.75, 1].map((ratio) => {
-      const scaled = yMin + ratio * yRange
-      const price = scaleMode === 'LOG' ? Math.exp(scaled) : scaled
-      return { price, y: bottom - ratio * (bottom - top) }
-    })
-    const xTicks = [0, 0.5, 1].map((ratio) => {
-      const index = Math.min(points.length - 1, Math.max(0, Math.round(ratio * (points.length - 1))))
-      return { date: points[index].date, x: getX(index) }
-    })
-
     return {
-      width,
-      height,
-      left,
-      right,
-      top,
-      bottom,
-      points,
-      getX,
-      getY,
-      pricePath,
-      regressionPath,
-      plus1Path,
-      plus2Path,
-      minus1Path,
-      minus2Path,
-      ma200Path,
-      band2Path: `${band2Top} ${band2Bottom} Z`,
-      band1Path: `${band1Top} ${band1Bottom} Z`,
-      yTicks,
-      xTicks,
+      inline: buildRegressionRenderChart(model, scaleMode, showMa200, {
+        width: 520,
+        height: 240,
+        left: 44,
+        right: 18,
+        top: 18,
+        bottom: 202,
+      }),
+      fullscreen: buildRegressionRenderChart(model, scaleMode, showMa200, {
+        width: 1600,
+        height: 700,
+        left: 92,
+        right: 80,
+        top: 52,
+        bottom: 610,
+      }),
     }
   }, [model, scaleMode, showMa200])
 
@@ -242,69 +290,86 @@ export function TridentRegressionChart({
   )
   const sources = Array.from(new Set(displayPoints.map((point) => point.source).filter(Boolean)))
   const sourceLabel = sources.length > 1 ? `${sources[0]} +${sources.length - 1}` : sources[0] ?? 'unknown'
-  const renderRegressionSvg = (heightClass: string, idSuffix: string) => {
-    if (!model || !chart) return null
+  const renderRegressionSvg = (renderChart: RegressionRenderChart, className: string, idSuffix: string, density: 'inline' | 'fullscreen') => {
+    if (!model) return null
     const gradientId = `tridentRegressionBand-${safeId(ticker)}-${idSuffix}`
+    const isFullscreen = density === 'fullscreen'
+    const axisTextClass = isFullscreen
+      ? 'fill-slate-500 text-[11px] font-mono dark:fill-gray-500'
+      : 'fill-slate-500 text-[8px] font-mono dark:fill-gray-500'
+    const dateTextClass = isFullscreen
+      ? 'fill-slate-500 text-[12px] font-mono dark:fill-gray-500'
+      : 'fill-slate-500 text-[8px] font-mono dark:fill-gray-500'
+    const latestX = renderChart.getX(renderChart.points.length - 1)
+    const latestY = renderChart.getY(model.latestPrice)
+    const latestLabelX = Math.min(
+      renderChart.width - renderChart.right - 12,
+      Math.max(renderChart.left + 120, latestX - (isFullscreen ? 44 : 72)),
+    )
     return (
-      <svg viewBox={`0 0 ${chart.width} ${chart.height}`} className={`${heightClass} w-full`}>
+      <svg viewBox={`0 0 ${renderChart.width} ${renderChart.height}`} className={cn('w-full', className)}>
         <defs>
           <linearGradient id={gradientId} x1="0" y1="0" x2="0" y2="1">
             <stop offset="0%" stopColor="#64748b" stopOpacity="0.18" />
             <stop offset="100%" stopColor="#64748b" stopOpacity="0.04" />
           </linearGradient>
         </defs>
-        <rect x="0" y="0" width={chart.width} height={chart.height} rx="8" className="fill-slate-50 dark:fill-black/20" />
-        {chart.yTicks.map((tick) => (
+        <rect x="0" y="0" width={renderChart.width} height={renderChart.height} rx={isFullscreen ? '16' : '8'} className="fill-slate-50 dark:fill-black/20" />
+        {renderChart.yTicks.map((tick) => (
           <g key={tick.y}>
             <line
-              x1={chart.left}
-              x2={chart.width - chart.right}
+              x1={renderChart.left}
+              x2={renderChart.width - renderChart.right}
               y1={tick.y}
               y2={tick.y}
               stroke="currentColor"
               strokeOpacity="0.08"
               className="text-slate-950 dark:text-white"
             />
-            <text x="4" y={tick.y + 3} className="fill-slate-500 text-[8px] font-mono dark:fill-gray-500">
+            <text x={isFullscreen ? 24 : 6} y={tick.y + (isFullscreen ? 4 : 3)} className={axisTextClass}>
               {tick.price >= 100 ? tick.price.toFixed(0) : tick.price.toFixed(1)}
             </text>
           </g>
         ))}
-        <line x1={chart.left} x2={chart.left} y1={chart.top} y2={chart.bottom} stroke="currentColor" strokeOpacity="0.18" className="text-slate-950 dark:text-white" />
-        <line x1={chart.left} x2={chart.width - chart.right} y1={chart.bottom} y2={chart.bottom} stroke="currentColor" strokeOpacity="0.18" className="text-slate-950 dark:text-white" />
-        <path d={chart.band2Path} fill={`url(#${gradientId})`} />
-        <path d={chart.band1Path} fill="#64748b" opacity="0.08" />
-        <path d={chart.plus2Path} fill="none" stroke="#94a3b8" strokeWidth="1" strokeDasharray="4 5" />
-        <path d={chart.plus1Path} fill="none" stroke="#94a3b8" strokeWidth="1" strokeDasharray="3 4" />
-        <path d={chart.minus1Path} fill="none" stroke="#94a3b8" strokeWidth="1" strokeDasharray="3 4" />
-        <path d={chart.minus2Path} fill="none" stroke="#94a3b8" strokeWidth="1" strokeDasharray="4 5" />
-        <path d={chart.regressionPath} fill="none" stroke="#f97316" strokeWidth="1.8" />
-        {showMa200 && chart.ma200Path && (
-          <path d={chart.ma200Path} fill="none" stroke="#111827" strokeWidth="1.5" strokeDasharray="6 4" className="dark:stroke-white" />
+        <line x1={renderChart.left} x2={renderChart.left} y1={renderChart.top} y2={renderChart.bottom} stroke="currentColor" strokeOpacity="0.18" className="text-slate-950 dark:text-white" />
+        <line x1={renderChart.left} x2={renderChart.width - renderChart.right} y1={renderChart.bottom} y2={renderChart.bottom} stroke="currentColor" strokeOpacity="0.18" className="text-slate-950 dark:text-white" />
+        <path d={renderChart.band2Path} fill={`url(#${gradientId})`} />
+        <path d={renderChart.band1Path} fill="#64748b" opacity="0.08" />
+        <path d={renderChart.plus2Path} fill="none" stroke="#94a3b8" strokeWidth={isFullscreen ? '1.8' : '1'} strokeDasharray={isFullscreen ? '8 8' : '4 5'} />
+        <path d={renderChart.plus1Path} fill="none" stroke="#94a3b8" strokeWidth={isFullscreen ? '1.6' : '1'} strokeDasharray={isFullscreen ? '6 7' : '3 4'} />
+        <path d={renderChart.minus1Path} fill="none" stroke="#94a3b8" strokeWidth={isFullscreen ? '1.6' : '1'} strokeDasharray={isFullscreen ? '6 7' : '3 4'} />
+        <path d={renderChart.minus2Path} fill="none" stroke="#94a3b8" strokeWidth={isFullscreen ? '1.8' : '1'} strokeDasharray={isFullscreen ? '8 8' : '4 5'} />
+        <path d={renderChart.regressionPath} fill="none" stroke="#f97316" strokeWidth={isFullscreen ? '4' : '1.8'} />
+        {showMa200 && renderChart.ma200Path && (
+          <path d={renderChart.ma200Path} fill="none" stroke="#111827" strokeWidth={isFullscreen ? '3' : '1.5'} strokeDasharray={isFullscreen ? '10 8' : '6 4'} className="dark:stroke-white" />
         )}
-        <path d={chart.pricePath} fill="none" stroke="#38bdf8" strokeWidth="1.7" />
+        <path d={renderChart.pricePath} fill="none" stroke="#38bdf8" strokeWidth={isFullscreen ? '3.4' : '1.7'} />
         <circle
-          cx={chart.getX(chart.points.length - 1)}
-          cy={chart.getY(model.latestPrice)}
-          r="3.2"
+          cx={latestX}
+          cy={latestY}
+          r={isFullscreen ? '7' : '3.2'}
           fill="#38bdf8"
           stroke="white"
-          strokeWidth="1.2"
+          strokeWidth={isFullscreen ? '3' : '1.2'}
         />
         <text
-          x={Math.max(chart.left, chart.getX(chart.points.length - 1) - 80)}
-          y={Math.max(chart.top + 12, chart.getY(model.latestPrice) - 8)}
-          className="fill-blue-600 text-[9px] font-black dark:fill-[#00FF88]"
+          x={latestLabelX}
+          y={Math.max(renderChart.top + (isFullscreen ? 28 : 12), latestY - (isFullscreen ? 18 : 8))}
+          textAnchor="end"
+          className={cn(
+            'fill-blue-600 font-black dark:fill-[#00FF88]',
+            isFullscreen ? 'text-[18px]' : 'text-[9px]',
+          )}
         >
           {formatPrice(model.latestPrice, currency)}
         </text>
-        {chart.xTicks.map((tick, index) => (
+        {renderChart.xTicks.map((tick, index) => (
           <text
             key={`${tick.date}-${index}`}
             x={tick.x}
-            y={chart.bottom + 18}
-            textAnchor={index === 0 ? 'start' : index === chart.xTicks.length - 1 ? 'end' : 'middle'}
-            className="fill-slate-500 text-[8px] font-mono dark:fill-gray-500"
+            y={renderChart.bottom + (isFullscreen ? 36 : 18)}
+            textAnchor={index === 0 ? 'start' : index === renderChart.xTicks.length - 1 ? 'end' : 'middle'}
+            className={dateTextClass}
           >
             {formatCompactDate(tick.date)}
           </text>
@@ -344,7 +409,7 @@ export function TridentRegressionChart({
               {item}
             </button>
           ))}
-          {model && chart && (
+          {model && charts && (
             <FullscreenChartButton title={`${ticker} Regression`} className="h-7 w-7">
               <div className="space-y-4">
                 <div className="grid grid-cols-3 gap-2">
@@ -353,7 +418,7 @@ export function TridentRegressionChart({
                   <Metric label="Slope" value={formatPct(model.annualizedSlopePct)} tone={model.annualizedSlopePct !== null && model.annualizedSlopePct < 0 ? 'bad' : 'neutral'} />
                 </div>
                 <div className="rounded-md border border-slate-200 bg-slate-50 p-3 dark:border-white/10 dark:bg-black/20">
-                  {renderRegressionSvg('h-[72vh] min-h-[460px]', 'fullscreen')}
+                  {renderRegressionSvg(charts.fullscreen, 'h-auto', 'fullscreen', 'fullscreen')}
                 </div>
                 <div className="flex flex-wrap items-center gap-x-2 gap-y-1 text-[9px] font-mono uppercase tracking-wider text-slate-500 dark:text-gray-500">
                   <span>{currency}</span>
@@ -459,7 +524,7 @@ export function TridentRegressionChart({
           </div>
         )}
 
-        {!isLoading && !error && model && chart && (
+        {!isLoading && !error && model && charts && (
           <div className="space-y-3">
             <div className="grid grid-cols-3 gap-2">
               <Metric label="Last" value={formatPrice(model.latestPrice, currency)} />
@@ -467,7 +532,7 @@ export function TridentRegressionChart({
               <Metric label="Slope" value={formatPct(model.annualizedSlopePct)} tone={model.annualizedSlopePct !== null && model.annualizedSlopePct < 0 ? 'bad' : 'neutral'} />
             </div>
 
-            {renderRegressionSvg('h-60', 'inline')}
+            {renderRegressionSvg(charts.inline, 'h-60', 'inline', 'inline')}
 
             <div className="flex flex-wrap items-center gap-x-2 gap-y-1 text-[9px] font-mono uppercase tracking-wider text-slate-500 dark:text-gray-500">
               <span>{currency}</span>

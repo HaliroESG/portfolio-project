@@ -81,10 +81,11 @@ try {
     hasAll(assetDrawer, [
       "import { ASSET_DRAWER_WIDTH } from '../lib/panelWidth'",
       'usePersistedPanelWidth(ASSET_DRAWER_WIDTH)',
-      'id="asset-drawer-width"',
+      'Resize asset detail drawer separator',
+      'handleDrawerResizePointerDown',
       'style={{ width: `min(100vw, ${drawerWidth}px)` }}',
-    ]),
-    'Asset drawer should expose a persisted width slider and stay mobile-bounded.'
+    ]) && !assetDrawer.includes('type="range"'),
+    'Asset drawer should expose persisted separator-handle resizing and stay mobile-bounded without a range gauge.'
   )
 
   const assetPriceChart = read('frontend/components/AssetPriceChart.tsx')
@@ -104,7 +105,7 @@ try {
     hasAll(assetPriceChart, [
       "import { FullscreenChartButton } from './FullscreenChart'",
       '<FullscreenChartButton title={`${ticker} Price History`}>',
-      "renderChartSvg('h-[70vh] min-h-[420px]', 'fullscreen')",
+      "renderChartSvg('h-auto', 'fullscreen')",
     ]),
     'Asset price chart should expose a fullscreen chart view.'
   )
@@ -127,17 +128,17 @@ try {
     hasAll(tridentPage, [
       "import { TRIDENT_DETAIL_WIDTH } from '../../lib/panelWidth'",
       'usePersistedPanelWidth(TRIDENT_DETAIL_WIDTH)',
-      'Resize Trident detail panel',
-      'id="trident-detail-width"',
+      'Resize Trident detail separator',
+      'handleDetailResizePointerDown',
       '--trident-detail-width',
-    ]) && hasAll(panelWidth, [
+    ]) && !tridentPage.includes('type="range"') && hasAll(panelWidth, [
       'TRIDENT_DETAIL_WIDTH',
       'ASSET_DRAWER_WIDTH',
       'clampPanelWidth',
       'readStoredPanelWidth',
       'writeStoredPanelWidth',
     ]),
-    'Trident detail panel should expose persisted slider and drag-handle resizing.'
+    'Trident detail panel should expose persisted separator-handle resizing without a range gauge.'
   )
   addCheck(
     'frontend.trident_regression_chart_controls_and_calculations',
@@ -166,8 +167,10 @@ try {
     ]) && hasAll(tridentRegressionChart, [
       "import { FullscreenChartButton } from './FullscreenChart'",
       '<FullscreenChartButton title={`${ticker} Regression`} className="h-7 w-7">',
+      'buildRegressionRenderChart(model, scaleMode, showMa200',
+      "renderRegressionSvg(charts.fullscreen, 'h-auto', 'fullscreen', 'fullscreen')",
     ]),
-    'Fullscreen chart overlay should be shared and wired into Trident regression.'
+    'Fullscreen chart overlay should be shared and wired into Trident regression with dedicated fullscreen geometry.'
   )
 
   const backtestChart = read('frontend/components/BacktestChart.tsx')
@@ -179,15 +182,15 @@ try {
     hasAll(backtestChart, [
       "import { FullscreenChartButton } from './FullscreenChart'",
       '<FullscreenChartButton title={title}>',
-      "renderChartSvg('h-[70vh] min-h-[420px]')",
+      "renderChartSvg('h-auto')",
     ]) && hasAll(drawdownChart, [
       "import { FullscreenChartButton } from './FullscreenChart'",
       '<FullscreenChartButton title={title}>',
-      "renderChartSvg('h-[70vh] min-h-[420px]')",
+      "renderChartSvg('h-auto')",
     ]) && hasAll(portfolioTrendPanel, [
       "import { FullscreenChartButton } from './FullscreenChart'",
       '<FullscreenChartButton title="Portfolio Momentum">',
-      "renderTrendSvg('h-[70vh] min-h-[420px]', 'fullscreen')",
+      "renderTrendSvg('h-auto', 'fullscreen')",
     ]) && hasAll(geographicMap, [
       "import { FullscreenChartButton } from './FullscreenChart'",
       '<FullscreenChartButton title="Geographic View">',

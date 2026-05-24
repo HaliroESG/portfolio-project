@@ -257,7 +257,7 @@ export function PortfolioTrendPanel() {
           <FullscreenChartButton title="Portfolio Momentum">
             <div className="space-y-4">
               <div className="rounded-2xl border border-slate-200 bg-slate-50 p-3 dark:border-white/5 dark:bg-[#080A0F]">
-                {renderTrendSvg('h-[70vh] min-h-[420px]', 'fullscreen')}
+                {renderTrendSvg('h-auto', 'fullscreen')}
               </div>
               <div className="text-[10px] font-mono uppercase tracking-wider text-slate-500 dark:text-gray-500">
                 MACD + RSI(60) + Momentum(20)

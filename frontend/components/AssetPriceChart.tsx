@@ -242,7 +242,7 @@ export function AssetPriceChart({
             <FullscreenChartButton title={`${ticker} Price History`}>
               <div className="space-y-4">
                 <div className="rounded-2xl border border-slate-200 bg-slate-50 p-3 dark:border-white/5 dark:bg-[#080A0F]">
-                  {renderChartSvg('h-[70vh] min-h-[420px]', 'fullscreen')}
+                  {renderChartSvg('h-auto', 'fullscreen')}
                 </div>
                 <div className="flex flex-wrap items-center gap-2 text-[10px] font-mono uppercase tracking-wider text-slate-500 dark:text-gray-500">
                   <span>{currency}</span>

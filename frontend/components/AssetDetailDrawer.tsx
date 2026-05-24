@@ -224,6 +224,32 @@ export function AssetDetailDrawer({ asset, isOpen, onClose }: AssetDetailDrawerP
     setWatchlistEntries(next)
   }
 
+  const handleDrawerResizePointerDown = (event: React.PointerEvent<HTMLButtonElement>) => {
+    event.preventDefault()
+    const startX = event.clientX
+    const startWidth = drawerWidth
+    const onMove = (moveEvent: PointerEvent) => {
+      setDrawerWidth(startWidth - (moveEvent.clientX - startX))
+    }
+    const onEnd = () => {
+      window.removeEventListener('pointermove', onMove)
+      window.removeEventListener('pointerup', onEnd)
+    }
+    window.addEventListener('pointermove', onMove)
+    window.addEventListener('pointerup', onEnd)
+  }
+
+  const handleDrawerResizeKeyDown = (event: React.KeyboardEvent<HTMLButtonElement>) => {
+    if (event.key === 'ArrowLeft') {
+      event.preventDefault()
+      setDrawerWidth(drawerWidth + 20)
+    }
+    if (event.key === 'ArrowRight') {
+      event.preventDefault()
+      setDrawerWidth(drawerWidth - 20)
+    }
+  }
+
   return (
     <>
       {/* Backdrop */}
@@ -246,6 +272,16 @@ export function AssetDetailDrawer({ asset, isOpen, onClose }: AssetDetailDrawerP
         )}
         style={{ width: `min(100vw, ${drawerWidth}px)` }}
       >
+        <button
+          type="button"
+          aria-label="Resize asset detail drawer separator"
+          title="Drag to resize detail drawer"
+          onPointerDown={handleDrawerResizePointerDown}
+          onKeyDown={handleDrawerResizeKeyDown}
+          className="group absolute left-0 top-0 z-30 hidden h-full w-4 -translate-x-1/2 cursor-ew-resize items-center justify-center focus:outline-none focus-visible:ring-2 focus-visible:ring-blue-500 dark:focus-visible:ring-[#00FF88] sm:flex"
+        >
+          <span className="h-20 w-1 rounded-full bg-slate-300 transition-colors group-hover:bg-slate-500 group-focus-visible:bg-blue-500 dark:bg-white/20 dark:group-hover:bg-[#00FF88] dark:group-focus-visible:bg-[#00FF88]" />
+        </button>
         <div className="h-full flex flex-col overflow-hidden">
           {/* Header */}
           <div className="p-6 border-b-2 border-slate-200 dark:border-white/5 bg-slate-50 dark:bg-[#080A0F]">
@@ -271,23 +307,6 @@ export function AssetDetailDrawer({ asset, isOpen, onClose }: AssetDetailDrawerP
                 </div>
               </div>
               <div className="flex shrink-0 items-center gap-2">
-                <div className="hidden min-w-[190px] items-center gap-2 rounded-lg border border-slate-200 bg-white px-2 py-1.5 dark:border-white/10 dark:bg-black/20 sm:flex">
-                  <label htmlFor="asset-drawer-width" className="text-[9px] font-black uppercase tracking-wider text-slate-500">
-                    Width
-                  </label>
-                  <input
-                    id="asset-drawer-width"
-                    type="range"
-                    min={ASSET_DRAWER_WIDTH.min}
-                    max={ASSET_DRAWER_WIDTH.max}
-                    step={20}
-                    value={drawerWidth}
-                    onChange={(event) => setDrawerWidth(Number(event.target.value))}
-                    className="h-1 min-w-0 flex-1 accent-blue-600 dark:accent-[#00FF88]"
-                    aria-label="Asset detail drawer width"
-                  />
-                  <span className="w-10 text-right text-[9px] font-mono text-slate-500">{drawerWidth}px</span>
-                </div>
                 <button
                   onClick={onClose}
                   className="p-2 hover:bg-slate-200 dark:hover:bg-white/10 rounded-lg transition-colors"
