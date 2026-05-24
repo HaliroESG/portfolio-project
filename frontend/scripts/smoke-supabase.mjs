@@ -109,7 +109,7 @@ async function tridentLatestCheck() {
   const check = await q('trident_screener_latest', () =>
     supabase
       .from('trident_screener_latest')
-      .select('instrument_key,ticker,score,confidence,overall_state,latest_roic,latest_net_debt_to_ebitda,updated_at', { count: 'exact' })
+      .select('instrument_key,ticker,score,confidence,overall_state,source_provider,source_index,criteria_pass_count,criteria_fail_count,criteria_missing_count,latest_roic,latest_net_debt_to_ebitda,updated_at', { count: 'exact' })
       .limit(5)
   )
 

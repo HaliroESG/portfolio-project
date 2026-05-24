@@ -5,6 +5,7 @@ import useSWR from 'swr'
 import {
   AlertTriangle,
   CheckCircle2,
+  Clock3,
   CircleHelp,
   MinusCircle,
   Search,
@@ -16,7 +17,7 @@ import { Header } from '../../components/Header'
 import { Sidebar } from '../../components/Sidebar'
 import { EmptyState } from '../../components/EmptyState'
 import { supabase } from '../../lib/supabase'
-import { loadTridentBundle } from '../../lib/tridentData'
+import { loadTridentBundle, loadTridentCriteria } from '../../lib/tridentData'
 import { swrOptions, SWR_REFRESH } from '../../lib/swrConfig'
 import { cn } from '../../lib/utils'
 import {
@@ -72,10 +73,24 @@ function formatCriterionValue(row: TridentCriterionRow): string {
 }
 
 function stateBadgeClass(state: TridentOverallState | null): string {
-  if (state === 'PASS') return 'bg-emerald-100 text-emerald-700 border-emerald-300 dark:bg-emerald-950/30 dark:text-emerald-300 dark:border-emerald-800'
-  if (state === 'FAIL') return 'bg-red-100 text-red-700 border-red-300 dark:bg-red-950/30 dark:text-red-300 dark:border-red-800'
-  if (state === 'PARTIAL') return 'bg-amber-100 text-amber-700 border-amber-300 dark:bg-amber-950/30 dark:text-amber-300 dark:border-amber-800'
+  if (state === 'QUALIFIED') return 'bg-emerald-100 text-emerald-700 border-emerald-300 dark:bg-emerald-950/30 dark:text-emerald-300 dark:border-emerald-800'
+  if (state === 'REJECTED') return 'bg-red-100 text-red-700 border-red-300 dark:bg-red-950/30 dark:text-red-300 dark:border-red-800'
+  if (state === 'WATCHLIST') return 'bg-amber-100 text-amber-700 border-amber-300 dark:bg-amber-950/30 dark:text-amber-300 dark:border-amber-800'
   return 'bg-slate-100 text-slate-600 border-slate-300 dark:bg-slate-800/60 dark:text-gray-300 dark:border-slate-700'
+}
+
+function stateLabel(state: TridentOverallState | null): string {
+  if (state === 'QUALIFIED') return 'Qualified'
+  if (state === 'WATCHLIST') return 'Watchlist'
+  if (state === 'REJECTED') return 'Rejected'
+  return 'No data'
+}
+
+function stateHelp(state: TridentOverallState | null): string {
+  if (state === 'QUALIFIED') return 'Score >= 75, confidence >= 70, no missing criterion, no failed eliminator.'
+  if (state === 'WATCHLIST') return 'No failed eliminator, but score or confidence is below qualified threshold.'
+  if (state === 'REJECTED') return 'At least one eliminating criterion failed.'
+  return 'No usable annual financial history.'
 }
 
 function criterionBadge(status: TridentCriterionStatus) {
@@ -127,6 +142,13 @@ function lastSyncLabel(value: string | null | undefined): string {
   return parsed.toLocaleTimeString('fr-FR')
 }
 
+function isStaleRun(value: string | null | undefined): boolean {
+  if (!value) return false
+  const parsed = new Date(value)
+  if (Number.isNaN(parsed.getTime())) return false
+  return Date.now() - parsed.getTime() > 48 * 60 * 60 * 1000
+}
+
 export default function TridentPage() {
   const [search, setSearch] = useState('')
   const [country, setCountry] = useState('ALL')
@@ -174,21 +196,34 @@ export default function TridentPage() {
     return filteredRows.find((row) => row.instrument_key === selectedKey) ?? filteredRows[0] ?? null
   }, [filteredRows, selectedKey])
 
-  const selectedCriteria = selectedRow ? data?.criteriaByInstrument[selectedRow.instrument_key] ?? [] : []
-  const horizonCriteria = selectedCriteria.filter((row) => row.horizon_years === horizon)
+  const {
+    data: horizonCriteria = [],
+    isLoading: isCriteriaLoading,
+    error: criteriaError,
+  } = useSWR(
+    selectedRow ? ['trident-criteria-v2', selectedRow.instrument_key, horizon] : null,
+    () => {
+      if (!selectedRow) return Promise.resolve([])
+      return loadTridentCriteria(supabase, selectedRow.instrument_key, horizon)
+    },
+    swrOptions(SWR_REFRESH.SLOW)
+  )
   const horizonSummary = selectedRow?.horizons[String(horizon)] ?? null
-  const passCount = rows.filter((row) => row.overall_state === 'PASS').length
-  const failCount = rows.filter((row) => row.overall_state === 'FAIL').length
-  const partialCount = rows.filter((row) => row.overall_state === 'PARTIAL').length
+  const qualifiedCount = rows.filter((row) => row.overall_state === 'QUALIFIED').length
+  const watchlistCount = rows.filter((row) => row.overall_state === 'WATCHLIST').length
+  const rejectedCount = rows.filter((row) => row.overall_state === 'REJECTED').length
   const lastSync = lastSyncLabel(data?.lastUpdateIso)
   const sourceCounts = data?.sourceCounts
   const hasUniverseOnlyRows = rows.length > 0 && sourceCounts?.financials === 0
+  const lastRunStats = data?.lastBackendRun?.stats ?? {}
+  const coveragePct = typeof lastRunStats.coverage_pct === 'number' ? lastRunStats.coverage_pct : null
+  const staleRun = isStaleRun(data?.lastBackendRun?.finished_at ?? data?.lastUpdateIso)
 
   return (
     <div className="flex h-screen bg-slate-100 dark:bg-[#080A0F] text-slate-950 dark:text-gray-200 transition-colors duration-500">
       <Sidebar />
       <div className="flex-1 min-w-0 flex flex-col">
-        <Header lastSync={lastSync} lastSyncIso={data?.lastUpdateIso ?? null} coveragePct={rows.length > 0 ? 100 : null} />
+        <Header lastSync={lastSync} lastSyncIso={data?.lastUpdateIso ?? null} coveragePct={coveragePct} />
         <main className="flex-1 min-h-0 p-5 flex flex-col gap-4 overflow-hidden">
           <section className="flex items-center justify-between gap-4">
             <div>
@@ -197,12 +232,17 @@ export default function TridentPage() {
               </h1>
               <div className="mt-1 flex items-center gap-3 text-[10px] font-mono text-slate-500 dark:text-gray-500">
                 <span>{rows.length} instruments</span>
-                <span>{passCount} pass</span>
-                <span>{failCount} fail</span>
-                <span>{partialCount} partial</span>
+                <span>{qualifiedCount} qualified</span>
+                <span>{watchlistCount} watchlist</span>
+                <span>{rejectedCount} rejected</span>
                 {sourceCounts && (
                   <span>
                     source {sourceCounts.universe} universe / {sourceCounts.financials} financial rows
+                  </span>
+                )}
+                {data?.lastBackendRun && (
+                  <span>
+                    run {data.lastBackendRun.status.toLowerCase()} / {coveragePct ?? '--'}% covered
                   </span>
                 )}
               </div>
@@ -218,6 +258,12 @@ export default function TridentPage() {
               {hasUniverseOnlyRows && (
                 <span className="rounded border border-slate-300 bg-slate-50 px-3 py-1.5 text-slate-600 dark:border-white/10 dark:bg-white/5 dark:text-gray-300">
                   Universe only
+                </span>
+              )}
+              {staleRun && (
+                <span className="inline-flex items-center gap-1 rounded border border-amber-300 bg-amber-50 px-3 py-1.5 text-amber-700 dark:border-amber-800 dark:bg-amber-950/30 dark:text-amber-300">
+                  <Clock3 className="h-3 w-3" />
+                  Stale &gt; 48h
                 </span>
               )}
             </div>
@@ -243,9 +289,9 @@ export default function TridentPage() {
               className="h-9 rounded-md border border-slate-200 bg-slate-50 px-2 text-xs font-black uppercase outline-none dark:border-white/10 dark:bg-black/20 dark:text-white"
             >
               <option value="ALL">All states</option>
-              <option value="PASS">Pass</option>
-              <option value="FAIL">Fail</option>
-              <option value="PARTIAL">Partial</option>
+              <option value="QUALIFIED">Qualified</option>
+              <option value="WATCHLIST">Watchlist</option>
+              <option value="REJECTED">Rejected</option>
               <option value="NO_DATA">No data</option>
             </select>
             <select
@@ -276,7 +322,7 @@ export default function TridentPage() {
 
           {hasUniverseOnlyRows && (
             <div className="rounded-lg border border-amber-300 bg-amber-50 px-3 py-2 text-xs font-semibold text-amber-800 dark:border-amber-900/60 dark:bg-amber-950/20 dark:text-amber-300">
-              Trident is populated from portfolio positions, but annual financial statements are not configured. Rows are marked NO_DATA until a CSV or licensed financial provider is connected.
+              Trident has a market universe, but annual financial statements are not loaded yet. Rows stay NO_DATA until the backend sync writes provider financials.
             </div>
           )}
 
@@ -294,7 +340,7 @@ export default function TridentPage() {
               tone="warning"
               className="flex-1"
               title="Trident provider not configured"
-              message="The Trident schema is available, but the equity universe is empty. Configure TRIDENT_UNIVERSE_CSV and TRIDENT_FINANCIALS_CSV, then run the backend Trident sync."
+              message="The Trident schema is available, but the equity universe is empty. Run the backend Trident sync with the global_yahoo provider or configure CSV inputs."
             />
           ) : rows.length === 0 && sourceCounts && sourceCounts.universe > 0 && sourceCounts.results === 0 ? (
             <EmptyState
@@ -331,8 +377,8 @@ export default function TridentPage() {
                     <tbody className="divide-y divide-slate-100 dark:divide-white/5">
                       {filteredRows.map((row) => {
                         const isSelected = row.instrument_key === selectedRow?.instrument_key
-                        const failTotal = summaryNumber(row, 'criteria_fail')
-                        const missingTotal = summaryNumber(row, 'criteria_missing')
+                        const failTotal = row.criteria_fail_count ?? summaryNumber(row, 'criteria_fail')
+                        const missingTotal = row.criteria_missing_count ?? summaryNumber(row, 'criteria_missing')
                         return (
                           <tr
                             key={row.instrument_key}
@@ -370,8 +416,11 @@ export default function TridentPage() {
                             <td className="px-3 py-3 text-right text-xs font-mono font-black">{formatRatio(row.latest_net_debt_to_ebitda)}</td>
                             <td className="px-3 py-3 text-center">
                               <div className="flex flex-col items-center gap-1">
-                                <span className={cn('rounded border px-2 py-0.5 text-[9px] font-black uppercase tracking-wider', stateBadgeClass(row.overall_state))}>
-                                  {row.overall_state ?? 'NO_DATA'}
+                                <span
+                                  title={stateHelp(row.overall_state)}
+                                  className={cn('rounded border px-2 py-0.5 text-[9px] font-black uppercase tracking-wider', stateBadgeClass(row.overall_state))}
+                                >
+                                  {stateLabel(row.overall_state)}
                                 </span>
                                 {(failTotal > 0 || missingTotal > 0) && (
                                   <span className="text-[9px] font-mono text-slate-500">
@@ -401,8 +450,11 @@ export default function TridentPage() {
                             <span>{selectedRow.country ?? '--'}</span>
                           </div>
                         </div>
-                        <span className={cn('rounded border px-2 py-1 text-[10px] font-black uppercase tracking-wider', stateBadgeClass(selectedRow.overall_state))}>
-                          {selectedRow.overall_state ?? 'NO_DATA'}
+                        <span
+                          title={stateHelp(selectedRow.overall_state)}
+                          className={cn('rounded border px-2 py-1 text-[10px] font-black uppercase tracking-wider', stateBadgeClass(selectedRow.overall_state))}
+                        >
+                          {stateLabel(selectedRow.overall_state)}
                         </span>
                       </div>
 
@@ -411,6 +463,11 @@ export default function TridentPage() {
                         <MetricTile label="Conf" value={formatScore(selectedRow.confidence)} />
                         <MetricTile label="ROIC" value={formatPct(selectedRow.latest_roic)} />
                         <MetricTile label="Debt" value={formatRatio(selectedRow.latest_net_debt_to_ebitda)} />
+                      </div>
+                      <div className="mt-3 grid grid-cols-3 gap-2">
+                        <MetricTile label="Pass" value={formatScore(selectedRow.criteria_pass_count ?? summaryNumber(selectedRow, 'criteria_pass'))} />
+                        <MetricTile label="Fail" value={formatScore(selectedRow.criteria_fail_count ?? summaryNumber(selectedRow, 'criteria_fail'))} />
+                        <MetricTile label="Missing" value={formatScore(selectedRow.criteria_missing_count ?? summaryNumber(selectedRow, 'criteria_missing'))} />
                       </div>
 
                       {selectedRow.failed_eliminators.length > 0 && (
@@ -449,55 +506,70 @@ export default function TridentPage() {
                     </div>
 
                     <div className="min-h-0 flex-1 overflow-auto p-4">
-                      {CATEGORIES.map((category) => {
-                        const rowsForCategory = horizonCriteria.filter((row) => row.category === category.key)
-                        return (
-                          <section key={category.key} className="mb-5 last:mb-0">
-                            <h2 className="mb-2 text-[10px] font-black uppercase tracking-[0.2em] text-slate-500">
-                              {category.label}
-                            </h2>
-                            <div className="divide-y divide-slate-100 rounded-md border border-slate-200 dark:divide-white/5 dark:border-white/10">
-                              {rowsForCategory.map((criterionRow) => {
-                                const badge = criterionBadge(criterionRow.status)
-                                return (
-                                  <div key={`${criterionRow.horizon_years}-${criterionRow.criterion_key}`} className="p-3">
-                                    <div className="flex items-start justify-between gap-3">
-                                      <div className="min-w-0">
-                                        <div className="text-xs font-black text-slate-900 dark:text-white">
-                                          {criterionRow.label}
+                      {criteriaError ? (
+                        <div className="rounded-md border border-red-200 bg-red-50 p-3 text-xs font-bold text-red-700 dark:border-red-900/60 dark:bg-red-950/20 dark:text-red-300">
+                          Criteria unavailable for {selectedRow.ticker}.
+                        </div>
+                      ) : isCriteriaLoading ? (
+                        <div className="rounded-md border border-slate-200 bg-slate-50 p-3 text-xs font-bold text-slate-600 dark:border-white/10 dark:bg-black/20 dark:text-gray-300">
+                          Loading {horizon}Y criteria.
+                        </div>
+                      ) : horizonCriteria.length === 0 ? (
+                        <div className="rounded-md border border-amber-300 bg-amber-50 p-3 text-xs font-bold text-amber-800 dark:border-amber-900/60 dark:bg-amber-950/20 dark:text-amber-300">
+                          No {horizon}Y criteria rows returned for {selectedRow.ticker}.
+                        </div>
+                      ) : (
+                        CATEGORIES.map((category) => {
+                          const rowsForCategory = horizonCriteria.filter((row) => row.category === category.key)
+                          if (rowsForCategory.length === 0) return null
+                          return (
+                            <section key={category.key} className="mb-5 last:mb-0">
+                              <h2 className="mb-2 text-[10px] font-black uppercase tracking-[0.2em] text-slate-500">
+                                {category.label}
+                              </h2>
+                              <div className="divide-y divide-slate-100 rounded-md border border-slate-200 dark:divide-white/5 dark:border-white/10">
+                                {rowsForCategory.map((criterionRow) => {
+                                  const badge = criterionBadge(criterionRow.status)
+                                  return (
+                                    <div key={`${criterionRow.horizon_years}-${criterionRow.criterion_key}`} className="p-3">
+                                      <div className="flex items-start justify-between gap-3">
+                                        <div className="min-w-0">
+                                          <div className="text-xs font-black text-slate-900 dark:text-white">
+                                            {criterionRow.label}
+                                          </div>
+                                          <div className="mt-1 flex flex-wrap items-center gap-2 text-[10px] font-mono text-slate-500">
+                                            <span>Actual {formatCriterionValue(criterionRow)}</span>
+                                            <span>
+                                              Threshold {criterionRow.comparator ?? ''}{' '}
+                                              {criterionRow.threshold !== null && criterionRow.criterion_key !== 'net_debt_to_ebitda' && criterionRow.criterion_key !== 'interest_coverage' && criterionRow.criterion_key !== 'debt_to_equity'
+                                                ? formatPct(criterionRow.threshold)
+                                                : formatRatio(criterionRow.threshold)}
+                                            </span>
+                                          </div>
                                         </div>
-                                        <div className="mt-1 flex flex-wrap items-center gap-2 text-[10px] font-mono text-slate-500">
-                                          <span>Actual {formatCriterionValue(criterionRow)}</span>
-                                          <span>
-                                            Threshold {criterionRow.comparator ?? ''}{' '}
-                                            {criterionRow.threshold !== null && criterionRow.criterion_key !== 'net_debt_to_ebitda' && criterionRow.criterion_key !== 'interest_coverage' && criterionRow.criterion_key !== 'debt_to_equity'
-                                              ? formatPct(criterionRow.threshold)
-                                              : formatRatio(criterionRow.threshold)}
-                                          </span>
-                                        </div>
+                                        <span className={cn('inline-flex items-center gap-1 rounded border px-2 py-0.5 text-[9px] font-black uppercase tracking-wider', badge.className)}>
+                                          <badge.Icon className="h-3 w-3" />
+                                          {badge.label}
+                                        </span>
                                       </div>
-                                      <span className={cn('inline-flex items-center gap-1 rounded border px-2 py-0.5 text-[9px] font-black uppercase tracking-wider', badge.className)}>
-                                        <badge.Icon className="h-3 w-3" />
-                                        {badge.label}
-                                      </span>
+                                      {criterionRow.reason && (
+                                        <div className="mt-2 flex items-center gap-1 text-[10px] font-semibold text-slate-500 dark:text-gray-400">
+                                          <AlertTriangle className="h-3 w-3" />
+                                          {criterionRow.reason}
+                                        </div>
+                                      )}
                                     </div>
-                                    {criterionRow.reason && (
-                                      <div className="mt-2 flex items-center gap-1 text-[10px] font-semibold text-slate-500 dark:text-gray-400">
-                                        <AlertTriangle className="h-3 w-3" />
-                                        {criterionRow.reason}
-                                      </div>
-                                    )}
-                                  </div>
-                                )
-                              })}
-                            </div>
-                          </section>
-                        )
-                      })}
+                                  )
+                                })}
+                              </div>
+                            </section>
+                          )
+                        })
+                      )}
                     </div>
 
                     <div className="border-t border-slate-200 p-3 text-[10px] font-mono text-slate-500 dark:border-white/10">
-                      Provider {selectedRow.provider}. {selectedRow.source_license_note ?? 'No license note supplied.'}
+                      Provider {selectedRow.source_provider}. Index {selectedRow.source_index ?? '--'}. {selectedRow.source_license_note ?? 'No license note supplied.'}
                     </div>
                   </div>
                 )}

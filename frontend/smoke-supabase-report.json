@@ -1,21 +1,23 @@
 {
-  "ok": false,
-  "status": "BLOCKED",
+  "ok": true,
+  "status": "PASS",
   "checks": [
     {
       "name": "market_watch",
-      "ok": false,
-      "status": "BLOCKED",
-      "blocked_reason": "Technical schema drift: required columns for BL-001 are missing in market_watch.",
-      "error": "column market_watch.macd_line does not exist",
-      "fallback_selector_used": "ticker,last_update,data_status,last_price,currency",
+      "ok": true,
+      "status": "PASS",
+      "technical_schema": "present",
       "row_count": 39,
       "sample": {
-        "ticker": "DOLLAR",
-        "last_update": "2026-04-09T16:38:08.700526+00:00",
-        "data_status": "OK",
-        "last_price": 1.083217978477478,
-        "currency": "USD"
+        "ticker": "GOLD",
+        "last_update": "2026-05-22T22:27:58.855906+00:00",
+        "macd_line": null,
+        "macd_signal": null,
+        "macd_hist": null,
+        "rsi_14": null,
+        "momentum_20": null,
+        "trend_state": null,
+        "trend_changed": false
       }
     },
     {
@@ -26,31 +28,31 @@
       "sample": {
         "id": "USD",
         "symbol": "$",
-        "rate_to_eur": 0.84960001707077,
-        "last_update": "2026-05-11T12:05:30.311414+00:00"
+        "rate_to_eur": 0.861699998378754,
+        "last_update": "2026-05-24T15:54:46.880979+00:00"
       }
     },
     {
       "name": "valuation_snapshots",
       "ok": true,
       "status": "PASS",
-      "row_count": 97,
+      "row_count": 100,
       "sample": {
         "coverage_pct": 100,
-        "created_at": "2026-05-11T09:07:16.537826+00:00"
+        "created_at": "2026-05-24T15:55:47.09706+00:00"
       }
     },
     {
       "name": "news_feed",
       "ok": true,
       "status": "PASS",
-      "row_count": 18,
+      "row_count": 14,
       "sample": {
-        "id": "c902244d-0649-4f06-ab7f-671f78540ff1",
-        "title": "Gold and silver prices today, Wednesday, May 6: Gold and silver prices up significantly this morning",
+        "id": "f28631fe-6f52-4151-8f21-83cf774631bb",
+        "title": "Microsoft (MSFT): One of the Best Long-Term Stocks to Buy Now for High Returns",
         "impact_score": 10,
-        "published_at": "2026-05-06T10:44:04+00:00",
-        "ticker": "0JDT.L"
+        "published_at": "2026-05-24T13:30:20+00:00",
+        "ticker": "MSFT"
       }
     },
     {
@@ -69,13 +71,142 @@
       "name": "etl_runs",
       "ok": true,
       "status": "PASS",
-      "row_count": 219,
+      "row_count": 235,
       "sample": {
-        "job_name": "news_sync",
+        "job_name": "trident_screener_sync",
         "status": "SUCCESS",
-        "started_at": "2026-05-11T09:07:21.363287+00:00",
-        "finished_at": "2026-05-11T09:07:27.154374+00:00",
-        "duration_sec": 5.81
+        "started_at": "2026-05-24T17:19:02.468389+00:00",
+        "finished_at": "2026-05-24T17:22:13.397183+00:00",
+        "duration_sec": 190.68
+      }
+    },
+    {
+      "name": "trident_screener_latest",
+      "ok": true,
+      "status": "PASS",
+      "row_count": 203,
+      "sample": {
+        "instrument_key": "global_yahoo:000120.ks",
+        "ticker": "000120.KS",
+        "score": 15.38,
+        "confidence": 80.77,
+        "overall_state": "REJECTED",
+        "source_provider": "global_yahoo",
+        "source_index": null,
+        "criteria_pass_count": 8,
+        "criteria_fail_count": 34,
+        "criteria_missing_count": 10,
+        "latest_roic": 0.07927689264825559,
+        "latest_net_debt_to_ebitda": 1.5878123652302634,
+        "updated_at": "2026-05-24T17:22:09.211637+00:00"
+      }
+    },
+    {
+      "name": "trident_criterion_results",
+      "ok": true,
+      "status": "PASS",
+      "row_count": 10556,
+      "sample": {
+        "instrument_key": "portfolio_seed:2fe.de",
+        "horizon_years": 1,
+        "criterion_key": "revenue_cagr",
+        "category": "growth",
+        "status": "missing",
+        "actual": null,
+        "threshold": 0.1
+      }
+    },
+    {
+      "name": "historical_prices",
+      "ok": true,
+      "status": "PASS",
+      "row_count": 241808,
+      "sample": {
+        "ticker": "GC=F",
+        "date": "2000-09-13",
+        "adj_close": 227.99804878439318,
+        "currency": "EUR",
+        "source": "yfinance",
+        "updated_at": "2026-05-24T15:56:28.108185+00:00"
+      }
+    },
+    {
+      "name": "historical_price_coverage",
+      "ok": true,
+      "status": "PASS",
+      "row_count": 44,
+      "sample": {
+        "ticker": "2FE.DE",
+        "requested_start_date": "1999-01-01",
+        "requested_end_date": "2026-05-24",
+        "earliest_date": "2016-02-18",
+        "coverage_pct": 36.46795410019592,
+        "used_proxy": false,
+        "updated_at": "2026-05-24T15:56:01.637351+00:00"
+      }
+    },
+    {
+      "name": "backtest_runs",
+      "ok": true,
+      "status": "PASS",
+      "row_count": 1,
+      "sample": {
+        "id": "a335b04c-6e70-46bb-a952-83afd32b1ba8",
+        "name": "Production Reference",
+        "created_at": "2026-05-24T15:57:36.443894+00:00",
+        "base_currency": "EUR",
+        "start_date": "2024-01-01",
+        "end_date": "2026-05-24",
+        "start_date_effective": "2024-01-01",
+        "end_date_effective": "2026-05-24",
+        "data_mode": "common_start"
+      }
+    },
+    {
+      "name": "backtest_portfolios",
+      "ok": true,
+      "status": "PASS",
+      "row_count": 1,
+      "sample": {
+        "run_id": "a335b04c-6e70-46bb-a952-83afd32b1ba8",
+        "portfolio_key": "dc3b2f8c-ed83-43b6-ab43-af98de4aeabb:current",
+        "portfolio_id": "dc3b2f8c-ed83-43b6-ab43-af98de4aeabb",
+        "preset_key": null,
+        "label": "Current",
+        "role": "current",
+        "start_date_effective": "2024-10-24"
+      }
+    },
+    {
+      "name": "backtest_results",
+      "ok": true,
+      "status": "PASS",
+      "row_count": 412,
+      "sample": {
+        "run_id": "a335b04c-6e70-46bb-a952-83afd32b1ba8",
+        "portfolio_key": "dc3b2f8c-ed83-43b6-ab43-af98de4aeabb:current",
+        "date": "2024-10-24",
+        "nav": 10000,
+        "drawdown": 0,
+        "returns_daily": 0
+      }
+    },
+    {
+      "name": "backtest_kpis",
+      "ok": true,
+      "status": "PASS",
+      "row_count": 1,
+      "sample": {
+        "run_id": "a335b04c-6e70-46bb-a952-83afd32b1ba8",
+        "portfolio_key": "dc3b2f8c-ed83-43b6-ab43-af98de4aeabb:current",
+        "cagr": -0.04324040531558293,
+        "vol": 0.23441571924239105,
+        "sharpe": -0.0631990007524006,
+        "sortino": -0.07619151080922992,
+        "max_drawdown": -0.27818044811966125,
+        "calmar": -0.15544013106551172,
+        "worst_year": -0.12456669146437171,
+        "best_year": 0.04352222129320982
       }
     }
   ]

@@ -28,6 +28,7 @@ on:
       - "frontend/types.ts"
       - "frontend/scripts/smoke-supabase.mjs"
       - ".github/workflows/trident-supabase.yml"
+      - ".github/workflows/schedule.yml"
 
 jobs:
   validate:
@@ -94,7 +95,11 @@ jobs:
       DATABASE_URL_VAR: ${{ vars.DATABASE_URL }}
       APPLY_SCHEMA: ${{ github.event_name == 'workflow_dispatch' && inputs.apply_schema || false }}
       RUN_TRIDENT_ETL: ${{ github.event_name == 'workflow_dispatch' && inputs.run_trident_etl || false }}
-      TRIDENT_PROVIDER: ${{ vars.TRIDENT_PROVIDER || 'csv' }}
+      TRIDENT_PROVIDER: ${{ vars.TRIDENT_PROVIDER || 'global_yahoo' }}
+      TRIDENT_INDEXES: ${{ vars.TRIDENT_INDEXES }}
+      TRIDENT_LIMIT: ${{ vars.TRIDENT_LIMIT }}
+      TRIDENT_PER_INDEX_LIMIT: ${{ vars.TRIDENT_PER_INDEX_LIMIT }}
+      TRIDENT_YAHOO_SLEEP_SEC: ${{ vars.TRIDENT_YAHOO_SLEEP_SEC || '0.15' }}
       TRIDENT_UNIVERSE_CSV: ${{ vars.TRIDENT_UNIVERSE_CSV }}
       TRIDENT_FINANCIALS_CSV: ${{ vars.TRIDENT_FINANCIALS_CSV }}
       TRIDENT_SOURCE_LICENSE_NOTE: ${{ vars.TRIDENT_SOURCE_LICENSE_NOTE }}
@@ -165,7 +170,14 @@ jobs:
             echo "::error::TRIDENT_UNIVERSE_CSV and TRIDENT_FINANCIALS_CSV repository variables are required for CSV provider."
             exit 2
           fi
-          python scripts/sync_trident_screener.py
+          cmd=(python scripts/sync_trident_screener.py)
+          if [ -n "$TRIDENT_LIMIT" ]; then
+            cmd+=(--limit "$TRIDENT_LIMIT")
+          fi
+          if [ -n "$TRIDENT_PER_INDEX_LIMIT" ]; then
+            cmd+=(--per-index-limit "$TRIDENT_PER_INDEX_LIMIT")
+          fi
+          "${cmd[@]}"
 
       - name: Setup Node for Supabase smoke
         uses: actions/setup-node@v4

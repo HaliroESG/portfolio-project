@@ -45,7 +45,7 @@ Rule: if backend contracts or Supabase-facing shapes change, update frontend rea
 
 ### Backend
 - Python `3.11`
-- Core libs: `yfinance`, `pandas`, `numpy`, `supabase`, `feedparser`, `requests`, `scipy`, `statsmodels`
+- Core libs: `yfinance`, `pandas`, `numpy`, `lxml`, `supabase`, `feedparser`, `requests`, `scipy`, `statsmodels`
 - Test framework: `pytest`
 
 ### Data Platform
@@ -72,9 +72,12 @@ Additional for specific jobs:
 - `GSPREAD_SERVICE_ACCOUNT` (required by `backend/bridge.py`)
 - `GSHEET_NAME` (required by `backend/bridge.py`)
 - `MARKETAUX_API_KEY` (optional for `backend/news_sync.py`; script degrades if missing)
-- `TRIDENT_PROVIDER` (optional, currently `csv`; no unlicensed global provider is bundled)
-- `TRIDENT_UNIVERSE_CSV` (required by `backend/scripts/sync_trident_screener.py` for CSV provider)
-- `TRIDENT_FINANCIALS_CSV` (required by `backend/scripts/sync_trident_screener.py` for CSV provider)
+- `TRIDENT_PROVIDER` (optional, defaults to `global_yahoo`; also supports `csv` and `portfolio_seed`)
+- `TRIDENT_INDEXES` (optional comma-separated index keys for `global_yahoo`; defaults to S&P 500, EURO STOXX 50, KOSPI 200, FTSE 100, DAX, CAC 40, S&P/TSX 60, S&P/ASX 200, Hang Seng)
+- `TRIDENT_PER_INDEX_LIMIT` (optional balanced cap per index for staged backfills)
+- `TRIDENT_YAHOO_SLEEP_SEC` (optional throttle between Yahoo Finance statement requests)
+- `TRIDENT_UNIVERSE_CSV` (required only by the CSV provider)
+- `TRIDENT_FINANCIALS_CSV` (required only by the CSV provider)
 - `TRIDENT_SOURCE_LICENSE_NOTE` (optional note stored with imported universe rows)
 
 Note: backend scripts expect env vars to be present in process environment. They do not centrally bootstrap `.env` loading.
@@ -119,7 +122,7 @@ python3.11 bridge.py
 python3.11 macro_sync.py
 python3.11 news_sync.py
 python3.11 historical_prices_sync.py
-python3.11 scripts/sync_trident_screener.py --dry-run
+python3.11 scripts/sync_trident_screener.py --dry-run --limit 25
 ```
 
 Historical prices helper script:
@@ -192,6 +195,6 @@ From current backlog state (`BACKLOG.md`):
 - BL-008 (frontend data-fetching optimization) is in progress.
 - Data health observability and technical signal completeness have recent upgrades; continue validating on live data quality and load.
 - If Supabase migrations are not applied in target environments, runtime fallbacks may still degrade UX (for example missing `market_watch` technical columns or governance target column naming drift such as `target_percent` vs `target_weight_pct`).
-- Trident does not ship a bundled licensed global market-data provider. The current provider abstraction ingests user-supplied CSV universe and annual financials, stores provider/license notes, and marks unavailable fields as missing instead of inventing data.
+- Trident now includes an explicit `global_yahoo` provider. It seeds a broad market universe from public index constituent tables and computes criteria from annual statements fetched through `yfinance`; unavailable fields remain `missing` instead of being invented. CSV ingestion remains available for licensed/user-supplied sources.
 
 For active implementation priorities, use `BACKLOG.md` as source of truth.

@@ -9,14 +9,24 @@ import {
 } from '../types'
 
 type JsonRecord = Record<string, unknown>
+const SCREENER_PAGE_SIZE = 1000
+
+export interface TridentLastRun {
+  status: 'RUNNING' | 'SUCCESS' | 'FAILED'
+  started_at: string | null
+  finished_at: string | null
+  duration_sec: number | null
+  error: string | null
+  stats: JsonRecord
+}
 
 export interface TridentBundle {
   rows: TridentScreenerRow[]
-  criteriaByInstrument: Record<string, TridentCriterionRow[]>
   countries: string[]
   exchanges: string[]
   sectors: string[]
   lastUpdateIso: string | null
+  lastBackendRun: TridentLastRun | null
   sourceCounts: {
     universe: number
     financials: number
@@ -35,6 +45,8 @@ const SCREENER_SELECTOR = [
   'industry',
   'currency',
   'provider',
+  'source_provider',
+  'source_index',
   'source_license_note',
   'is_active',
   'as_of_date',
@@ -49,6 +61,9 @@ const SCREENER_SELECTOR = [
   'latest_roic',
   'latest_net_debt_to_ebitda',
   'failed_eliminators',
+  'criteria_pass_count',
+  'criteria_fail_count',
+  'criteria_missing_count',
   'horizons',
   'summary',
   'updated_at',
@@ -102,10 +117,24 @@ function readJsonRecord(value: unknown): JsonRecord {
 }
 
 function parseOverallState(value: unknown): TridentOverallState | null {
-  if (value === 'PASS' || value === 'FAIL' || value === 'PARTIAL' || value === 'NO_DATA') {
+  if (value === 'QUALIFIED' || value === 'WATCHLIST' || value === 'REJECTED' || value === 'NO_DATA') {
     return value
   }
   return null
+}
+
+function parseLastRun(raw: JsonRecord | null): TridentLastRun | null {
+  if (!raw) return null
+  const status = readString(raw.status)
+  if (status !== 'RUNNING' && status !== 'SUCCESS' && status !== 'FAILED') return null
+  return {
+    status,
+    started_at: readString(raw.started_at),
+    finished_at: readString(raw.finished_at),
+    duration_sec: readNumber(raw.duration_sec),
+    error: readString(raw.error),
+    stats: readJsonRecord(raw.stats),
+  }
 }
 
 function parseStatus(value: unknown): TridentCriterionStatus {
@@ -169,6 +198,8 @@ function parseScreenerRow(raw: JsonRecord): TridentScreenerRow | null {
     industry: readString(raw.industry),
     currency: readString(raw.currency),
     provider,
+    source_provider: readString(raw.source_provider) ?? provider,
+    source_index: readString(raw.source_index),
     source_license_note: readString(raw.source_license_note),
     is_active: readBoolean(raw.is_active),
     as_of_date: readString(raw.as_of_date),
@@ -183,6 +214,9 @@ function parseScreenerRow(raw: JsonRecord): TridentScreenerRow | null {
     latest_roic: readNumber(raw.latest_roic),
     latest_net_debt_to_ebitda: readNumber(raw.latest_net_debt_to_ebitda),
     failed_eliminators: readStringArray(raw.failed_eliminators),
+    criteria_pass_count: readNumber(raw.criteria_pass_count),
+    criteria_fail_count: readNumber(raw.criteria_fail_count),
+    criteria_missing_count: readNumber(raw.criteria_missing_count),
     horizons: parseHorizons(raw.horizons),
     summary: readJsonRecord(raw.summary),
     updated_at: readString(raw.updated_at),
@@ -219,48 +253,63 @@ function sortedUnique(values: Array<string | null>): string[] {
   )
 }
 
-export async function loadTridentBundle(supabase: SupabaseClient): Promise<TridentBundle> {
-  const [screenerResponse, universeCount, financialsCount, resultsCount, criteriaCount] = await Promise.all([
-    supabase
+async function loadAllScreenerRows(supabase: SupabaseClient): Promise<JsonRecord[]> {
+  const rows: JsonRecord[] = []
+  for (let offset = 0; ; offset += SCREENER_PAGE_SIZE) {
+    const { data, error } = await supabase
       .from('trident_screener_latest')
       .select(SCREENER_SELECTOR)
       .order('score', { ascending: false, nullsFirst: false })
-      .limit(1000),
+      .range(offset, offset + SCREENER_PAGE_SIZE - 1)
+
+    if (error) throw error
+    const page = (data ?? []) as unknown as JsonRecord[]
+    rows.push(...page)
+    if (page.length < SCREENER_PAGE_SIZE) break
+  }
+  return rows
+}
+
+export async function loadTridentCriteria(
+  supabase: SupabaseClient,
+  instrumentKey: string,
+  horizon: 1 | 3 | 5 | 10
+): Promise<TridentCriterionRow[]> {
+  const { data, error } = await supabase
+    .from('trident_criterion_results')
+    .select(CRITERIA_SELECTOR)
+    .eq('instrument_key', instrumentKey)
+    .eq('horizon_years', horizon)
+    .order('category', { ascending: true })
+    .order('criterion_key', { ascending: true })
+
+  if (error) throw error
+  return ((data ?? []) as unknown as JsonRecord[])
+    .map(parseCriterionRow)
+    .filter((row): row is TridentCriterionRow => row !== null)
+}
+
+export async function loadTridentBundle(supabase: SupabaseClient): Promise<TridentBundle> {
+  const [screenerRows, universeCount, financialsCount, resultsCount, criteriaCount, latestRunResponse] = await Promise.all([
+    loadAllScreenerRows(supabase),
     supabase.from('trident_equity_universe').select('*', { count: 'exact', head: true }),
     supabase.from('trident_financial_annual').select('*', { count: 'exact', head: true }),
     supabase.from('trident_results').select('*', { count: 'exact', head: true }),
     supabase.from('trident_criterion_results').select('*', { count: 'exact', head: true }),
+    supabase
+      .from('etl_runs')
+      .select('status,started_at,finished_at,duration_sec,stats,error')
+      .eq('job_name', 'trident_screener_sync')
+      .order('started_at', { ascending: false })
+      .limit(1)
+      .maybeSingle(),
   ])
 
-  const { data, error } = screenerResponse
-  if (error) throw error
+  if (latestRunResponse.error) throw latestRunResponse.error
 
-  const rows = ((data ?? []) as unknown as JsonRecord[])
+  const rows = screenerRows
     .map(parseScreenerRow)
     .filter((row): row is TridentScreenerRow => row !== null)
-
-  const instrumentKeys = rows.map((row) => row.instrument_key)
-  let criteria: TridentCriterionRow[] = []
-  if (instrumentKeys.length > 0) {
-    const { data: criteriaData, error: criteriaError } = await supabase
-      .from('trident_criterion_results')
-      .select(CRITERIA_SELECTOR)
-      .in('instrument_key', instrumentKeys)
-      .order('horizon_years', { ascending: true })
-      .order('category', { ascending: true })
-
-    if (criteriaError) throw criteriaError
-    criteria = ((criteriaData ?? []) as unknown as JsonRecord[])
-      .map(parseCriterionRow)
-      .filter((row): row is TridentCriterionRow => row !== null)
-  }
-
-  const criteriaByInstrument: Record<string, TridentCriterionRow[]> = {}
-  criteria.forEach((criterion) => {
-    const current = criteriaByInstrument[criterion.instrument_key] ?? []
-    current.push(criterion)
-    criteriaByInstrument[criterion.instrument_key] = current
-  })
 
   const lastUpdateIso = rows
     .map((row) => row.updated_at)
@@ -272,11 +321,11 @@ export async function loadTridentBundle(supabase: SupabaseClient): Promise<Tride
 
   return {
     rows,
-    criteriaByInstrument,
     countries: sortedUnique(rows.map((row) => row.country)),
     exchanges: sortedUnique(rows.map((row) => row.exchange)),
     sectors: sortedUnique(rows.map((row) => row.sector)),
-    lastUpdateIso,
+    lastUpdateIso: latestRunResponse.data?.finished_at ? readString(latestRunResponse.data.finished_at) : lastUpdateIso,
+    lastBackendRun: parseLastRun((latestRunResponse.data ?? null) as unknown as JsonRecord | null),
     sourceCounts: {
       universe: universeCount.count ?? 0,
       financials: financialsCount.count ?? 0,

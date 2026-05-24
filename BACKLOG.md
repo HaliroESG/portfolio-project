@@ -209,7 +209,7 @@ Validation
 BL-010 — Trident Global Equity Screener
 
 Priority: P1
-Status: IMPLEMENTED (migration/deploy validation required)
+Status: IMPLEMENTED (global provider + deploy validation required)
 
 Problem
 
@@ -229,7 +229,7 @@ Implementation
 
 Provider note
 
-No bundled licensed global provider is configured in this repo. Current provider is explicit CSV ingestion via `TRIDENT_UNIVERSE_CSV` and `TRIDENT_FINANCIALS_CSV`; missing fields remain missing.
+Default provider is now `global_yahoo`: it seeds a broad world equity universe from public index constituent tables (S&P 500, EURO STOXX 50, KOSPI 200, FTSE 100, DAX, CAC 40, S&P/TSX 60, S&P/ASX 200, Hang Seng) and pulls annual financial statements via `yfinance`. CSV ingestion remains available for licensed/user-supplied sources. Missing provider fields remain missing.
 
 Acceptance criteria
 	•	Backend tests cover complete data, partial data, Trident pass, ROIC eliminator fail, and debt fail.

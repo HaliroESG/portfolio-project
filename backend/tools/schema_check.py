@@ -53,7 +53,7 @@ CRITICAL_SCHEMA: dict[str, list[str]] = {
     "trident_equity_universe": [
         "instrument_key", "ticker", "name", "exchange", "country", "sector",
         "industry", "currency", "provider", "provider_symbol", "source_license_note",
-        "is_active", "updated_at",
+        "source_index", "is_active", "updated_at",
     ],
     "trident_financial_annual": [
         "instrument_key", "fiscal_year", "currency", "revenue", "eps_diluted",
@@ -73,8 +73,9 @@ CRITICAL_SCHEMA: dict[str, list[str]] = {
     ],
     "trident_screener_latest": [
         "instrument_key", "ticker", "name", "exchange", "country", "sector",
-        "provider", "overall_state", "score", "confidence", "latest_roic",
+        "provider", "source_provider", "source_index", "overall_state", "score", "confidence", "latest_roic",
         "latest_net_debt_to_ebitda", "horizons", "summary",
+        "criteria_pass_count", "criteria_fail_count", "criteria_missing_count",
     ],
 }
 

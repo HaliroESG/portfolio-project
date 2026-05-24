@@ -14,6 +14,7 @@ create table if not exists public.trident_equity_universe (
   provider text not null,
   provider_symbol text not null,
   source_license_note text,
+  source_index text,
   is_active boolean not null default true,
   updated_at timestamptz not null default now(),
   check (instrument_key = lower(instrument_key)),
@@ -28,6 +29,12 @@ create index if not exists trident_equity_universe_search_idx
 
 create index if not exists trident_equity_universe_filters_idx
   on public.trident_equity_universe (country, exchange, sector);
+
+alter table public.trident_equity_universe
+  add column if not exists source_index text;
+
+create index if not exists trident_equity_universe_source_index_idx
+  on public.trident_equity_universe (provider, source_index);
 
 create table if not exists public.trident_financial_annual (
   instrument_key text not null references public.trident_equity_universe(instrument_key) on delete cascade,
@@ -62,7 +69,7 @@ create table if not exists public.trident_results (
   instrument_key text primary key references public.trident_equity_universe(instrument_key) on delete cascade,
   as_of_date date not null,
   latest_fiscal_year integer,
-  overall_state text not null check (overall_state in ('PASS', 'FAIL', 'PARTIAL', 'NO_DATA')),
+  overall_state text not null check (overall_state in ('QUALIFIED', 'WATCHLIST', 'REJECTED', 'NO_DATA')),
   score numeric not null default 0,
   confidence numeric not null default 0,
   growth_score numeric not null default 0,
@@ -78,6 +85,22 @@ create table if not exists public.trident_results (
   check (score >= 0 and score <= 100),
   check (confidence >= 0 and confidence <= 100)
 );
+
+alter table public.trident_results
+  drop constraint if exists trident_results_overall_state_check;
+
+update public.trident_results
+set overall_state = case overall_state
+  when 'PASS' then 'QUALIFIED'
+  when 'PARTIAL' then 'WATCHLIST'
+  when 'FAIL' then 'REJECTED'
+  else overall_state
+end
+where overall_state in ('PASS', 'PARTIAL', 'FAIL');
+
+alter table public.trident_results
+  add constraint trident_results_overall_state_check
+  check (overall_state in ('QUALIFIED', 'WATCHLIST', 'REJECTED', 'NO_DATA'));
 
 create index if not exists trident_results_score_idx
   on public.trident_results (score desc, confidence desc);
@@ -139,6 +162,8 @@ grant select on table
   public.trident_criterion_results
 to anon, authenticated;
 
+drop view if exists public.trident_screener_latest;
+
 create or replace view public.trident_screener_latest
 with (security_invoker = true) as
 select
@@ -151,6 +176,8 @@ select
   u.industry,
   u.currency,
   u.provider,
+  u.provider as source_provider,
+  u.source_index,
   u.source_license_note,
   u.is_active,
   r.as_of_date,
@@ -167,6 +194,9 @@ select
   r.failed_eliminators,
   r.horizons,
   r.summary,
+  nullif(r.summary->>'criteria_pass', '')::integer as criteria_pass_count,
+  nullif(r.summary->>'criteria_fail', '')::integer as criteria_fail_count,
+  nullif(r.summary->>'criteria_missing', '')::integer as criteria_missing_count,
   greatest(u.updated_at, r.updated_at) as updated_at
 from public.trident_equity_universe u
 left join public.trident_results r

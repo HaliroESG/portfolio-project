@@ -7,7 +7,7 @@ export type DataStatus = 'OK' | 'STALE' | 'LOW_CONFIDENCE' | 'PARTIAL';
 export type AssetType = 'Stock' | 'STOCK' | 'ETF' | 'Crypto' | 'CRYPTO' | 'Cash' | 'Forex' | 'Currency';
 export type TridentCriterionStatus = 'pass' | 'fail' | 'missing' | 'not_applicable';
 export type TridentCategory = 'growth' | 'profitability' | 'capital' | 'health';
-export type TridentOverallState = 'PASS' | 'FAIL' | 'PARTIAL' | 'NO_DATA';
+export type TridentOverallState = 'QUALIFIED' | 'WATCHLIST' | 'REJECTED' | 'NO_DATA';
 // TrendState semantics:
 // - NEUTRAL: rule-based neutral (indicators available but not aligned bullish/bearish)
 // - UNKNOWN: indicators expected but missing/incoherent (data gap)
@@ -172,6 +172,8 @@ export interface TridentScreenerRow {
   industry: string | null
   currency: string | null
   provider: string
+  source_provider: string
+  source_index: string | null
   source_license_note: string | null
   is_active: boolean
   as_of_date: string | null
@@ -186,6 +188,9 @@ export interface TridentScreenerRow {
   latest_roic: number | null
   latest_net_debt_to_ebitda: number | null
   failed_eliminators: string[]
+  criteria_pass_count: number | null
+  criteria_fail_count: number | null
+  criteria_missing_count: number | null
   horizons: Record<string, TridentHorizonSummary>
   summary: Record<string, unknown>
   updated_at: string | null
