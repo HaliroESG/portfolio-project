@@ -28,7 +28,10 @@ CRITICAL_SCHEMA: dict[str, list[str]] = {
     "macro_indicators": ["id", "value", "last_update"],
     "portfolio_positions": ["portfolio_id", "ticker", "quantity_current", "target_weight_pct"],
     "portfolios": ["id", "name"],
-    "historical_prices": ["ticker", "date", "adj_close", "currency", "source", "updated_at"],
+    "historical_prices": [
+        "ticker", "date", "adj_close", "currency", "source", "updated_at",
+        "adj_close_local", "local_currency", "fx_rate_to_eur",
+    ],
     "historical_price_coverage": [
         "ticker", "requested_start_date", "requested_end_date", "earliest_date",
         "coverage_pct", "used_proxy", "updated_at",

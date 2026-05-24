@@ -68,6 +68,27 @@ try {
     ]),
     'Asset drawer should show explicit labels/messages for technical unavailability.'
   )
+  addCheck(
+    'frontend.asset_drawer.price_chart_present',
+    hasAll(assetDrawer, [
+      "import { AssetPriceChart } from './AssetPriceChart'",
+      '<AssetPriceChart ticker={asset.ticker} assetCurrency={asset.currency} />',
+    ]),
+    'Asset drawer should render the targeted asset price chart.'
+  )
+
+  const assetPriceChart = read('frontend/components/AssetPriceChart.tsx')
+  addCheck(
+    'frontend.asset_price_chart_controls_and_states',
+    hasAll(assetPriceChart, [
+      "const HORIZONS: PriceHistoryHorizon[] = ['YTD', '5Y', '10Y']",
+      "effectiveMode === 'LOCAL'",
+      'Local unavailable',
+      'Short history',
+      'loadAssetPriceHistory(supabase, ticker, horizon)',
+    ]),
+    'Asset price chart should expose horizon/currency controls and explicit data states.'
+  )
 
   const geoPage = read('frontend/app/geo/page.tsx')
   addCheck(

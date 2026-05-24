@@ -10,7 +10,8 @@
     "contract-check": "node scripts/contract-check.mjs",
     "test:data-states": "node --experimental-strip-types scripts/test-data-states.mjs",
     "test:smoke": "node scripts/smoke-pages.mjs",
-    "test:frontend": "npm run test:data-states && npm run test:smoke",
+    "test:price-history": "node --experimental-strip-types scripts/test-price-history.mjs",
+    "test:frontend": "npm run test:data-states && npm run test:price-history && npm run test:smoke",
     "smoke:supabase": "node scripts/smoke-supabase.mjs"
   },
   "dependencies": {

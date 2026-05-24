@@ -260,19 +260,38 @@ def convert_prices_to_eur(
 
 def build_price_payloads(
     ticker: str,
-    prices: pd.Series,
+    prices_eur: pd.Series,
     sources: pd.Series,
+    local_prices: pd.Series | None = None,
+    local_currency: str | None = None,
 ) -> list[dict]:
     now_iso = datetime.utcnow().isoformat()
-    sources = sources.reindex(prices.index, method="ffill")
+    sources = sources.reindex(prices_eur.index, method="ffill")
+    aligned_local = None
+    if local_prices is not None and not local_prices.empty:
+        aligned_local = local_prices.reindex(prices_eur.index)
+
     payloads = []
-    for idx, value in prices.items():
+    for idx, value in prices_eur.items():
+        eur_value = safe_float(value)
+        source = str(sources.loc[idx])
+        local_value = None
+        fx_rate = None
+
+        if aligned_local is not None and not source.startswith("proxy:"):
+            local_value = safe_float(aligned_local.loc[idx])
+            if eur_value is not None and local_value not in (None, 0):
+                fx_rate = eur_value / local_value
+
         payloads.append({
             "ticker": ticker,
             "date": idx.date().isoformat(),
-            "adj_close": safe_float(value),
+            "adj_close": eur_value,
             "currency": BASE_CURRENCY,
-            "source": str(sources.loc[idx]),
+            "source": source,
+            "adj_close_local": local_value,
+            "local_currency": local_currency if local_value is not None else None,
+            "fx_rate_to_eur": safe_float(fx_rate),
             "updated_at": now_iso,
         })
     return payloads
@@ -375,9 +394,12 @@ def run_sync(
     stats = {
         "tickers": len(tickers),
         "rows_upserted": 0,
+        "rows_with_local": 0,
+        "rows_without_local": 0,
         "tickers_ok": 0,
         "tickers_failed": 0,
         "tickers_proxy": 0,
+        "local_currencies": {},
     }
 
     currency_map = build_ticker_currency_map(supabase, tickers)
@@ -395,6 +417,8 @@ def run_sync(
             stats["tickers_failed"] += 1
             upsert_coverage(supabase, ticker, start, end, None, None, False)
             continue
+
+        local_series = series.replace([np.inf, -np.inf], np.nan).dropna()
 
         converted = convert_prices_to_eur(
             supabase, series, currency, start, end, fx_cache
@@ -444,7 +468,13 @@ def run_sync(
             upsert_coverage(supabase, ticker, start, end, None, None, used_proxy)
             continue
 
-        payloads = build_price_payloads(ticker, converted, sources)
+        payloads = build_price_payloads(
+            ticker,
+            converted,
+            sources,
+            local_prices=local_series,
+            local_currency=currency,
+        )
         coverage_pct = compute_coverage(converted, start, end)
         earliest_date = converted.index.min().date() if not converted.empty else None
 
@@ -463,6 +493,12 @@ def run_sync(
                 coverage_pct,
                 used_proxy,
             )
+        local_rows = sum(1 for row in payloads if row.get("adj_close_local") is not None)
+        stats["rows_with_local"] += local_rows
+        stats["rows_without_local"] += len(payloads) - local_rows
+        if local_rows > 0:
+            local_currencies = stats["local_currencies"]
+            local_currencies[currency] = local_currencies.get(currency, 0) + local_rows
         stats["tickers_ok"] += 1
         if coverage_pct is None:
             print(f"    ✅ {len(payloads)} lignes", flush=True)

@@ -7,6 +7,7 @@ import { cn } from '../lib/utils'
 import { supabase } from '../lib/supabase'
 import { Tooltip } from './Tooltip'
 import { stateForTechnicalHistory, stateLabel as dataStateLabel } from '../lib/dataStates'
+import { AssetPriceChart } from './AssetPriceChart'
 
 const WATCHLIST_STORAGE_KEY = 'portfolio_watchlist_tickers'
 
@@ -315,6 +316,8 @@ export function AssetDetailDrawer({ asset, isOpen, onClose }: AssetDetailDrawerP
 
           {/* Content */}
           <div className="flex-1 overflow-y-auto p-6 space-y-6">
+            <AssetPriceChart ticker={asset.ticker} assetCurrency={asset.currency} />
+
             {/* Geographic Breakdown */}
             {geographicData.length > 0 && (
               <div className="bg-slate-50 dark:bg-[#080A0F] rounded-2xl border-2 border-slate-200 dark:border-white/5 p-6 shadow-xl">

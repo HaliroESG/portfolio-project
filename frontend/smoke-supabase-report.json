@@ -71,13 +71,13 @@
       "name": "etl_runs",
       "ok": true,
       "status": "PASS",
-      "row_count": 237,
+      "row_count": 238,
       "sample": {
-        "job_name": "trident_screener_sync",
+        "job_name": "historical_prices_local_eur_backfill",
         "status": "SUCCESS",
-        "started_at": "2026-05-24T19:03:11.407533+00:00",
-        "finished_at": "2026-05-24T19:22:20.713921+00:00",
-        "duration_sec": 1149.15
+        "started_at": "2026-05-24T20:03:10.235684+00:00",
+        "finished_at": "2026-05-24T20:03:10.235684+00:00",
+        "duration_sec": 0
       }
     },
     {
@@ -127,7 +127,10 @@
         "adj_close": 227.99804878439318,
         "currency": "EUR",
         "source": "yfinance",
-        "updated_at": "2026-05-24T15:56:28.108185+00:00"
+        "updated_at": "2026-05-24T15:56:28.108185+00:00",
+        "adj_close_local": null,
+        "local_currency": null,
+        "fx_rate_to_eur": null
       }
     },
     {
