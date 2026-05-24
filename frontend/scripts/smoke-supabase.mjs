@@ -112,6 +112,8 @@ const checks = await Promise.all([
   q('news_feed', () => supabase.from('news_feed').select('id,title,impact_score,published_at,ticker', { count: 'exact' }).limit(5)),
   q('macro_indicators', () => supabase.from('macro_indicators').select('id,name,value,last_update', { count: 'exact' }).limit(5)),
   q('etl_runs', () => supabase.from('etl_runs').select('job_name,status,started_at,finished_at,duration_sec', { count: 'exact' }).order('started_at', { ascending: false }).limit(5)),
+  q('trident_screener_latest', () => supabase.from('trident_screener_latest').select('instrument_key,ticker,score,confidence,overall_state,latest_roic,latest_net_debt_to_ebitda,updated_at', { count: 'exact' }).limit(5)),
+  q('trident_criterion_results', () => supabase.from('trident_criterion_results').select('instrument_key,horizon_years,criterion_key,category,status,actual,threshold', { count: 'exact' }).limit(5)),
 ])
 
 const hasFail = checks.some((c) => c.status === 'FAIL')

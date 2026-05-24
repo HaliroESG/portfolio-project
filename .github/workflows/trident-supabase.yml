@@ -1,0 +1,192 @@
+name: Trident Supabase Deploy Gate
+
+on:
+  workflow_dispatch:
+    inputs:
+      apply_schema:
+        description: "Apply additive Supabase SQL migrations when SUPABASE_DB_URL is configured"
+        required: true
+        type: boolean
+        default: false
+      run_trident_etl:
+        description: "Run Trident ETL after schema validation when CSV provider env is configured"
+        required: true
+        type: boolean
+        default: false
+  push:
+    branches:
+      - main
+      - "codex/**"
+    paths:
+      - "backend/sql/**"
+      - "backend/trident_screener.py"
+      - "backend/scripts/sync_trident_screener.py"
+      - "backend/tests/test_trident_screener.py"
+      - "backend/tools/schema_check.py"
+      - "frontend/app/trident/**"
+      - "frontend/lib/tridentData.ts"
+      - "frontend/types.ts"
+      - "frontend/scripts/smoke-supabase.mjs"
+      - ".github/workflows/trident-supabase.yml"
+
+jobs:
+  validate:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Install backend dependencies
+        working-directory: ./backend
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+
+      - name: Backend tests
+        working-directory: ./backend
+        run: python3.11 -m pytest -q
+
+      - name: Backend compile check
+        working-directory: ./backend
+        run: python3.11 -m py_compile bridge.py technical_state.py etl_stats.py trident_screener.py scripts/sync_trident_screener.py
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: "npm"
+          cache-dependency-path: frontend/package-lock.json
+
+      - name: Install frontend dependencies
+        working-directory: ./frontend
+        run: npm ci
+
+      - name: Frontend lint
+        working-directory: ./frontend
+        run: npm run lint
+
+      - name: Frontend TypeScript
+        working-directory: ./frontend
+        run: npx tsc --noEmit
+
+      - name: Frontend build
+        working-directory: ./frontend
+        env:
+          NEXT_PUBLIC_SUPABASE_URL: http://localhost:54321
+          NEXT_PUBLIC_SUPABASE_ANON_KEY: ci-placeholder-anon-key
+        run: npm run build
+
+  supabase-gate:
+    runs-on: ubuntu-latest
+    needs: validate
+    env:
+      SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+      SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_KEY }}
+      SUPABASE_DB_URL: ${{ secrets.SUPABASE_DB_URL }}
+      DATABASE_URL: ${{ secrets.DATABASE_URL }}
+      SUPABASE_DB_URL_VAR: ${{ vars.SUPABASE_DB_URL }}
+      DATABASE_URL_VAR: ${{ vars.DATABASE_URL }}
+      APPLY_SCHEMA: ${{ github.event_name == 'workflow_dispatch' && inputs.apply_schema || false }}
+      RUN_TRIDENT_ETL: ${{ github.event_name == 'workflow_dispatch' && inputs.run_trident_etl || false }}
+      TRIDENT_PROVIDER: ${{ vars.TRIDENT_PROVIDER || 'csv' }}
+      TRIDENT_UNIVERSE_CSV: ${{ vars.TRIDENT_UNIVERSE_CSV }}
+      TRIDENT_FINANCIALS_CSV: ${{ vars.TRIDENT_FINANCIALS_CSV }}
+      TRIDENT_SOURCE_LICENSE_NOTE: ${{ vars.TRIDENT_SOURCE_LICENSE_NOTE }}
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Install backend dependencies
+        working-directory: ./backend
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+
+      - name: Pre-migration schema check
+        working-directory: ./backend
+        continue-on-error: true
+        run: python tools/schema_check.py --pretty --output schema-check-before.json
+
+      - name: Apply additive Supabase migrations
+        if: ${{ env.APPLY_SCHEMA == 'true' }}
+        env:
+          PGPASSWORD: ""
+        run: |
+          if [ -z "$SUPABASE_DB_URL" ]; then
+            SUPABASE_DB_URL="$DATABASE_URL"
+          fi
+          if [ -z "$SUPABASE_DB_URL" ]; then
+            SUPABASE_DB_URL="$SUPABASE_DB_URL_VAR"
+          fi
+          if [ -z "$SUPABASE_DB_URL" ]; then
+            SUPABASE_DB_URL="$DATABASE_URL_VAR"
+          fi
+          if [ -z "$SUPABASE_DB_URL" ]; then
+            echo "::error::SUPABASE_DB_URL or DATABASE_URL is required as a GitHub Actions secret or variable to apply SQL migrations."
+            echo "SUPABASE_URL + SUPABASE_SERVICE_KEY can validate REST schema and write rows, but cannot run DDL SQL."
+            exit 2
+          fi
+          echo "::add-mask::$SUPABASE_DB_URL"
+          sudo apt-get update
+          sudo apt-get install -y postgresql-client
+          psql "$SUPABASE_DB_URL" \
+            -v ON_ERROR_STOP=1 \
+            -f backend/sql/20260210_market_watch_phase2_technicals.sql \
+            -f backend/sql/20260524_trident_screener.sql
+
+      - name: Post-migration schema check
+        working-directory: ./backend
+        run: python tools/schema_check.py --pretty --output schema-check-after.json
+
+      - name: Run Trident ETL when configured
+        if: ${{ github.event_name == 'workflow_dispatch' && inputs.run_trident_etl }}
+        working-directory: ./backend
+        env:
+          SUPABASE_KEY: ${{ secrets.SUPABASE_SERVICE_KEY }}
+        run: |
+          if [ -z "$TRIDENT_UNIVERSE_CSV" ] || [ -z "$TRIDENT_FINANCIALS_CSV" ]; then
+            echo "::error::TRIDENT_UNIVERSE_CSV and TRIDENT_FINANCIALS_CSV repository variables are required for CSV provider."
+            exit 2
+          fi
+          python scripts/sync_trident_screener.py
+
+      - name: Setup Node for Supabase smoke
+        uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: "npm"
+          cache-dependency-path: frontend/package-lock.json
+
+      - name: Install frontend dependencies
+        working-directory: ./frontend
+        run: npm ci
+
+      - name: Supabase smoke with service-role read key
+        working-directory: ./frontend
+        env:
+          NEXT_PUBLIC_SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          NEXT_PUBLIC_SUPABASE_ANON_KEY: ${{ secrets.SUPABASE_SERVICE_KEY }}
+        run: npm run smoke:supabase -- --output=smoke-supabase-report.json
+
+      - name: Upload Supabase reports
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: trident-supabase-reports
+          path: |
+            backend/schema-check-before.json
+            backend/schema-check-after.json
+            frontend/smoke-supabase-report.json
+          if-no-files-found: warn

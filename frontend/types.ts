@@ -5,6 +5,9 @@ export type GeoTimeframe = 'day' | 'month' | 'ytd';
 // Data Status Enum
 export type DataStatus = 'OK' | 'STALE' | 'LOW_CONFIDENCE' | 'PARTIAL';
 export type AssetType = 'Stock' | 'STOCK' | 'ETF' | 'Crypto' | 'CRYPTO' | 'Cash' | 'Forex' | 'Currency';
+export type TridentCriterionStatus = 'pass' | 'fail' | 'missing' | 'not_applicable';
+export type TridentCategory = 'growth' | 'profitability' | 'capital' | 'health';
+export type TridentOverallState = 'PASS' | 'FAIL' | 'PARTIAL' | 'NO_DATA';
 // TrendState semantics:
 // - NEUTRAL: rule-based neutral (indicators available but not aligned bullish/bearish)
 // - UNKNOWN: indicators expected but missing/incoherent (data gap)
@@ -157,6 +160,58 @@ export interface BacktestKpi {
 export interface CompareSelection {
   runId: string
   portfolios: { key: string; role: string }[]
+}
+
+export interface TridentScreenerRow {
+  instrument_key: string
+  ticker: string
+  name: string | null
+  exchange: string | null
+  country: string | null
+  sector: string | null
+  industry: string | null
+  currency: string | null
+  provider: string
+  source_license_note: string | null
+  is_active: boolean
+  as_of_date: string | null
+  latest_fiscal_year: number | null
+  overall_state: TridentOverallState | null
+  score: number | null
+  confidence: number | null
+  growth_score: number | null
+  profitability_score: number | null
+  capital_score: number | null
+  health_score: number | null
+  latest_roic: number | null
+  latest_net_debt_to_ebitda: number | null
+  failed_eliminators: string[]
+  horizons: Record<string, TridentHorizonSummary>
+  summary: Record<string, unknown>
+  updated_at: string | null
+}
+
+export interface TridentHorizonSummary {
+  horizon_years: number
+  start_year: number | null
+  end_year: number | null
+  status: 'complete' | 'partial' | 'missing'
+  metrics: Record<string, number | null>
+}
+
+export interface TridentCriterionRow {
+  instrument_key: string
+  horizon_years: 1 | 3 | 5 | 10
+  criterion_key: string
+  category: TridentCategory
+  label: string
+  status: TridentCriterionStatus
+  actual: number | null
+  threshold: number | null
+  comparator: string | null
+  is_eliminating: boolean
+  reason: string | null
+  updated_at: string | null
 }
 
 // Supabase row contracts (frontend read models)

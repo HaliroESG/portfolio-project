@@ -28,6 +28,32 @@ CRITICAL_SCHEMA: dict[str, list[str]] = {
     "macro_indicators": ["id", "value", "last_update"],
     "portfolio_positions": ["portfolio_id", "ticker", "quantity_current", "target_weight_pct"],
     "portfolios": ["id", "name"],
+    "trident_equity_universe": [
+        "instrument_key", "ticker", "name", "exchange", "country", "sector",
+        "industry", "currency", "provider", "provider_symbol", "source_license_note",
+        "is_active", "updated_at",
+    ],
+    "trident_financial_annual": [
+        "instrument_key", "fiscal_year", "currency", "revenue", "eps_diluted",
+        "free_cash_flow", "gross_profit", "operating_income", "net_income",
+        "invested_capital", "total_equity", "capital_employed", "ebitda",
+        "net_debt", "interest_expense", "total_debt", "shares_diluted", "provider",
+    ],
+    "trident_results": [
+        "instrument_key", "as_of_date", "latest_fiscal_year", "overall_state",
+        "score", "confidence", "growth_score", "profitability_score",
+        "capital_score", "health_score", "latest_roic",
+        "latest_net_debt_to_ebitda", "failed_eliminators", "horizons", "summary",
+    ],
+    "trident_criterion_results": [
+        "instrument_key", "horizon_years", "criterion_key", "category", "label",
+        "status", "actual", "threshold", "comparator", "is_eliminating", "reason",
+    ],
+    "trident_screener_latest": [
+        "instrument_key", "ticker", "name", "exchange", "country", "sector",
+        "provider", "overall_state", "score", "confidence", "latest_roic",
+        "latest_net_debt_to_ebitda", "horizons", "summary",
+    ],
 }
 
 

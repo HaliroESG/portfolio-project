@@ -14,6 +14,7 @@ The product provides:
 - FX pages with data-state handling (live/stale/cached)
 - Macro and MDSS monitoring views
 - Backtest and portfolio comparison flows
+- Trident equity screener (backend-computed criteria, Supabase read model, frontend display)
 
 ## Monorepo Structure
 
@@ -65,11 +66,16 @@ Used by:
 Common required for most scripts:
 - `SUPABASE_URL`
 - `SUPABASE_KEY` (service role key in CI)
+- `SUPABASE_DB_URL` (optional; required only for GitHub Actions SQL migration application with `psql`)
 
 Additional for specific jobs:
 - `GSPREAD_SERVICE_ACCOUNT` (required by `backend/bridge.py`)
 - `GSHEET_NAME` (required by `backend/bridge.py`)
 - `MARKETAUX_API_KEY` (optional for `backend/news_sync.py`; script degrades if missing)
+- `TRIDENT_PROVIDER` (optional, currently `csv`; no unlicensed global provider is bundled)
+- `TRIDENT_UNIVERSE_CSV` (required by `backend/scripts/sync_trident_screener.py` for CSV provider)
+- `TRIDENT_FINANCIALS_CSV` (required by `backend/scripts/sync_trident_screener.py` for CSV provider)
+- `TRIDENT_SOURCE_LICENSE_NOTE` (optional note stored with imported universe rows)
 
 Note: backend scripts expect env vars to be present in process environment. They do not centrally bootstrap `.env` loading.
 
@@ -113,6 +119,7 @@ python3.11 bridge.py
 python3.11 macro_sync.py
 python3.11 news_sync.py
 python3.11 historical_prices_sync.py
+python3.11 scripts/sync_trident_screener.py --dry-run
 ```
 
 Historical prices helper script:
@@ -135,8 +142,11 @@ Examples:
 - `portfolio_positions` model
 - `etl_runs` observability table
 - historical price storage tables
+- Trident screener tables/view: `backend/sql/20260524_trident_screener.sql`
 
 Current repo does not include an automated migration runner. Apply migrations through Supabase SQL tooling/process.
+The workflow `.github/workflows/trident-supabase.yml` can run validations with `SUPABASE_URL` + `SUPABASE_SERVICE_KEY`.
+It can apply additive SQL migrations only when a repository secret named `SUPABASE_DB_URL` is configured.
 
 ## Contract and Type Alignment Rule
 
@@ -174,6 +184,7 @@ python3.11 -m py_compile bridge.py technical_state.py etl_stats.py
 - CI schedule: `.github/workflows/schedule.yml`
   - Daily scheduled run (`0 8 * * *`, UTC)
   - Runs backend sync jobs (`bridge.py`, `macro_sync.py`, `news_sync.py`)
+- Codex long-running task guidance: `docs/codex_goal_best_practices.md`
 
 ## Known Limitations / Current Roadmap Highlights
 
@@ -181,5 +192,6 @@ From current backlog state (`BACKLOG.md`):
 - BL-008 (frontend data-fetching optimization) is in progress.
 - Data health observability and technical signal completeness have recent upgrades; continue validating on live data quality and load.
 - If Supabase migrations are not applied in target environments, runtime fallbacks may still degrade UX (for example missing `market_watch` technical columns or governance target column naming drift such as `target_percent` vs `target_weight_pct`).
+- Trident does not ship a bundled licensed global market-data provider. The current provider abstraction ingests user-supplied CSV universe and annual financials, stores provider/license notes, and marks unavailable fields as missing instead of inventing data.
 
 For active implementation priorities, use `BACKLOG.md` as source of truth.

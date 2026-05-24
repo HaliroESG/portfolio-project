@@ -206,6 +206,36 @@ Validation
 	•	Trend sparkline renders correctly
 	•	Legacy stats payload compatibility maintained
 
+BL-010 — Trident Global Equity Screener
+
+Priority: P1
+Status: IMPLEMENTED (migration/deploy validation required)
+
+Problem
+
+Need a backend-computed global equity screener based on the Trident method without frontend-only business logic or invented financial data.
+
+Scope
+	•	Add Supabase contracts for equity universe, annual financials, Trident results, and per-criterion status.
+	•	Add idempotent Python ETL with provider abstraction.
+	•	Render dense `/trident` screener with search, filters, sorting, and criterion/horizon detail.
+	•	Keep pass/fail/missing/not_applicable explicit.
+
+Implementation
+	•	Migration: `backend/sql/20260524_trident_screener.sql`
+	•	ETL: `backend/scripts/sync_trident_screener.py`
+	•	Frontend route: `frontend/app/trident/page.tsx`
+	•	Runtime reader: `frontend/lib/tridentData.ts`
+
+Provider note
+
+No bundled licensed global provider is configured in this repo. Current provider is explicit CSV ingestion via `TRIDENT_UNIVERSE_CSV` and `TRIDENT_FINANCIALS_CSV`; missing fields remain missing.
+
+Acceptance criteria
+	•	Backend tests cover complete data, partial data, Trident pass, ROIC eliminator fail, and debt fail.
+	•	Supabase smoke validates Trident tables/view after migration.
+	•	Frontend build and TypeScript compile pass.
+
 
 ## P2 - Performance and Product Hardening
 
