@@ -8,6 +8,8 @@ import { supabase } from '../lib/supabase'
 import { Tooltip } from './Tooltip'
 import { stateForTechnicalHistory, stateLabel as dataStateLabel } from '../lib/dataStates'
 import { AssetPriceChart } from './AssetPriceChart'
+import { ASSET_DRAWER_WIDTH } from '../lib/panelWidth'
+import { usePersistedPanelWidth } from '../lib/usePersistedPanelWidth'
 
 const WATCHLIST_STORAGE_KEY = 'portfolio_watchlist_tickers'
 
@@ -110,6 +112,7 @@ export function AssetDetailDrawer({ asset, isOpen, onClose }: AssetDetailDrawerP
   // Hook 1: useState
   const [news, setNews] = useState<NewsFeedRow[]>([])
   const [watchlistEntries, setWatchlistEntries] = useState<string[]>(() => readWatchlist())
+  const [drawerWidth, setDrawerWidth] = usePersistedPanelWidth(ASSET_DRAWER_WIDTH)
 
   // Hook 2: useMemo - Memoize derived data to prevent recalculation on every render
   const geographicData = useMemo(() => {
@@ -236,11 +239,12 @@ export function AssetDetailDrawer({ asset, isOpen, onClose }: AssetDetailDrawerP
       {asset && (
       <div
         className={cn(
-          "fixed right-0 top-0 h-full w-full max-w-2xl bg-white dark:bg-[#0A0D12] z-50 shadow-2xl dark:shadow-[0_0_50px_rgba(0,255,136,0.1)]",
+          "fixed right-0 top-0 h-full w-full bg-white dark:bg-[#0A0D12] z-50 shadow-2xl dark:shadow-[0_0_50px_rgba(0,255,136,0.1)]",
           "transform transition-transform duration-300 ease-in-out",
           "border-l-2 border-slate-200 dark:border-[#00FF88]/20",
           isOpen ? "translate-x-0" : "translate-x-full"
         )}
+        style={{ width: `min(100vw, ${drawerWidth}px)` }}
       >
         <div className="h-full flex flex-col overflow-hidden">
           {/* Header */}
@@ -266,13 +270,32 @@ export function AssetDetailDrawer({ asset, isOpen, onClose }: AssetDetailDrawerP
                   </span>
                 </div>
               </div>
-              <button
-                onClick={onClose}
-                className="p-2 hover:bg-slate-200 dark:hover:bg-white/10 rounded-lg transition-colors"
-                aria-label="Close drawer"
-              >
-                <X className="w-5 h-5 text-slate-600 dark:text-gray-400" />
-              </button>
+              <div className="flex shrink-0 items-center gap-2">
+                <div className="hidden min-w-[190px] items-center gap-2 rounded-lg border border-slate-200 bg-white px-2 py-1.5 dark:border-white/10 dark:bg-black/20 sm:flex">
+                  <label htmlFor="asset-drawer-width" className="text-[9px] font-black uppercase tracking-wider text-slate-500">
+                    Width
+                  </label>
+                  <input
+                    id="asset-drawer-width"
+                    type="range"
+                    min={ASSET_DRAWER_WIDTH.min}
+                    max={ASSET_DRAWER_WIDTH.max}
+                    step={20}
+                    value={drawerWidth}
+                    onChange={(event) => setDrawerWidth(Number(event.target.value))}
+                    className="h-1 min-w-0 flex-1 accent-blue-600 dark:accent-[#00FF88]"
+                    aria-label="Asset detail drawer width"
+                  />
+                  <span className="w-10 text-right text-[9px] font-mono text-slate-500">{drawerWidth}px</span>
+                </div>
+                <button
+                  onClick={onClose}
+                  className="p-2 hover:bg-slate-200 dark:hover:bg-white/10 rounded-lg transition-colors"
+                  aria-label="Close drawer"
+                >
+                  <X className="w-5 h-5 text-slate-600 dark:text-gray-400" />
+                </button>
+              </div>
             </div>
 
             {/* Price Section */}

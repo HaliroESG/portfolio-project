@@ -21,6 +21,8 @@ import { supabase } from '../../lib/supabase'
 import { loadTridentBundle, loadTridentCriteria } from '../../lib/tridentData'
 import { swrOptions, SWR_REFRESH } from '../../lib/swrConfig'
 import { cn } from '../../lib/utils'
+import { TRIDENT_DETAIL_WIDTH } from '../../lib/panelWidth'
+import { usePersistedPanelWidth } from '../../lib/usePersistedPanelWidth'
 import {
   TridentCategory,
   TridentCriterionRow,
@@ -160,6 +162,7 @@ export default function TridentPage() {
   const [sortKey, setSortKey] = useState<SortKey>('score')
   const [selectedKey, setSelectedKey] = useState<string | null>(null)
   const [horizon, setHorizon] = useState<Horizon>(3)
+  const [detailWidth, setDetailWidth] = usePersistedPanelWidth(TRIDENT_DETAIL_WIDTH)
 
   const { data, isLoading, error } = useSWR(
     'trident-screener-v1',
@@ -219,6 +222,21 @@ export default function TridentPage() {
   const lastRunStats = data?.lastBackendRun?.stats ?? {}
   const coveragePct = typeof lastRunStats.coverage_pct === 'number' ? lastRunStats.coverage_pct : null
   const staleRun = isStaleRun(data?.lastBackendRun?.finished_at ?? data?.lastUpdateIso)
+
+  const handleDetailResizePointerDown = (event: React.PointerEvent<HTMLButtonElement>) => {
+    event.preventDefault()
+    const startX = event.clientX
+    const startWidth = detailWidth
+    const onMove = (moveEvent: PointerEvent) => {
+      setDetailWidth(startWidth - (moveEvent.clientX - startX))
+    }
+    const onEnd = () => {
+      window.removeEventListener('pointermove', onMove)
+      window.removeEventListener('pointerup', onEnd)
+    }
+    window.addEventListener('pointermove', onMove)
+    window.addEventListener('pointerup', onEnd)
+  }
 
   return (
     <div className="flex h-screen bg-slate-100 dark:bg-[#080A0F] text-slate-950 dark:text-gray-200 transition-colors duration-500">
@@ -358,7 +376,13 @@ export default function TridentPage() {
               message="The screener has backend-computed rows, but the current search, state, score, or market filters exclude all of them."
             />
           ) : (
-            <section className="grid flex-1 min-h-0 grid-cols-[minmax(640px,1fr)_420px] gap-4 overflow-hidden">
+            <section
+              className="grid flex-1 min-h-0 grid-cols-1 gap-4 overflow-auto xl:grid-cols-[minmax(560px,1fr)_minmax(var(--trident-detail-min),var(--trident-detail-width))] xl:overflow-hidden"
+              style={{
+                '--trident-detail-width': `${detailWidth}px`,
+                '--trident-detail-min': `${TRIDENT_DETAIL_WIDTH.min}px`,
+              } as React.CSSProperties}
+            >
               <div className="min-h-0 overflow-hidden rounded-lg border border-slate-200 bg-white dark:border-white/10 dark:bg-[#0D1117]">
                 <div className="h-full overflow-auto">
                   <table className="w-full border-collapse text-left">
@@ -438,7 +462,16 @@ export default function TridentPage() {
                 </div>
               </div>
 
-              <aside className="min-h-0 overflow-hidden rounded-lg border border-slate-200 bg-white dark:border-white/10 dark:bg-[#0D1117]">
+              <aside className="relative min-h-0 overflow-hidden rounded-lg border border-slate-200 bg-white dark:border-white/10 dark:bg-[#0D1117]">
+                <button
+                  type="button"
+                  aria-label="Resize Trident detail panel"
+                  title="Resize detail panel"
+                  onPointerDown={handleDetailResizePointerDown}
+                  className="absolute -left-3 top-0 z-20 hidden h-full w-3 cursor-ew-resize items-center justify-center xl:flex"
+                >
+                  <span className="h-16 w-1 rounded-full bg-slate-300 transition-colors hover:bg-slate-500 dark:bg-white/20 dark:hover:bg-[#00FF88]" />
+                </button>
                 {selectedRow && (
                   <div className="flex h-full flex-col">
                     <div className="border-b border-slate-200 p-4 dark:border-white/10">
@@ -457,6 +490,24 @@ export default function TridentPage() {
                         >
                           {stateLabel(selectedRow.overall_state)}
                         </span>
+                      </div>
+
+                      <div className="mt-3 hidden items-center gap-2 rounded-md border border-slate-200 bg-slate-50 px-2 py-2 dark:border-white/10 dark:bg-black/20 xl:flex">
+                        <label htmlFor="trident-detail-width" className="text-[9px] font-black uppercase tracking-wider text-slate-500">
+                          Panel
+                        </label>
+                        <input
+                          id="trident-detail-width"
+                          type="range"
+                          min={TRIDENT_DETAIL_WIDTH.min}
+                          max={TRIDENT_DETAIL_WIDTH.max}
+                          step={20}
+                          value={detailWidth}
+                          onChange={(event) => setDetailWidth(Number(event.target.value))}
+                          className="h-1 min-w-0 flex-1 accent-blue-600 dark:accent-[#00FF88]"
+                          aria-label="Trident detail panel width"
+                        />
+                        <span className="w-12 text-right text-[9px] font-mono text-slate-500">{detailWidth}px</span>
                       </div>
 
                       <div className="mt-4 grid grid-cols-4 gap-2">

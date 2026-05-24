@@ -76,6 +76,16 @@ try {
     ]),
     'Asset drawer should render the targeted asset price chart.'
   )
+  addCheck(
+    'frontend.asset_drawer.resizable_width',
+    hasAll(assetDrawer, [
+      "import { ASSET_DRAWER_WIDTH } from '../lib/panelWidth'",
+      'usePersistedPanelWidth(ASSET_DRAWER_WIDTH)',
+      'id="asset-drawer-width"',
+      'style={{ width: `min(100vw, ${drawerWidth}px)` }}',
+    ]),
+    'Asset drawer should expose a persisted width slider and stay mobile-bounded.'
+  )
 
   const assetPriceChart = read('frontend/components/AssetPriceChart.tsx')
   addCheck(
@@ -89,10 +99,21 @@ try {
     ]),
     'Asset price chart should expose horizon/currency controls and explicit data states.'
   )
+  addCheck(
+    'frontend.asset_price_chart_fullscreen',
+    hasAll(assetPriceChart, [
+      "import { FullscreenChartButton } from './FullscreenChart'",
+      '<FullscreenChartButton title={`${ticker} Price History`}>',
+      "renderChartSvg('h-[70vh] min-h-[420px]', 'fullscreen')",
+    ]),
+    'Asset price chart should expose a fullscreen chart view.'
+  )
 
   const tridentPage = read('frontend/app/trident/page.tsx')
   const tridentRegressionChart = read('frontend/components/TridentRegressionChart.tsx')
   const regressionChart = read('frontend/lib/regressionChart.ts')
+  const fullscreenChart = read('frontend/components/FullscreenChart.tsx')
+  const panelWidth = read('frontend/lib/panelWidth.ts')
   addCheck(
     'frontend.trident_regression_chart_present',
     hasAll(tridentPage, [
@@ -100,6 +121,23 @@ try {
       '<TridentRegressionChart ticker={selectedRow.ticker} assetCurrency={selectedRow.currency} />',
     ]),
     'Trident selected-row panel should render the regression price chart.'
+  )
+  addCheck(
+    'frontend.trident_detail_resizable_width',
+    hasAll(tridentPage, [
+      "import { TRIDENT_DETAIL_WIDTH } from '../../lib/panelWidth'",
+      'usePersistedPanelWidth(TRIDENT_DETAIL_WIDTH)',
+      'Resize Trident detail panel',
+      'id="trident-detail-width"',
+      '--trident-detail-width',
+    ]) && hasAll(panelWidth, [
+      'TRIDENT_DETAIL_WIDTH',
+      'ASSET_DRAWER_WIDTH',
+      'clampPanelWidth',
+      'readStoredPanelWidth',
+      'writeStoredPanelWidth',
+    ]),
+    'Trident detail panel should expose persisted slider and drag-handle resizing.'
   )
   addCheck(
     'frontend.trident_regression_chart_controls_and_calculations',
@@ -117,6 +155,45 @@ try {
       'annualizedSlopePct',
     ]),
     'Trident regression chart should expose horizon/currency/scale controls and compute regression bands/MM200.'
+  )
+  addCheck(
+    'frontend.chart_fullscreen_controls',
+    hasAll(fullscreenChart, [
+      'Maximize2',
+      'aria-label={`Open ${title} fullscreen`}',
+      "event.key === 'Escape'",
+      'role="dialog"',
+    ]) && hasAll(tridentRegressionChart, [
+      "import { FullscreenChartButton } from './FullscreenChart'",
+      '<FullscreenChartButton title={`${ticker} Regression`} className="h-7 w-7">',
+    ]),
+    'Fullscreen chart overlay should be shared and wired into Trident regression.'
+  )
+
+  const backtestChart = read('frontend/components/BacktestChart.tsx')
+  const drawdownChart = read('frontend/components/DrawdownChart.tsx')
+  const portfolioTrendPanel = read('frontend/components/PortfolioTrendPanel.tsx')
+  const geographicMap = read('frontend/components/GeographicMap.tsx')
+  addCheck(
+    'frontend.general_charts_fullscreen',
+    hasAll(backtestChart, [
+      "import { FullscreenChartButton } from './FullscreenChart'",
+      '<FullscreenChartButton title={title}>',
+      "renderChartSvg('h-[70vh] min-h-[420px]')",
+    ]) && hasAll(drawdownChart, [
+      "import { FullscreenChartButton } from './FullscreenChart'",
+      '<FullscreenChartButton title={title}>',
+      "renderChartSvg('h-[70vh] min-h-[420px]')",
+    ]) && hasAll(portfolioTrendPanel, [
+      "import { FullscreenChartButton } from './FullscreenChart'",
+      '<FullscreenChartButton title="Portfolio Momentum">',
+      "renderTrendSvg('h-[70vh] min-h-[420px]', 'fullscreen')",
+    ]) && hasAll(geographicMap, [
+      "import { FullscreenChartButton } from './FullscreenChart'",
+      '<FullscreenChartButton title="Geographic View">',
+      "renderMapSurface('h-[78vh] min-h-[520px]')",
+    ]),
+    'General charts should expose the shared fullscreen control.'
   )
 
   const geoPage = read('frontend/app/geo/page.tsx')

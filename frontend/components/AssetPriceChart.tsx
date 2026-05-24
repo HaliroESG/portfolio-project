@@ -12,6 +12,7 @@ import {
   loadAssetPriceHistory,
 } from '../lib/priceHistory'
 import { cn } from '../lib/utils'
+import { FullscreenChartButton } from './FullscreenChart'
 
 const HORIZONS: PriceHistoryHorizon[] = ['YTD', '5Y', '10Y']
 const MODES: { key: PriceHistoryCurrencyMode; label: string }[] = [
@@ -135,6 +136,51 @@ export function AssetPriceChart({
   )
   const staleDays = stats?.last.date ? daysSince(stats.last.date) : null
   const isStale = staleDays !== null && staleDays > 7
+  const renderChartSvg = (heightClass: string, idSuffix: string) => {
+    if (!stats || !chart) return null
+    const fillId = `assetPriceFill-${ticker.replace(/[^A-Za-z0-9]/g, '')}-${idSuffix}`
+    return (
+      <svg viewBox={`0 0 ${chart.width} ${chart.height}`} className={`w-full ${heightClass}`}>
+        <defs>
+          <linearGradient id={fillId} x1="0" y1="0" x2="0" y2="1">
+            <stop offset="0%" stopColor="#0ea5e9" stopOpacity="0.22" />
+            <stop offset="100%" stopColor="#0ea5e9" stopOpacity="0" />
+          </linearGradient>
+        </defs>
+        {[0.25, 0.5, 0.75].map((ratio) => {
+          const y = 20 + ratio * (174 - 20)
+          return (
+            <line
+              key={ratio}
+              x1="18"
+              x2="542"
+              y1={y}
+              y2={y}
+              stroke="currentColor"
+              strokeOpacity="0.08"
+              className="text-slate-950 dark:text-white"
+            />
+          )
+        })}
+        <path d={chart.areaPath} fill={`url(#${fillId})`} />
+        <path d={chart.linePath} fill="none" stroke="#0ea5e9" strokeWidth="2.5" />
+        <circle
+          cx={chart.getX(displayPoints.length - 1)}
+          cy={chart.getY(stats.last.price)}
+          r="4"
+          fill="#0ea5e9"
+          stroke="white"
+          strokeWidth="1.5"
+        />
+        <text x="10" y="15" className="fill-slate-500 dark:fill-gray-500 text-[9px] font-mono">
+          {formatPrice(chart.max, currency)}
+        </text>
+        <text x="10" y="198" className="fill-slate-500 dark:fill-gray-500 text-[9px] font-mono">
+          {formatPrice(chart.min, currency)}
+        </text>
+      </svg>
+    )
+  }
 
   return (
     <div className="bg-slate-50 dark:bg-[#080A0F] rounded-2xl border-2 border-slate-200 dark:border-white/5 p-6 shadow-xl">
@@ -192,6 +238,21 @@ export function AssetPriceChart({
               )
             })}
           </div>
+          {stats && chart && (
+            <FullscreenChartButton title={`${ticker} Price History`}>
+              <div className="space-y-4">
+                <div className="rounded-2xl border border-slate-200 bg-slate-50 p-3 dark:border-white/5 dark:bg-[#080A0F]">
+                  {renderChartSvg('h-[70vh] min-h-[420px]', 'fullscreen')}
+                </div>
+                <div className="flex flex-wrap items-center gap-2 text-[10px] font-mono uppercase tracking-wider text-slate-500 dark:text-gray-500">
+                  <span>{currency}</span>
+                  <span>{horizon}</span>
+                  <span>{stats.source}</span>
+                  <span>{formatDate(stats.first.date)} {'->'} {formatDate(stats.last.date)}</span>
+                </div>
+              </div>
+            </FullscreenChartButton>
+          )}
         </div>
       </div>
 
@@ -271,48 +332,7 @@ export function AssetPriceChart({
             </div>
 
             <div className="rounded-xl border border-slate-200 dark:border-white/5 bg-white dark:bg-[#0A0D12] p-3">
-              <svg viewBox={`0 0 ${chart.width} ${chart.height}`} className="w-full h-52">
-                <defs>
-                  <linearGradient id={`assetPriceFill-${ticker.replace(/[^A-Za-z0-9]/g, '')}`} x1="0" y1="0" x2="0" y2="1">
-                    <stop offset="0%" stopColor="#0ea5e9" stopOpacity="0.22" />
-                    <stop offset="100%" stopColor="#0ea5e9" stopOpacity="0" />
-                  </linearGradient>
-                </defs>
-                {[0.25, 0.5, 0.75].map((ratio) => {
-                  const y = 20 + ratio * (174 - 20)
-                  return (
-                    <line
-                      key={ratio}
-                      x1="18"
-                      x2="542"
-                      y1={y}
-                      y2={y}
-                      stroke="currentColor"
-                      strokeOpacity="0.08"
-                      className="text-slate-950 dark:text-white"
-                    />
-                  )
-                })}
-                <path
-                  d={chart.areaPath}
-                  fill={`url(#assetPriceFill-${ticker.replace(/[^A-Za-z0-9]/g, '')})`}
-                />
-                <path d={chart.linePath} fill="none" stroke="#0ea5e9" strokeWidth="2.5" />
-                <circle
-                  cx={chart.getX(displayPoints.length - 1)}
-                  cy={chart.getY(stats.last.price)}
-                  r="4"
-                  fill="#0ea5e9"
-                  stroke="white"
-                  strokeWidth="1.5"
-                />
-                <text x="10" y="15" className="fill-slate-500 dark:fill-gray-500 text-[9px] font-mono">
-                  {formatPrice(chart.max, currency)}
-                </text>
-                <text x="10" y="198" className="fill-slate-500 dark:fill-gray-500 text-[9px] font-mono">
-                  {formatPrice(chart.min, currency)}
-                </text>
-              </svg>
+              {renderChartSvg('h-52', 'inline')}
             </div>
 
             <div className="flex flex-wrap items-center gap-2 text-[10px] font-mono uppercase tracking-wider text-slate-500 dark:text-gray-500">

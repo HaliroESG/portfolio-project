@@ -11,6 +11,7 @@ import {
   TrendState,
 } from '../lib/technicalIndicators'
 import { cn } from '../lib/utils'
+import { FullscreenChartButton } from './FullscreenChart'
 
 interface SnapshotRow {
   snapshot_date: string | null
@@ -185,6 +186,52 @@ export function PortfolioTrendPanel() {
         : 'text-slate-700 dark:text-gray-300 bg-slate-100 dark:bg-slate-800/40 border-slate-300 dark:border-slate-700/70'
 
   const changesCount = points.filter((point) => point.trendChanged).length
+  const renderTrendSvg = (heightClass: string, idSuffix: string) => {
+    const fillId = `portfolioTrendFill-${idSuffix}`
+    return (
+    <svg viewBox={`0 0 ${chart.width} ${chart.height}`} className={`w-full ${heightClass}`}>
+      <defs>
+        <linearGradient id={fillId} x1="0" y1="0" x2="0" y2="1">
+          <stop offset="0%" stopColor="#3b82f6" stopOpacity="0.25" />
+          <stop offset="100%" stopColor="#3b82f6" stopOpacity="0" />
+        </linearGradient>
+      </defs>
+      <path d={chart.areaPath} fill={`url(#${fillId})`} />
+      <path d={chart.linePath} fill="none" stroke="#2563eb" strokeWidth="2.5" />
+
+      {points.map((point, index) => {
+        if (!point.trendChanged) return null
+        const x = chart.getX(index)
+        const y = chart.getY(point.value)
+        const markerColor = point.trendState === 'BULLISH' ? '#10b981' : '#ef4444'
+        return (
+          <circle
+            key={`${point.date}-${index}`}
+            cx={x}
+            cy={y}
+            r="3.5"
+            fill={markerColor}
+            stroke="white"
+            strokeWidth="1.2"
+          />
+        )
+      })}
+
+      <text x="10" y="14" className="fill-slate-500 dark:fill-gray-500 text-[9px] font-mono">
+        {formatValue(chart.max, 0)} EUR
+      </text>
+      <text x="10" y="184" className="fill-slate-500 dark:fill-gray-500 text-[9px] font-mono">
+        {formatValue(chart.min, 0)} EUR
+      </text>
+      <text x="14" y="174" className="fill-slate-500 dark:fill-gray-500 text-[8px] font-mono">
+        {formatDate(points[0].date)}
+      </text>
+      <text x={chart.width - 56} y="174" className="fill-slate-500 dark:fill-gray-500 text-[8px] font-mono">
+        {formatDate(latest.date)}
+      </text>
+    </svg>
+    )
+  }
 
   return (
     <div className="bg-white dark:bg-[#0D1117]/50 rounded-3xl border-2 border-slate-200 dark:border-white/5 shadow-2xl p-6">
@@ -197,59 +244,31 @@ export function PortfolioTrendPanel() {
             MACD + RSI(60) + Momentum(20)
           </p>
         </div>
-        <span
-          className={cn(
-            'inline-flex items-center gap-1 px-2 py-1 rounded border text-[10px] font-black uppercase tracking-wider',
-            trendTone,
-          )}
-        >
-          <Signal className="w-3 h-3" />
-          {latest.trendState}
-        </span>
+        <div className="flex items-center gap-2">
+          <span
+            className={cn(
+              'inline-flex items-center gap-1 px-2 py-1 rounded border text-[10px] font-black uppercase tracking-wider',
+              trendTone,
+            )}
+          >
+            <Signal className="w-3 h-3" />
+            {latest.trendState}
+          </span>
+          <FullscreenChartButton title="Portfolio Momentum">
+            <div className="space-y-4">
+              <div className="rounded-2xl border border-slate-200 bg-slate-50 p-3 dark:border-white/5 dark:bg-[#080A0F]">
+                {renderTrendSvg('h-[70vh] min-h-[420px]', 'fullscreen')}
+              </div>
+              <div className="text-[10px] font-mono uppercase tracking-wider text-slate-500 dark:text-gray-500">
+                MACD + RSI(60) + Momentum(20)
+              </div>
+            </div>
+          </FullscreenChartButton>
+        </div>
       </div>
 
       <div className="mt-4 rounded-2xl border border-slate-200 dark:border-white/5 bg-slate-50 dark:bg-[#080A0F] p-3">
-        <svg viewBox={`0 0 ${chart.width} ${chart.height}`} className="w-full h-44">
-          <defs>
-            <linearGradient id="portfolioTrendFill" x1="0" y1="0" x2="0" y2="1">
-              <stop offset="0%" stopColor="#3b82f6" stopOpacity="0.25" />
-              <stop offset="100%" stopColor="#3b82f6" stopOpacity="0" />
-            </linearGradient>
-          </defs>
-          <path d={chart.areaPath} fill="url(#portfolioTrendFill)" />
-          <path d={chart.linePath} fill="none" stroke="#2563eb" strokeWidth="2.5" />
-
-          {points.map((point, index) => {
-            if (!point.trendChanged) return null
-            const x = chart.getX(index)
-            const y = chart.getY(point.value)
-            const markerColor = point.trendState === 'BULLISH' ? '#10b981' : '#ef4444'
-            return (
-              <circle
-                key={`${point.date}-${index}`}
-                cx={x}
-                cy={y}
-                r="3.5"
-                fill={markerColor}
-                stroke="white"
-                strokeWidth="1.2"
-              />
-            )
-          })}
-
-          <text x="10" y="14" className="fill-slate-500 dark:fill-gray-500 text-[9px] font-mono">
-            {formatValue(chart.max, 0)} EUR
-          </text>
-          <text x="10" y="184" className="fill-slate-500 dark:fill-gray-500 text-[9px] font-mono">
-            {formatValue(chart.min, 0)} EUR
-          </text>
-          <text x="14" y="174" className="fill-slate-500 dark:fill-gray-500 text-[8px] font-mono">
-            {formatDate(points[0].date)}
-          </text>
-          <text x={chart.width - 56} y="174" className="fill-slate-500 dark:fill-gray-500 text-[8px] font-mono">
-            {formatDate(latest.date)}
-          </text>
-        </svg>
+        {renderTrendSvg('h-44', 'inline')}
       </div>
 
       <div className="mt-4 grid grid-cols-3 gap-3">

@@ -17,6 +17,7 @@ import {
   computeRegressionChartModel,
 } from '../lib/regressionChart'
 import { cn } from '../lib/utils'
+import { FullscreenChartButton } from './FullscreenChart'
 
 const HORIZONS: PriceHistoryHorizon[] = ['5Y', '10Y', 'MAX']
 const MODES: { key: PriceHistoryCurrencyMode; label: string }[] = [
@@ -241,7 +242,76 @@ export function TridentRegressionChart({
   )
   const sources = Array.from(new Set(displayPoints.map((point) => point.source).filter(Boolean)))
   const sourceLabel = sources.length > 1 ? `${sources[0]} +${sources.length - 1}` : sources[0] ?? 'unknown'
-  const gradientId = `tridentRegressionBand-${safeId(ticker)}`
+  const renderRegressionSvg = (heightClass: string, idSuffix: string) => {
+    if (!model || !chart) return null
+    const gradientId = `tridentRegressionBand-${safeId(ticker)}-${idSuffix}`
+    return (
+      <svg viewBox={`0 0 ${chart.width} ${chart.height}`} className={`${heightClass} w-full`}>
+        <defs>
+          <linearGradient id={gradientId} x1="0" y1="0" x2="0" y2="1">
+            <stop offset="0%" stopColor="#64748b" stopOpacity="0.18" />
+            <stop offset="100%" stopColor="#64748b" stopOpacity="0.04" />
+          </linearGradient>
+        </defs>
+        <rect x="0" y="0" width={chart.width} height={chart.height} rx="8" className="fill-slate-50 dark:fill-black/20" />
+        {chart.yTicks.map((tick) => (
+          <g key={tick.y}>
+            <line
+              x1={chart.left}
+              x2={chart.width - chart.right}
+              y1={tick.y}
+              y2={tick.y}
+              stroke="currentColor"
+              strokeOpacity="0.08"
+              className="text-slate-950 dark:text-white"
+            />
+            <text x="4" y={tick.y + 3} className="fill-slate-500 text-[8px] font-mono dark:fill-gray-500">
+              {tick.price >= 100 ? tick.price.toFixed(0) : tick.price.toFixed(1)}
+            </text>
+          </g>
+        ))}
+        <line x1={chart.left} x2={chart.left} y1={chart.top} y2={chart.bottom} stroke="currentColor" strokeOpacity="0.18" className="text-slate-950 dark:text-white" />
+        <line x1={chart.left} x2={chart.width - chart.right} y1={chart.bottom} y2={chart.bottom} stroke="currentColor" strokeOpacity="0.18" className="text-slate-950 dark:text-white" />
+        <path d={chart.band2Path} fill={`url(#${gradientId})`} />
+        <path d={chart.band1Path} fill="#64748b" opacity="0.08" />
+        <path d={chart.plus2Path} fill="none" stroke="#94a3b8" strokeWidth="1" strokeDasharray="4 5" />
+        <path d={chart.plus1Path} fill="none" stroke="#94a3b8" strokeWidth="1" strokeDasharray="3 4" />
+        <path d={chart.minus1Path} fill="none" stroke="#94a3b8" strokeWidth="1" strokeDasharray="3 4" />
+        <path d={chart.minus2Path} fill="none" stroke="#94a3b8" strokeWidth="1" strokeDasharray="4 5" />
+        <path d={chart.regressionPath} fill="none" stroke="#f97316" strokeWidth="1.8" />
+        {showMa200 && chart.ma200Path && (
+          <path d={chart.ma200Path} fill="none" stroke="#111827" strokeWidth="1.5" strokeDasharray="6 4" className="dark:stroke-white" />
+        )}
+        <path d={chart.pricePath} fill="none" stroke="#38bdf8" strokeWidth="1.7" />
+        <circle
+          cx={chart.getX(chart.points.length - 1)}
+          cy={chart.getY(model.latestPrice)}
+          r="3.2"
+          fill="#38bdf8"
+          stroke="white"
+          strokeWidth="1.2"
+        />
+        <text
+          x={Math.max(chart.left, chart.getX(chart.points.length - 1) - 80)}
+          y={Math.max(chart.top + 12, chart.getY(model.latestPrice) - 8)}
+          className="fill-blue-600 text-[9px] font-black dark:fill-[#00FF88]"
+        >
+          {formatPrice(model.latestPrice, currency)}
+        </text>
+        {chart.xTicks.map((tick, index) => (
+          <text
+            key={`${tick.date}-${index}`}
+            x={tick.x}
+            y={chart.bottom + 18}
+            textAnchor={index === 0 ? 'start' : index === chart.xTicks.length - 1 ? 'end' : 'middle'}
+            className="fill-slate-500 text-[8px] font-mono dark:fill-gray-500"
+          >
+            {formatCompactDate(tick.date)}
+          </text>
+        ))}
+      </svg>
+    )
+  }
 
   return (
     <section className="mt-4 border-t border-slate-200 pt-4 dark:border-white/10">
@@ -274,6 +344,26 @@ export function TridentRegressionChart({
               {item}
             </button>
           ))}
+          {model && chart && (
+            <FullscreenChartButton title={`${ticker} Regression`} className="h-7 w-7">
+              <div className="space-y-4">
+                <div className="grid grid-cols-3 gap-2">
+                  <Metric label="Last" value={formatPrice(model.latestPrice, currency)} />
+                  <Metric label="Z-score" value={formatZScore(model.latestZScore)} tone={model.latestZScore !== null && Math.abs(model.latestZScore) >= 2 ? 'warn' : 'neutral'} />
+                  <Metric label="Slope" value={formatPct(model.annualizedSlopePct)} tone={model.annualizedSlopePct !== null && model.annualizedSlopePct < 0 ? 'bad' : 'neutral'} />
+                </div>
+                <div className="rounded-md border border-slate-200 bg-slate-50 p-3 dark:border-white/10 dark:bg-black/20">
+                  {renderRegressionSvg('h-[72vh] min-h-[460px]', 'fullscreen')}
+                </div>
+                <div className="flex flex-wrap items-center gap-x-2 gap-y-1 text-[9px] font-mono uppercase tracking-wider text-slate-500 dark:text-gray-500">
+                  <span>{currency}</span>
+                  <span>{scaleMode.toLowerCase()}</span>
+                  <span>{sourceLabel}</span>
+                  <span>MM{MA200_WINDOW}</span>
+                </div>
+              </div>
+            </FullscreenChartButton>
+          )}
         </div>
       </div>
 
@@ -377,70 +467,7 @@ export function TridentRegressionChart({
               <Metric label="Slope" value={formatPct(model.annualizedSlopePct)} tone={model.annualizedSlopePct !== null && model.annualizedSlopePct < 0 ? 'bad' : 'neutral'} />
             </div>
 
-            <svg viewBox={`0 0 ${chart.width} ${chart.height}`} className="h-60 w-full">
-              <defs>
-                <linearGradient id={gradientId} x1="0" y1="0" x2="0" y2="1">
-                  <stop offset="0%" stopColor="#64748b" stopOpacity="0.18" />
-                  <stop offset="100%" stopColor="#64748b" stopOpacity="0.04" />
-                </linearGradient>
-              </defs>
-              <rect x="0" y="0" width={chart.width} height={chart.height} rx="8" className="fill-slate-50 dark:fill-black/20" />
-              {chart.yTicks.map((tick) => (
-                <g key={tick.y}>
-                  <line
-                    x1={chart.left}
-                    x2={chart.width - chart.right}
-                    y1={tick.y}
-                    y2={tick.y}
-                    stroke="currentColor"
-                    strokeOpacity="0.08"
-                    className="text-slate-950 dark:text-white"
-                  />
-                  <text x="4" y={tick.y + 3} className="fill-slate-500 text-[8px] font-mono dark:fill-gray-500">
-                    {tick.price >= 100 ? tick.price.toFixed(0) : tick.price.toFixed(1)}
-                  </text>
-                </g>
-              ))}
-              <line x1={chart.left} x2={chart.left} y1={chart.top} y2={chart.bottom} stroke="currentColor" strokeOpacity="0.18" className="text-slate-950 dark:text-white" />
-              <line x1={chart.left} x2={chart.width - chart.right} y1={chart.bottom} y2={chart.bottom} stroke="currentColor" strokeOpacity="0.18" className="text-slate-950 dark:text-white" />
-              <path d={chart.band2Path} fill={`url(#${gradientId})`} />
-              <path d={chart.band1Path} fill="#64748b" opacity="0.08" />
-              <path d={chart.plus2Path} fill="none" stroke="#94a3b8" strokeWidth="1" strokeDasharray="4 5" />
-              <path d={chart.plus1Path} fill="none" stroke="#94a3b8" strokeWidth="1" strokeDasharray="3 4" />
-              <path d={chart.minus1Path} fill="none" stroke="#94a3b8" strokeWidth="1" strokeDasharray="3 4" />
-              <path d={chart.minus2Path} fill="none" stroke="#94a3b8" strokeWidth="1" strokeDasharray="4 5" />
-              <path d={chart.regressionPath} fill="none" stroke="#f97316" strokeWidth="1.8" />
-              {showMa200 && chart.ma200Path && (
-                <path d={chart.ma200Path} fill="none" stroke="#111827" strokeWidth="1.5" strokeDasharray="6 4" className="dark:stroke-white" />
-              )}
-              <path d={chart.pricePath} fill="none" stroke="#38bdf8" strokeWidth="1.7" />
-              <circle
-                cx={chart.getX(chart.points.length - 1)}
-                cy={chart.getY(model.latestPrice)}
-                r="3.2"
-                fill="#38bdf8"
-                stroke="white"
-                strokeWidth="1.2"
-              />
-              <text
-                x={Math.max(chart.left, chart.getX(chart.points.length - 1) - 80)}
-                y={Math.max(chart.top + 12, chart.getY(model.latestPrice) - 8)}
-                className="fill-blue-600 text-[9px] font-black dark:fill-[#00FF88]"
-              >
-                {formatPrice(model.latestPrice, currency)}
-              </text>
-              {chart.xTicks.map((tick, index) => (
-                <text
-                  key={`${tick.date}-${index}`}
-                  x={tick.x}
-                  y={chart.bottom + 18}
-                  textAnchor={index === 0 ? 'start' : index === chart.xTicks.length - 1 ? 'end' : 'middle'}
-                  className="fill-slate-500 text-[8px] font-mono dark:fill-gray-500"
-                >
-                  {formatCompactDate(tick.date)}
-                </text>
-              ))}
-            </svg>
+            {renderRegressionSvg('h-60', 'inline')}
 
             <div className="flex flex-wrap items-center gap-x-2 gap-y-1 text-[9px] font-mono uppercase tracking-wider text-slate-500 dark:text-gray-500">
               <span>{currency}</span>
