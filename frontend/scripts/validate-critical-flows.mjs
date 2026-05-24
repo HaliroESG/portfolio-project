@@ -90,6 +90,35 @@ try {
     'Asset price chart should expose horizon/currency controls and explicit data states.'
   )
 
+  const tridentPage = read('frontend/app/trident/page.tsx')
+  const tridentRegressionChart = read('frontend/components/TridentRegressionChart.tsx')
+  const regressionChart = read('frontend/lib/regressionChart.ts')
+  addCheck(
+    'frontend.trident_regression_chart_present',
+    hasAll(tridentPage, [
+      "import { TridentRegressionChart } from '../../components/TridentRegressionChart'",
+      '<TridentRegressionChart ticker={selectedRow.ticker} assetCurrency={selectedRow.currency} />',
+    ]),
+    'Trident selected-row panel should render the regression price chart.'
+  )
+  addCheck(
+    'frontend.trident_regression_chart_controls_and_calculations',
+    hasAll(tridentRegressionChart, [
+      "const HORIZONS: PriceHistoryHorizon[] = ['5Y', '10Y', 'MAX']",
+      "const SCALES: { key: RegressionScaleMode; label: string }[]",
+      'Local unavailable',
+      'Short history',
+      'Insufficient history',
+      'computeRegressionChartModel(displayPoints, scaleMode)',
+    ]) && hasAll(regressionChart, [
+      'computeRegressionChartModel',
+      'computeMovingAverage',
+      'latestZScore',
+      'annualizedSlopePct',
+    ]),
+    'Trident regression chart should expose horizon/currency/scale controls and compute regression bands/MM200.'
+  )
+
   const geoPage = read('frontend/app/geo/page.tsx')
   addCheck(
     'frontend.geo.timeframe_selector_present',

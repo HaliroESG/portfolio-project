@@ -1,6 +1,7 @@
 import argparse
 import os
 import time
+from dataclasses import dataclass
 from datetime import datetime, date, timedelta
 
 import numpy as np
@@ -13,6 +14,44 @@ from etl_stats import build_etl_stats
 
 BASE_CURRENCY = "EUR"
 DEFAULT_START_DATE = "1999-01-01"
+PRICE_TARGET_PAGE_SIZE = 1000
+
+
+@dataclass(frozen=True)
+class PriceTarget:
+    ticker: str
+    provider_symbol: str
+    currency: str | None = None
+    source_index: str | None = None
+    source_provider: str | None = None
+
+
+def normalize_ticker(value: str | None) -> str | None:
+    if not value:
+        return None
+    normalized = str(value).strip().upper()
+    return normalized or None
+
+
+def make_price_target(
+    ticker: str | None,
+    provider_symbol: str | None = None,
+    currency: str | None = None,
+    source_index: str | None = None,
+    source_provider: str | None = None,
+) -> PriceTarget | None:
+    normalized_ticker = normalize_ticker(ticker)
+    normalized_provider_symbol = normalize_ticker(provider_symbol) or normalized_ticker
+    if not normalized_ticker or not normalized_provider_symbol:
+        return None
+    normalized_currency = normalize_ticker(currency)
+    return PriceTarget(
+        ticker=normalized_ticker,
+        provider_symbol=normalized_provider_symbol,
+        currency=normalized_currency,
+        source_index=str(source_index).strip() if source_index else None,
+        source_provider=str(source_provider).strip() if source_provider else None,
+    )
 
 
 def get_env(name: str) -> str:
@@ -128,6 +167,8 @@ def download_price_series(ticker: str, start: date, end: date) -> pd.Series | No
 
 def fetch_currency_map(supabase, tickers: list[str]) -> dict[str, str]:
     mapping: dict[str, str] = {}
+    if not tickers:
+        return mapping
 
     def apply_rows(rows):
         for row in rows or []:
@@ -339,45 +380,122 @@ def compute_coverage(prices: pd.Series, start: date, end: date) -> float | None:
     return float(min(100.0, max(0.0, coverage)))
 
 
-def fetch_tickers(supabase) -> set[str]:
-    tickers: set[str] = set()
+def merge_price_target(
+    targets: dict[str, PriceTarget],
+    target: PriceTarget | None,
+) -> None:
+    if target is None:
+        return
+    existing = targets.get(target.ticker)
+    if existing is None or target.source_index:
+        targets[target.ticker] = target
+        return
+    if existing.currency is None and target.currency:
+        targets[target.ticker] = PriceTarget(
+            ticker=existing.ticker,
+            provider_symbol=existing.provider_symbol,
+            currency=target.currency,
+            source_index=existing.source_index,
+            source_provider=existing.source_provider,
+        )
+
+
+def fetch_base_price_targets(supabase) -> dict[str, PriceTarget]:
+    targets: dict[str, PriceTarget] = {}
 
     try:
         response = supabase.table("portfolio_positions").select("ticker").execute()
         for row in response.data or []:
-            ticker = row.get("ticker")
-            if ticker:
-                tickers.add(str(ticker).upper())
+            merge_price_target(targets, make_price_target(row.get("ticker")))
     except Exception as exc:
         print(f"⚠️ Erreur portfolio_positions: {exc}", flush=True)
 
     try:
         response = supabase.table("governance_targets").select("ticker").execute()
         for row in response.data or []:
-            ticker = row.get("ticker")
-            if ticker:
-                tickers.add(str(ticker).upper())
+            merge_price_target(targets, make_price_target(row.get("ticker")))
     except Exception as exc:
         print(f"⚠️ governance_targets ticker indisponible: {exc}", flush=True)
 
     preset_tickers = get_preset_tickers(include_proxies=True)
     for ticker in preset_tickers:
-        tickers.add(str(ticker).upper())
+        merge_price_target(targets, make_price_target(ticker))
 
-    return tickers
+    return targets
+
+
+def fetch_trident_price_targets(supabase) -> dict[str, PriceTarget]:
+    targets: dict[str, PriceTarget] = {}
+
+    try:
+        for offset in range(0, 100_000, PRICE_TARGET_PAGE_SIZE):
+            response = (
+                supabase
+                .table("trident_equity_universe")
+                .select("ticker,provider_symbol,currency,source_index,provider,is_active")
+                .eq("is_active", True)
+                .order("ticker")
+                .range(offset, offset + PRICE_TARGET_PAGE_SIZE - 1)
+                .execute()
+            )
+            rows = response.data or []
+            for row in rows:
+                target = make_price_target(
+                    row.get("ticker"),
+                    provider_symbol=row.get("provider_symbol"),
+                    currency=row.get("currency"),
+                    source_index=row.get("source_index"),
+                    source_provider=row.get("provider"),
+                )
+                merge_price_target(targets, target)
+            if len(rows) < PRICE_TARGET_PAGE_SIZE:
+                break
+    except Exception as exc:
+        print(f"⚠️ trident_equity_universe tickers indisponibles: {exc}", flush=True)
+
+    return targets
+
+
+def fetch_price_targets(
+    supabase,
+    include_trident: bool = True,
+    trident_only: bool = False,
+) -> dict[str, PriceTarget]:
+    targets: dict[str, PriceTarget] = {}
+
+    if not trident_only:
+        targets.update(fetch_base_price_targets(supabase))
+    if include_trident or trident_only:
+        trident_targets = fetch_trident_price_targets(supabase)
+        for target in trident_targets.values():
+            merge_price_target(targets, target)
+
+    return targets
+
+
+def fetch_tickers(supabase) -> set[str]:
+    return set(fetch_base_price_targets(supabase).keys())
 
 
 def build_ticker_currency_map(
     supabase,
-    tickers: list[str],
+    targets: list[PriceTarget],
 ) -> dict[str, str]:
-    mapping = fetch_currency_map(supabase, tickers)
-    for ticker in tickers:
-        if ticker in mapping:
+    mapping: dict[str, str] = {}
+    for target in targets:
+        if target.currency:
+            mapping[target.ticker] = target.currency
+
+    missing_tickers = [target.ticker for target in targets if target.ticker not in mapping]
+    for ticker, currency in fetch_currency_map(supabase, missing_tickers).items():
+        mapping.setdefault(ticker, currency)
+
+    for target in targets:
+        if target.ticker in mapping:
             continue
-        currency = fetch_currency_from_yfinance(ticker)
+        currency = fetch_currency_from_yfinance(target.provider_symbol)
         if currency:
-            mapping[ticker] = currency
+            mapping[target.ticker] = currency
     return mapping
 
 
@@ -385,37 +503,85 @@ def run_sync(
     supabase,
     start: date,
     end: date,
-    tickers: list[str],
+    targets: list[PriceTarget] | list[str],
     dry_run: bool = False,
 ) -> dict:
     print(f"--- HISTORICAL PRICES {start} -> {end} ---", flush=True)
     fx_cache: dict[str, pd.Series] = {}
     proxy_map = get_proxy_map()
+    price_targets = [
+        target if isinstance(target, PriceTarget) else make_price_target(target)
+        for target in targets
+    ]
+    price_targets = [
+        target for target in price_targets
+        if target is not None
+    ]
     stats = {
-        "tickers": len(tickers),
+        "tickers": len(price_targets),
         "rows_upserted": 0,
         "rows_with_local": 0,
         "rows_without_local": 0,
         "tickers_ok": 0,
         "tickers_failed": 0,
         "tickers_proxy": 0,
+        "trident_tickers": sum(1 for target in price_targets if target.source_index),
         "local_currencies": {},
+        "source_indexes": {},
     }
 
-    currency_map = build_ticker_currency_map(supabase, tickers)
+    def index_stats(target: PriceTarget) -> dict:
+        key = target.source_index or "non_trident"
+        source_indexes = stats["source_indexes"]
+        if key not in source_indexes:
+            source_indexes[key] = {
+                "tickers_requested": 0,
+                "tickers_with_prices": 0,
+                "tickers_without_prices": 0,
+                "errors": [],
+            }
+        return source_indexes[key]
 
-    for ticker in tickers:
-        print(f"→ {ticker}", flush=True)
+    def record_requested(target: PriceTarget) -> None:
+        index_stats(target)["tickers_requested"] += 1
+
+    def record_index_result(
+        target: PriceTarget,
+        ok: bool,
+        error: str | None = None,
+    ) -> None:
+        bucket = index_stats(target)
+        if ok:
+            bucket["tickers_with_prices"] += 1
+        else:
+            bucket["tickers_without_prices"] += 1
+            if error and len(bucket["errors"]) < 5:
+                bucket["errors"].append({
+                    "ticker": target.ticker,
+                    "provider_symbol": target.provider_symbol,
+                    "error": error,
+                })
+
+    currency_map = build_ticker_currency_map(supabase, price_targets)
+
+    for target in price_targets:
+        ticker = target.ticker
+        provider_symbol = target.provider_symbol
+        record_requested(target)
+        label = ticker if ticker == provider_symbol else f"{ticker} via {provider_symbol}"
+        print(f"→ {label}", flush=True)
         currency = currency_map.get(ticker)
         if not currency:
             currency = BASE_CURRENCY
             print(f"    ⚠️ Devise inconnue, fallback {BASE_CURRENCY}", flush=True)
 
-        series = download_price_series(ticker, start, end)
+        series = download_price_series(provider_symbol, start, end)
         if series is None or series.empty:
-            print(f"    ❌ Pas d'historique {ticker}", flush=True)
+            print(f"    ❌ Pas d'historique {provider_symbol}", flush=True)
             stats["tickers_failed"] += 1
-            upsert_coverage(supabase, ticker, start, end, None, None, False)
+            record_index_result(target, False, "no_price_history")
+            if not dry_run:
+                upsert_coverage(supabase, ticker, start, end, None, None, False)
             continue
 
         local_series = series.replace([np.inf, -np.inf], np.nan).dropna()
@@ -426,7 +592,9 @@ def run_sync(
         if converted is None or converted.empty:
             print(f"    ❌ Conversion FX échouée {ticker}", flush=True)
             stats["tickers_failed"] += 1
-            upsert_coverage(supabase, ticker, start, end, None, None, False)
+            record_index_result(target, False, "fx_conversion_failed")
+            if not dry_run:
+                upsert_coverage(supabase, ticker, start, end, None, None, False)
             continue
 
         earliest = converted.index.min().date()
@@ -465,7 +633,9 @@ def run_sync(
         if converted.empty:
             print(f"    ❌ Série vide après nettoyage {ticker}", flush=True)
             stats["tickers_failed"] += 1
-            upsert_coverage(supabase, ticker, start, end, None, None, used_proxy)
+            record_index_result(target, False, "empty_after_cleaning")
+            if not dry_run:
+                upsert_coverage(supabase, ticker, start, end, None, None, used_proxy)
             continue
 
         payloads = build_price_payloads(
@@ -500,6 +670,7 @@ def run_sync(
             local_currencies = stats["local_currencies"]
             local_currencies[currency] = local_currencies.get(currency, 0) + local_rows
         stats["tickers_ok"] += 1
+        record_index_result(target, True)
         if coverage_pct is None:
             print(f"    ✅ {len(payloads)} lignes", flush=True)
         else:
@@ -516,8 +687,13 @@ def main():
     parser.add_argument("--start-date", default=DEFAULT_START_DATE)
     parser.add_argument("--end-date", default=None)
     parser.add_argument("--tickers", default=None, help="Comma-separated tickers override")
+    parser.add_argument("--no-trident", action="store_true", help="Exclude Trident universe tickers")
+    parser.add_argument("--trident-only", action="store_true", help="Sync only active Trident universe tickers")
     parser.add_argument("--dry-run", action="store_true")
     args = parser.parse_args()
+
+    if args.no_trident and args.trident_only:
+        raise RuntimeError("--no-trident and --trident-only are mutually exclusive")
 
     end_date = args.end_date or datetime.utcnow().date().isoformat()
     start = parse_date(args.start_date)
@@ -526,15 +702,27 @@ def main():
     supabase = get_supabase_client()
 
     if args.tickers:
-        tickers = {t.strip().upper() for t in args.tickers.split(",") if t.strip()}
+        targets = {
+            target.ticker: target
+            for target in (
+                make_price_target(t.strip())
+                for t in args.tickers.split(",")
+                if t.strip()
+            )
+            if target is not None
+        }
     else:
-        tickers = fetch_tickers(supabase)
+        targets = fetch_price_targets(
+            supabase,
+            include_trident=not args.no_trident,
+            trident_only=args.trident_only,
+        )
 
-    if not tickers:
+    if not targets:
         print("⚠️ Aucun ticker détecté, arrêt.", flush=True)
         return
 
-    job_name = "historical_prices_sync"
+    job_name = "historical_prices_trident_sync" if args.trident_only else "historical_prices_sync"
     started = time.time()
     run_id = start_etl_run(supabase, job_name)
     try:
@@ -542,15 +730,19 @@ def main():
             supabase,
             start,
             end,
-            sorted(tickers),
+            sorted(targets.values(), key=lambda target: target.ticker),
             dry_run=args.dry_run,
         )
+        coverage_pct = None
+        if stats.get("tickers"):
+            coverage_pct = (stats.get("tickers_ok", 0) / stats["tickers"]) * 100
         normalized_stats = build_etl_stats(
             job_name,
             stats,
             items_total=stats.get("tickers"),
             items_success=stats.get("tickers_ok"),
             items_failed=stats.get("tickers_failed"),
+            coverage_pct=coverage_pct,
         )
         finish_etl_run(
             supabase,

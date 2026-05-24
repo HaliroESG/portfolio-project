@@ -1,6 +1,7 @@
 import assert from 'node:assert/strict'
 
 const priceHistory = await import('../lib/priceHistory.ts')
+const regressionChart = await import('../lib/regressionChart.ts')
 
 assert.equal(
   priceHistory.getPriceHistoryStartDate('YTD', new Date('2026-05-24T12:00:00Z')),
@@ -13,6 +14,10 @@ assert.equal(
 assert.equal(
   priceHistory.getPriceHistoryStartDate('10Y', new Date('2026-05-24T12:00:00Z')),
   '2016-05-24',
+)
+assert.equal(
+  priceHistory.getPriceHistoryStartDate('MAX', new Date('2026-05-24T12:00:00Z')),
+  '1999-01-01',
 )
 
 const parsed = priceHistory.parseAssetPriceHistoryRow({
@@ -116,5 +121,68 @@ const paged = await priceHistory.loadAssetPriceHistory(fakeSupabase, 'abc', 'YTD
 assert.equal(paged.ticker, 'ABC')
 assert.equal(paged.points.length, 1001)
 assert.deepEqual(ranges, [[0, 999], [1000, 1999]])
+
+const maxBatches = [makeRows(1000), makeRows(1000), makeRows(10)]
+const maxRanges = []
+const fakeMaxSupabase = {
+  from(table) {
+    assert.equal(table, 'historical_prices')
+    const query = {
+      select() { return query },
+      eq(column, value) {
+        assert.equal(column, 'ticker')
+        assert.equal(value, 'ABC')
+        return query
+      },
+      gte(column, value) {
+        assert.equal(column, 'date')
+        assert.equal(value, '1999-01-01')
+        return query
+      },
+      order(column, options) {
+        assert.equal(column, 'date')
+        assert.equal(options.ascending, true)
+        return query
+      },
+      async range(from, to) {
+        maxRanges.push([from, to])
+        return { data: maxBatches.shift() ?? [], error: null }
+      },
+    }
+    return query
+  },
+}
+
+const maxPaged = await priceHistory.loadAssetPriceHistory(fakeMaxSupabase, 'abc', 'MAX')
+assert.equal(maxPaged.points.length, 2010)
+assert.deepEqual(maxRanges, [[0, 999], [1000, 1999], [2000, 2999]])
+
+const regressionPoints = Array.from({ length: 260 }, (_, index) => {
+  const date = new Date(Date.UTC(2025, 0, 1 + index))
+  return {
+    date: date.toISOString().slice(0, 10),
+    price: 100 * Math.exp(index * 0.001),
+    source: 'yfinance',
+    updated_at: null,
+  }
+})
+const logModel = regressionChart.computeRegressionChartModel(regressionPoints, 'LOG')
+assert.ok(logModel)
+assert.equal(logModel.points.length, 260)
+assert.ok(logModel.sigma < 1e-10)
+assert.ok(logModel.points[199].ma200)
+assert.equal(logModel.points[198].ma200, null)
+assert.ok(logModel.annualizedSlopePct > 0)
+
+const noisyPoints = regressionPoints.map((point, index) => ({
+  ...point,
+  price: index === regressionPoints.length - 1 ? point.price * 1.25 : point.price,
+}))
+const noisyModel = regressionChart.computeRegressionChartModel(noisyPoints, 'LINEAR')
+assert.ok(noisyModel.latestZScore > 1)
+assert.equal(
+  regressionChart.computeRegressionChartModel(regressionPoints.slice(0, 20), 'LOG'),
+  null,
+)
 
 console.log('frontend price-history tests: PASS')

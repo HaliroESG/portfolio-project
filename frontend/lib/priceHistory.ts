@@ -35,6 +35,10 @@ export function getPriceHistoryStartDate(
   horizon: PriceHistoryHorizon,
   now = new Date(),
 ): string {
+  if (horizon === 'MAX') {
+    return '1999-01-01'
+  }
+
   const year = now.getUTCFullYear()
   if (horizon === 'YTD') {
     return `${year}-01-01`

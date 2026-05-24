@@ -8,8 +8,9 @@ export type AssetType = 'Stock' | 'STOCK' | 'ETF' | 'Crypto' | 'CRYPTO' | 'Cash'
 export type TridentCriterionStatus = 'pass' | 'fail' | 'missing' | 'not_applicable';
 export type TridentCategory = 'growth' | 'profitability' | 'capital' | 'health';
 export type TridentOverallState = 'QUALIFIED' | 'WATCHLIST' | 'REJECTED' | 'NO_DATA';
-export type PriceHistoryHorizon = 'YTD' | '5Y' | '10Y';
+export type PriceHistoryHorizon = 'YTD' | '5Y' | '10Y' | 'MAX';
 export type PriceHistoryCurrencyMode = 'EUR' | 'LOCAL';
+export type RegressionScaleMode = 'LOG' | 'LINEAR';
 // TrendState semantics:
 // - NEUTRAL: rule-based neutral (indicators available but not aligned bullish/bearish)
 // - UNKNOWN: indicators expected but missing/incoherent (data gap)

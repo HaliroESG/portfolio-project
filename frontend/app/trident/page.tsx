@@ -16,6 +16,7 @@ import {
 import { Header } from '../../components/Header'
 import { Sidebar } from '../../components/Sidebar'
 import { EmptyState } from '../../components/EmptyState'
+import { TridentRegressionChart } from '../../components/TridentRegressionChart'
 import { supabase } from '../../lib/supabase'
 import { loadTridentBundle, loadTridentCriteria } from '../../lib/tridentData'
 import { swrOptions, SWR_REFRESH } from '../../lib/swrConfig'
@@ -476,6 +477,8 @@ export default function TridentPage() {
                           Eliminator: {selectedRow.failed_eliminators.join(', ')}
                         </div>
                       )}
+
+                      <TridentRegressionChart ticker={selectedRow.ticker} assetCurrency={selectedRow.currency} />
                     </div>
 
                     <div className="border-b border-slate-200 p-3 dark:border-white/10">
