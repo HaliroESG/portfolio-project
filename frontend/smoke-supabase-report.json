@@ -71,49 +71,49 @@
       "name": "etl_runs",
       "ok": true,
       "status": "PASS",
-      "row_count": 235,
+      "row_count": 237,
       "sample": {
         "job_name": "trident_screener_sync",
         "status": "SUCCESS",
-        "started_at": "2026-05-24T17:19:02.468389+00:00",
-        "finished_at": "2026-05-24T17:22:13.397183+00:00",
-        "duration_sec": 190.68
+        "started_at": "2026-05-24T19:03:11.407533+00:00",
+        "finished_at": "2026-05-24T19:22:20.713921+00:00",
+        "duration_sec": 1149.15
       }
     },
     {
       "name": "trident_screener_latest",
       "ok": true,
       "status": "PASS",
-      "row_count": 203,
+      "row_count": 1270,
       "sample": {
-        "instrument_key": "global_yahoo:000120.ks",
-        "ticker": "000120.KS",
-        "score": 15.38,
-        "confidence": 80.77,
+        "instrument_key": "global_yahoo:000080.ks",
+        "ticker": "000080.KS",
+        "score": 23.08,
+        "confidence": 88.46,
         "overall_state": "REJECTED",
         "source_provider": "global_yahoo",
-        "source_index": null,
-        "criteria_pass_count": 8,
+        "source_index": "KOSPI 200",
+        "criteria_pass_count": 12,
         "criteria_fail_count": 34,
-        "criteria_missing_count": 10,
-        "latest_roic": 0.07927689264825559,
-        "latest_net_debt_to_ebitda": 1.5878123652302634,
-        "updated_at": "2026-05-24T17:22:09.211637+00:00"
+        "criteria_missing_count": 6,
+        "latest_roic": 0.054366556450964575,
+        "latest_net_debt_to_ebitda": 2.078292865285297,
+        "updated_at": "2026-05-24T19:21:32.043901+00:00"
       }
     },
     {
       "name": "trident_criterion_results",
       "ok": true,
       "status": "PASS",
-      "row_count": 10556,
+      "row_count": 69160,
       "sample": {
-        "instrument_key": "portfolio_seed:2fe.de",
-        "horizon_years": 1,
-        "criterion_key": "revenue_cagr",
-        "category": "growth",
-        "status": "missing",
-        "actual": null,
-        "threshold": 0.1
+        "instrument_key": "global_yahoo:002790.ks",
+        "horizon_years": 5,
+        "criterion_key": "roic",
+        "category": "capital",
+        "status": "fail",
+        "actual": 0.11211683766485207,
+        "threshold": 0.15
       }
     },
     {
