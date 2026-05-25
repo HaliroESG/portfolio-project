@@ -12,10 +12,13 @@ from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from typing import Any, Mapping
 
-from supabase_key_guard import SupabaseBackendKeyError, require_backend_supabase_key
-
 
 BACKEND_DIR = Path(__file__).resolve().parents[1]
+if str(BACKEND_DIR) not in sys.path:
+    sys.path.insert(0, str(BACKEND_DIR))
+
+from supabase_key_guard import SupabaseBackendKeyError, require_backend_supabase_key
+
 PYTHON = sys.executable
 
 
