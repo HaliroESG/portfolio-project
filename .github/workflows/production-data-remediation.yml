@@ -109,8 +109,10 @@ jobs:
             db_url="$DATABASE_URL_VAR"
           fi
           if [ "$APPLY_SCHEMA" = "true" ] && [ -z "$db_url" ]; then
-            echo "::error::SUPABASE_DB_URL or DATABASE_URL is required to apply SQL migrations."
-            exit 2
+            echo "::warning::SUPABASE_DB_URL or DATABASE_URL is not configured; SQL migrations will be skipped, but service-role data backfills will continue."
+            echo "APPLY_SCHEMA=false" >> "$GITHUB_ENV"
+            echo "SCHEMA_SKIP_REASON=Missing SUPABASE_DB_URL or DATABASE_URL" >> "$GITHUB_ENV"
+            exit 0
           fi
           if [ -n "$db_url" ]; then
             echo "::add-mask::$db_url"
@@ -155,6 +157,11 @@ jobs:
             -f backend/sql/20260511_broker_transactions.sql \
             -f backend/sql/20260524_trident_screener.sql \
             -f backend/sql/20260525_portfolio_decision_items.sql
+
+      - name: Report skipped schema migration
+        if: ${{ env.APPLY_SCHEMA != 'true' }}
+        run: |
+          echo "::warning::SQL migration skipped: ${SCHEMA_SKIP_REASON:-apply_schema disabled}."
 
       - name: Post-migration schema check
         working-directory: ./backend
