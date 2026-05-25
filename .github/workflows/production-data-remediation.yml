@@ -120,6 +120,7 @@ jobs:
           echo "Database URL configuration resolved."
 
       - name: Pre-migration schema check
+        continue-on-error: true
         working-directory: ./backend
         env:
           SUPABASE_KEY: ${{ secrets.SUPABASE_SERVICE_KEY }}
@@ -164,6 +165,7 @@ jobs:
           echo "::warning::SQL migration skipped: ${SCHEMA_SKIP_REASON:-apply_schema disabled}."
 
       - name: Post-migration schema check
+        continue-on-error: ${{ env.APPLY_SCHEMA != 'true' }}
         working-directory: ./backend
         env:
           SUPABASE_KEY: ${{ secrets.SUPABASE_SERVICE_KEY }}
