@@ -347,7 +347,7 @@ Manual write tests (/targets)	NOT RUN
 
 Current blocking issue:
 
-`historical_prices_trident_sync` latest ETL run fails with a row-level security write error on `historical_prices`. The fix must keep writes on backend secret/service credentials and must not add public INSERT/UPSERT policies for `anon`.
+`historical_prices_trident_sync` latest ETL run is still FAILED in the live environment, and top Trident scores still have poor historical price coverage. The fix must apply the pending additive Supabase schema, then run the top-score price backfill and the full Trident price sync with backend secret/service credentials. Do not add public INSERT/UPSERT policies for `anon`.
 
 
 ⸻
@@ -355,7 +355,7 @@ Current blocking issue:
 Current Roadmap Status
 
 Item	Status
-BL-001	BLOCKED (live schema drift)
+BL-001	ACTIVE (technical completeness incomplete)
 BL-008	IN_PROGRESS
 BL-009	DONE
 
@@ -364,7 +364,7 @@ BL-009	DONE
 
 Next Action (P0)
 
-Verify the scheduler/backend secret used for Trident historical price sync, rerun the sync, then backfill technical indicators for `market_watch`.
+Apply the pending Supabase schema, run `Trident Price Backfill` for top scores, then rerun the full Trident historical price sync and backfill technical indicators for `market_watch`.
 
 Then re-run:
 
@@ -428,4 +428,6 @@ Scope delivered:
 
 Deployment note:
 - Apply `backend/sql/20260511_broker_transactions.sql`, `backend/sql/20260524_trident_screener.sql`, and `backend/sql/20260525_portfolio_decision_items.sql` before expecting `/arbitrage` to show decision rows.
-- Rerun `historical_prices_trident_sync` with backend service-role credentials after schema deployment.
+- Run GitHub Actions `Trident Supabase Deploy Gate` with `apply_schema=true`.
+- Run GitHub Actions `Trident Price Backfill` with `top_n=50`, `start_date=1999-01-01`.
+- Rerun `Financial Data Sync` with `scope=trident`, `trident_mode=full`, `trident_price_start_date=1999-01-01`.
