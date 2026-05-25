@@ -6,6 +6,7 @@ on:
       - "codex/trident-screener"
     paths:
       - ".github/workflows/production-data-remediation.yml"
+      - "backend/scripts/run_data_refresh.py"
   workflow_dispatch:
     inputs:
       apply_schema:
