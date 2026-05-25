@@ -157,6 +157,7 @@ jobs:
             -f backend/sql/20260222_backtest_portfolio_key_relax.sql \
             -f backend/sql/20260222_backtest_config_hash_idx.sql \
             -f backend/sql/20260511_broker_transactions.sql \
+            -f backend/sql/20260525_broker_position_snapshots.sql \
             -f backend/sql/20260524_trident_screener.sql \
             -f backend/sql/20260525_portfolio_decision_items.sql
 

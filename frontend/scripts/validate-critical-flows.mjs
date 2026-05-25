@@ -269,8 +269,11 @@ try {
       'md:hidden',
       'hidden md:block',
       'Targets stay read-only',
+      'broker_position_snapshot_runs',
+      'actual_source_accounts',
+      'Target Excel',
     ]),
-    'Targets should expose Portfolio Drift metrics and mobile cards while staying frontend read-only.'
+    'Targets should expose Portfolio Drift metrics, broker snapshot freshness, target import status, and mobile cards while staying frontend read-only.'
   )
   addCheck(
     'frontend.arbitrage.decision_dashboard',
@@ -310,6 +313,8 @@ try {
       'target_weight_pct?: number | null;',
       'portfolio_ids?: string[];',
       'portfolio_names?: string[];',
+      'BrokerPositionSnapshotRunRow',
+      'actual_source_accounts?: BrokerPositionSourceAccount[] | null;',
       'provider_symbol: string | null',
       'PortfolioDecisionItemRow',
     ]),

@@ -103,6 +103,9 @@ def test_target_excel_import_apply_updates_existing_and_inserts_target_only(tmp_
 
     assert "quantity_current" not in update_payload
     assert "pru" not in update_payload
+    assert update_payload["target_source"] == "excel"
+    assert update_payload["target_source_file"] == "targets.xlsx"
+    assert "target_updated_at" in update_payload
     assert insert_payload["quantity_current"] == 0
     assert insert_payload["target_weight_pct"] == 40
 

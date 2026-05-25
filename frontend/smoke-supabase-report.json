@@ -1,6 +1,7 @@
 {
   "ok": true,
   "status": "PASS",
+  "require_trident_rows": false,
   "checks": [
     {
       "name": "market_watch",
@@ -10,7 +11,7 @@
       "row_count": 39,
       "sample": {
         "ticker": "GOLD",
-        "last_update": "2026-05-22T22:27:58.855906+00:00",
+        "last_update": "2026-05-25T20:36:45.545604+00:00",
         "macd_line": null,
         "macd_signal": null,
         "macd_hist": null,
@@ -28,8 +29,8 @@
       "sample": {
         "id": "USD",
         "symbol": "$",
-        "rate_to_eur": 0.861699998378754,
-        "last_update": "2026-05-24T15:54:46.880979+00:00"
+        "rate_to_eur": 0.85860002040863,
+        "last_update": "2026-05-25T20:36:35.541578+00:00"
       }
     },
     {
@@ -71,13 +72,13 @@
       "name": "etl_runs",
       "ok": true,
       "status": "PASS",
-      "row_count": 238,
+      "row_count": 243,
       "sample": {
-        "job_name": "historical_prices_local_eur_backfill",
-        "status": "SUCCESS",
-        "started_at": "2026-05-24T20:03:10.235684+00:00",
-        "finished_at": "2026-05-24T20:03:10.235684+00:00",
-        "duration_sec": 0
+        "job_name": "historical_prices_trident_sync",
+        "status": "RUNNING",
+        "started_at": "2026-05-25T20:36:41.918251+00:00",
+        "finished_at": null,
+        "duration_sec": null
       }
     },
     {
@@ -98,8 +99,9 @@
         "criteria_missing_count": 6,
         "latest_roic": 0.054366556450964575,
         "latest_net_debt_to_ebitda": 2.078292865285297,
-        "updated_at": "2026-05-24T19:21:32.043901+00:00"
-      }
+        "updated_at": "2026-05-25T20:35:55.931597+00:00"
+      },
+      "schema_warning": "provider_symbol is missing from trident_screener_latest; apply backend/sql/20260525_portfolio_decision_items.sql."
     },
     {
       "name": "trident_criterion_results",
@@ -107,45 +109,45 @@
       "status": "PASS",
       "row_count": 69160,
       "sample": {
-        "instrument_key": "global_yahoo:002790.ks",
-        "horizon_years": 5,
-        "criterion_key": "roic",
-        "category": "capital",
+        "instrument_key": "global_yahoo:000080.ks",
+        "horizon_years": 1,
+        "criterion_key": "revenue_cagr",
+        "category": "growth",
         "status": "fail",
-        "actual": 0.11211683766485207,
-        "threshold": 0.15
+        "actual": -0.03871084527145685,
+        "threshold": 0.1
       }
     },
     {
       "name": "historical_prices",
       "ok": true,
       "status": "PASS",
-      "row_count": 241808,
+      "row_count": 5,
       "sample": {
-        "ticker": "GC=F",
-        "date": "2000-09-13",
-        "adj_close": 227.99804878439318,
+        "ticker": "COH.AX",
+        "date": "2007-06-28",
+        "adj_close": 25.5163633712732,
         "currency": "EUR",
         "source": "yfinance",
-        "updated_at": "2026-05-24T15:56:28.108185+00:00",
-        "adj_close_local": null,
-        "local_currency": null,
-        "fx_rate_to_eur": null
+        "updated_at": "2026-05-25T21:00:25.965069+00:00",
+        "adj_close_local": 40.534976959228516,
+        "local_currency": "AUD",
+        "fx_rate_to_eur": 0.6294900178909302
       }
     },
     {
       "name": "historical_price_coverage",
       "ok": true,
       "status": "PASS",
-      "row_count": 44,
+      "row_count": 956,
       "sample": {
-        "ticker": "2FE.DE",
+        "ticker": "000080.KS",
         "requested_start_date": "1999-01-01",
-        "requested_end_date": "2026-05-24",
-        "earliest_date": "2016-02-18",
-        "coverage_pct": 36.46795410019592,
+        "requested_end_date": "2026-05-25",
+        "earliest_date": "2000-01-04",
+        "coverage_pct": 92.30446341122149,
         "used_proxy": false,
-        "updated_at": "2026-05-24T15:56:01.637351+00:00"
+        "updated_at": "2026-05-25T20:36:46.380288+00:00"
       }
     },
     {
@@ -211,6 +213,18 @@
         "worst_year": -0.12456669146437171,
         "best_year": 0.04352222129320982
       }
+    },
+    {
+      "name": "trident_top_price_history",
+      "ok": true,
+      "status": "PASS",
+      "enforced": false,
+      "top_n": 20,
+      "coverage_pct": 100,
+      "minimum_coverage_pct": 80,
+      "missing_count": 0,
+      "missing": [],
+      "warning": "provider_symbol is missing from trident_screener_latest; coverage checked by ticker only."
     }
   ]
 }

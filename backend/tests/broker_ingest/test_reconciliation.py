@@ -124,8 +124,8 @@ def test_build_reconciliation_report_detects_quantity_mismatch_and_ledger_only()
 
 
 def test_parse_broker_positions_csv_accepts_common_headers(tmp_path):
-    csv_content = """ticker,isin,quantity_current,pru,devise
-CW8,FR0010756098,10,100.50,EUR
+    csv_content = """Ticker,ISIN,Name,Quantity Current,PRU,Devise
+CW8,FR0010756098,Amundi MSCI World,10,100.50,EUR
 """
     path = tmp_path / "positions.csv"
     path.write_text(csv_content, encoding="utf-8")
@@ -137,3 +137,5 @@ CW8,FR0010756098,10,100.50,EUR
     assert positions[0].quantity == Decimal("10")
     assert positions[0].average_cost == Decimal("100.50")
     assert positions[0].currency == "EUR"
+    assert positions[0].name == "Amundi MSCI World"
+    assert positions[0].source_row == 2

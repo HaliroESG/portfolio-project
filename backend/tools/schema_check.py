@@ -26,7 +26,12 @@ CRITICAL_SCHEMA: dict[str, list[str]] = {
     "currencies": ["id", "symbol", "rate_to_eur", "last_update"],
     "news_feed": ["ticker", "published_at", "impact_score", "impact_level"],
     "macro_indicators": ["id", "value", "last_update"],
-    "portfolio_positions": ["portfolio_id", "ticker", "quantity_current", "target_weight_pct", "isin", "target_notes"],
+    "portfolio_positions": [
+        "portfolio_id", "ticker", "quantity_current", "target_weight_pct",
+        "isin", "target_notes", "target_source", "target_source_file",
+        "target_updated_at", "actual_source", "actual_source_accounts",
+        "actual_as_of_date", "actual_updated_at",
+    ],
     "portfolios": ["id", "name"],
     "historical_prices": [
         "ticker", "date", "adj_close", "currency", "source", "updated_at",
@@ -94,6 +99,16 @@ CRITICAL_SCHEMA: dict[str, list[str]] = {
         "id", "run_id", "instrument_key", "symbol", "isin", "currency", "state",
         "ledger_quantity", "broker_quantity", "quantity_delta", "ledger_average_cost",
         "broker_average_cost", "transaction_count",
+    ],
+    "broker_position_snapshot_runs": [
+        "id", "broker", "account_id", "portfolio_id", "envelope", "as_of_date",
+        "source_file", "position_count", "idempotency_key", "report_json",
+        "created_at", "updated_at",
+    ],
+    "broker_position_snapshot_items": [
+        "id", "run_id", "portfolio_id", "broker", "account_id", "envelope",
+        "as_of_date", "symbol", "isin", "name", "currency", "quantity",
+        "average_cost", "source_row", "created_at",
     ],
     "portfolio_decision_items_latest": [
         "portfolio_id", "ticker", "name", "currency", "current_quantity",

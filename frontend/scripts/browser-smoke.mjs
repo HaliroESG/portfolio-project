@@ -19,7 +19,7 @@ function isIgnoredConsoleError(entry) {
     ) ||
     (
       entry.text.includes('Failed to load resource: the server responded with a status of 404') &&
-      entry.url.includes('portfolio_decision_items_latest')
+      (entry.url.includes('portfolio_decision_items_latest') || entry.url.includes('broker_position_snapshot_runs'))
     )
   )
 }
@@ -50,11 +50,13 @@ try {
 
       const metrics = await page.evaluate(() => {
         const bodyText = document.body.innerText.trim()
-        const overlay = document.querySelector('nextjs-portal,[data-nextjs-dialog-overlay],[data-vite-dev-id]')
+        const errorOverlay = document.querySelector('[data-nextjs-dialog-overlay],[data-vite-dev-id]')
+        const nextPortal = document.querySelector('nextjs-portal')
+        const nextPortalText = nextPortal?.textContent?.trim() || ''
         return {
           title: document.title,
           bodyChars: bodyText.length,
-          hasFrameworkOverlay: Boolean(overlay),
+          hasFrameworkOverlay: Boolean(errorOverlay) || nextPortalText.length > 0,
           clientWidth: document.documentElement.clientWidth,
           scrollWidth: document.documentElement.scrollWidth,
           tridentRows: document.querySelectorAll('[data-trident-row="true"]').length,

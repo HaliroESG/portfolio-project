@@ -233,7 +233,7 @@ const checks = await Promise.all([
   q('etl_runs', () => supabase.from('etl_runs').select('job_name,status,started_at,finished_at,duration_sec', { count: 'exact' }).order('started_at', { ascending: false }).limit(5)),
   tridentLatestCheck(),
   q('trident_criterion_results', () => supabase.from('trident_criterion_results').select('instrument_key,horizon_years,criterion_key,category,status,actual,threshold', { count: 'exact' }).limit(5)),
-  q('historical_prices', () => supabase.from('historical_prices').select('ticker,date,adj_close,currency,source,updated_at,adj_close_local,local_currency,fx_rate_to_eur', { count: 'exact' }).limit(5)),
+  q('historical_prices', () => supabase.from('historical_prices').select('ticker,date,adj_close,currency,source,updated_at,adj_close_local,local_currency,fx_rate_to_eur').limit(5)),
   q('historical_price_coverage', () => supabase.from('historical_price_coverage').select('ticker,requested_start_date,requested_end_date,earliest_date,coverage_pct,used_proxy,updated_at', { count: 'exact' }).limit(5)),
   q('backtest_runs', () => supabase.from('backtest_runs').select('id,name,created_at,base_currency,start_date,end_date,start_date_effective,end_date_effective,data_mode', { count: 'exact' }).order('created_at', { ascending: false }).limit(5)),
   q('backtest_portfolios', () => supabase.from('backtest_portfolios').select('run_id,portfolio_key,portfolio_id,preset_key,label,role,start_date_effective', { count: 'exact' }).limit(5)),

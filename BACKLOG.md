@@ -347,7 +347,7 @@ Manual write tests (/targets)	NOT RUN
 
 Current blocking issue:
 
-`historical_prices_trident_sync` latest ETL run is still FAILED in the live environment, and top Trident scores still have poor historical price coverage. The fix must apply the pending additive Supabase schema, then run the top-score price backfill and the full Trident price sync with backend secret/service credentials. Do not add public INSERT/UPSERT policies for `anon`.
+Broker snapshot schema deployment is now the next blocker for the portfolio-file workflow: apply the pending additive Supabase SQL with a database URL, then run the target Excel and broker position snapshot imports with backend service-role credentials. Do not add public INSERT/UPSERT policies for `anon`.
 
 
 ⸻
@@ -364,7 +364,7 @@ BL-009	DONE
 
 Next Action (P0)
 
-Apply the pending Supabase schema, run `Trident Price Backfill` for top scores, then rerun the full Trident historical price sync and backfill technical indicators for `market_watch`.
+Apply the pending Supabase schema, import the target Excel in dry-run then apply mode, import the latest Fortuneo/IBKR position snapshots in dry-run then apply mode, then backfill technical indicators for `market_watch`.
 
 Then re-run:
 
@@ -420,14 +420,23 @@ Status: IMPLEMENTED IN CODE, SCHEMA DEPLOY PENDING
 
 Scope delivered:
 - Trident regression now supports `provider_symbol` as an explicit frontend contract and falls back from `ticker` to `provider_symbol` for historical price reads.
-- Supabase smoke reports top Trident scored symbols without historical price coverage; current live check still reports 19/20 missing because `historical_prices_trident_sync` remains failed.
+- Supabase smoke reports top Trident scored symbols without historical price coverage; top-score coverage has been restored after remediation and remains a regression guard.
 - Target Excel import script added for service-role backend workflows; accepted columns: `portfolio_id`, `ticker` or resolvable `isin`, `name`, `asset_class`, `currency`, `target_weight_pct`, `notes`.
+- Target imports now stamp `target_source`, `target_source_file`, and `target_updated_at` while preserving `quantity_current` and `pru`.
+- Broker position snapshot import added for Fortuneo/IBKR CSV exports; latest snapshots are persisted and consolidated into `portfolio_positions` as the official current portfolio view.
 - Broker CSV import is hardened to reject public Supabase keys; broker reconciliation RLS grants remain read-only for frontend state.
 - Additive SQL read model `portfolio_decision_items_latest` added for arbitration decisions.
 - New `/arbitrage` route added with action, data issue, asset class and currency filters.
+- `/targets` now shows target vs consolidated actual with broker source, snapshot freshness, and a Data Operations summary for target Excel and broker snapshot runs.
 
 Deployment note:
-- Apply `backend/sql/20260511_broker_transactions.sql`, `backend/sql/20260524_trident_screener.sql`, and `backend/sql/20260525_portfolio_decision_items.sql` before expecting `/arbitrage` to show decision rows.
+- Apply `backend/sql/20260511_broker_transactions.sql`, `backend/sql/20260525_broker_position_snapshots.sql`, `backend/sql/20260524_trident_screener.sql`, and `backend/sql/20260525_portfolio_decision_items.sql` before expecting `/targets` broker freshness and `/arbitrage` to show decision rows.
 - Run GitHub Actions `Trident Supabase Deploy Gate` with `apply_schema=true`.
 - Run GitHub Actions `Trident Price Backfill` with `top_n=50`, `start_date=1999-01-01`.
 - Rerun `Financial Data Sync` with `scope=trident`, `trident_mode=full`, `trident_price_start_date=1999-01-01`.
+
+Admin CLI:
+- Dry-run target: `python backend/scripts/import_target_allocations_excel.py --file target.xlsx --dry-run`
+- Apply target: `SUPABASE_URL=... SUPABASE_SERVICE_ROLE_KEY=... python backend/scripts/import_target_allocations_excel.py --file target.xlsx --apply`
+- Dry-run actual snapshot: `python backend/scripts/import_broker_positions.py --broker fortuneo --account-id ... --portfolio-id ... --positions-file positions.csv --dry-run`
+- Apply actual snapshot: `SUPABASE_URL=... SUPABASE_SERVICE_ROLE_KEY=... python backend/scripts/import_broker_positions.py --broker ibkr --account-id ... --portfolio-id ... --positions-file positions.csv --as-of-date 2026-05-25 --apply`

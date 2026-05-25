@@ -48,6 +48,13 @@ export interface Asset {
   portfolio_names?: string[];
   isin?: string | null;
   target_notes?: string | null;
+  target_source?: string | null;
+  target_source_file?: string | null;
+  target_updated_at?: string | null;
+  actual_source?: string | null;
+  actual_source_accounts?: BrokerPositionSourceAccount[] | null;
+  actual_as_of_date?: string | null;
+  actual_updated_at?: string | null;
   technical?: {
     ma200_value?: number | null;
     ma200_status?: 'above' | 'below' | null;
@@ -355,6 +362,47 @@ export interface BrokerReconciliationItemRow {
   ledger_average_cost: number | null
   broker_average_cost: number | null
   transaction_count: number | null
+  created_at: string
+}
+
+export interface BrokerPositionSourceAccount {
+  broker: string
+  account_id: string | null
+  envelope: string | null
+  as_of_date: string | null
+  quantity: number | string | null
+}
+
+export interface BrokerPositionSnapshotRunRow {
+  id: string
+  broker: string
+  account_id: string
+  portfolio_id: string
+  envelope: string | null
+  as_of_date: string
+  source_file: string | null
+  position_count: number
+  idempotency_key: string
+  report_json: Record<string, unknown>
+  created_at: string
+  updated_at: string
+}
+
+export interface BrokerPositionSnapshotItemRow {
+  id: number
+  run_id: string
+  portfolio_id: string
+  broker: string
+  account_id: string
+  envelope: string | null
+  as_of_date: string
+  symbol: string | null
+  isin: string | null
+  name: string | null
+  currency: string | null
+  quantity: number
+  average_cost: number | null
+  source_row: number | null
   created_at: string
 }
 

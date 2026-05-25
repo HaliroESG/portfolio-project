@@ -276,11 +276,16 @@ def resolve_target_rows(
     return resolved, rejected, warnings
 
 
-def _position_update_payload(row: TargetAllocationRow) -> dict[str, Any]:
+def _position_update_payload(row: TargetAllocationRow, *, source_file: str | None = None) -> dict[str, Any]:
+    now = datetime.now(timezone.utc).isoformat()
     payload: dict[str, Any] = {
         "target_weight_pct": row.target_weight_pct,
-        "updated_at": datetime.now(timezone.utc).isoformat(),
+        "target_source": "excel",
+        "target_updated_at": now,
+        "updated_at": now,
     }
+    if source_file:
+        payload["target_source_file"] = source_file
     if row.name:
         payload["name"] = row.name
     if row.asset_class:
@@ -294,8 +299,8 @@ def _position_update_payload(row: TargetAllocationRow) -> dict[str, Any]:
     return payload
 
 
-def _position_insert_payload(row: TargetAllocationRow) -> dict[str, Any]:
-    payload = _position_update_payload(row)
+def _position_insert_payload(row: TargetAllocationRow, *, source_file: str | None = None) -> dict[str, Any]:
+    payload = _position_update_payload(row, source_file=source_file)
     payload.update({
         "portfolio_id": row.portfolio_id,
         "ticker": row.ticker,
@@ -322,6 +327,7 @@ def import_target_allocations(
     *,
     dry_run: bool,
     supabase_client: Any | None = None,
+    source_file: str | None = None,
 ) -> dict[str, Any]:
     updated: list[dict[str, Any]] = []
     inserted: list[dict[str, Any]] = []
@@ -342,7 +348,7 @@ def import_target_allocations(
 
     for row in rows:
         if _existing_position(supabase_client, row):
-            payload = _position_update_payload(row)
+            payload = _position_update_payload(row, source_file=source_file)
             (
                 supabase_client
                 .table("portfolio_positions")
@@ -358,7 +364,7 @@ def import_target_allocations(
             })
             continue
 
-        payload = _position_insert_payload(row)
+        payload = _position_insert_payload(row, source_file=source_file)
         supabase_client.table("portfolio_positions").insert(payload).execute()
         inserted.append({
             "portfolio_id": row.portfolio_id,
@@ -399,6 +405,7 @@ def run_import(
             resolved_rows,
             dry_run=dry_run,
             supabase_client=supabase_client,
+            source_file=Path(input_path).name,
         )
         ok = len(rejected) == 0
     except Exception as exc:
