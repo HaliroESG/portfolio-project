@@ -680,6 +680,7 @@ export default function TridentPage() {
                                 <div className="truncate text-sm font-black text-slate-950 dark:text-white">{row.name ?? row.ticker}</div>
                                 <div className="mt-0.5 flex items-center gap-2 text-[10px] font-mono text-slate-500">
                                   <span>{row.ticker}</span>
+                                  {row.provider_symbol && row.provider_symbol !== row.ticker && <span>via {row.provider_symbol}</span>}
                                   <span>{row.currency ?? '--'}</span>
                                   <span>{row.latest_fiscal_year ?? '--'}</span>
                                 </div>
@@ -745,6 +746,7 @@ export default function TridentPage() {
                           <div className="truncate text-lg font-black text-slate-950 dark:text-white">{selectedRow.name ?? selectedRow.ticker}</div>
                           <div className="mt-1 flex items-center gap-2 text-[10px] font-mono text-slate-500">
                             <span>{selectedRow.ticker}</span>
+                            {selectedRow.provider_symbol && selectedRow.provider_symbol !== selectedRow.ticker && <span>via {selectedRow.provider_symbol}</span>}
                             <span>{selectedRow.exchange ?? '--'}</span>
                             <span>{selectedRow.country ?? '--'}</span>
                           </div>
@@ -779,6 +781,7 @@ export default function TridentPage() {
                       <TridentRegressionChart
                         ticker={selectedRow.ticker}
                         instrumentKey={selectedRow.instrument_key}
+                        providerSymbol={selectedRow.provider_symbol}
                         assetCurrency={selectedRow.currency}
                       />
                     </div>

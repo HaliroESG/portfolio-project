@@ -35,7 +35,7 @@ export interface TridentBundle {
   }
 }
 
-const SCREENER_SELECTOR = [
+const SCREENER_SELECTOR_COLUMNS = [
   'instrument_key',
   'ticker',
   'name',
@@ -45,6 +45,7 @@ const SCREENER_SELECTOR = [
   'industry',
   'currency',
   'provider',
+  'provider_symbol',
   'source_provider',
   'source_index',
   'source_license_note',
@@ -67,7 +68,11 @@ const SCREENER_SELECTOR = [
   'horizons',
   'summary',
   'updated_at',
-].join(',')
+]
+const SCREENER_SELECTOR = SCREENER_SELECTOR_COLUMNS.join(',')
+const SCREENER_SELECTOR_WITHOUT_PROVIDER_SYMBOL = SCREENER_SELECTOR_COLUMNS
+  .filter((column) => column !== 'provider_symbol')
+  .join(',')
 
 const CRITERIA_SELECTOR = [
   'instrument_key',
@@ -198,6 +203,7 @@ function parseScreenerRow(raw: JsonRecord): TridentScreenerRow | null {
     industry: readString(raw.industry),
     currency: readString(raw.currency),
     provider,
+    provider_symbol: readString(raw.provider_symbol),
     source_provider: readString(raw.source_provider) ?? provider,
     source_index: readString(raw.source_index),
     source_license_note: readString(raw.source_license_note),
@@ -253,15 +259,29 @@ function sortedUnique(values: Array<string | null>): string[] {
   )
 }
 
-async function loadAllScreenerRows(supabase: SupabaseClient): Promise<JsonRecord[]> {
+function isMissingProviderSymbolError(error: { message?: string } | null | undefined): boolean {
+  const message = error?.message ?? ''
+  return message.includes('provider_symbol') && (
+    /column .* does not exist/i.test(message) ||
+    /could not find .* column/i.test(message)
+  )
+}
+
+async function loadAllScreenerRows(
+  supabase: SupabaseClient,
+  selector = SCREENER_SELECTOR,
+): Promise<JsonRecord[]> {
   const rows: JsonRecord[] = []
   for (let offset = 0; ; offset += SCREENER_PAGE_SIZE) {
     const { data, error } = await supabase
       .from('trident_screener_latest')
-      .select(SCREENER_SELECTOR)
+      .select(selector)
       .order('score', { ascending: false, nullsFirst: false })
       .range(offset, offset + SCREENER_PAGE_SIZE - 1)
 
+    if (error && selector === SCREENER_SELECTOR && isMissingProviderSymbolError(error)) {
+      return loadAllScreenerRows(supabase, SCREENER_SELECTOR_WITHOUT_PROVIDER_SYMBOL)
+    }
     if (error) throw error
     const page = (data ?? []) as unknown as JsonRecord[]
     rows.push(...page)

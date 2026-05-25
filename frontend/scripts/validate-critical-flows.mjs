@@ -123,6 +123,7 @@ try {
       '<TridentRegressionChart',
       'ticker={selectedRow.ticker}',
       'instrumentKey={selectedRow.instrument_key}',
+      'providerSymbol={selectedRow.provider_symbol}',
       'assetCurrency={selectedRow.currency}',
     ]),
     'Trident selected-row panel should render the regression price chart.'
@@ -160,9 +161,9 @@ try {
       "const HORIZONS: PriceHistoryHorizon[] = ['5Y', '10Y', 'MAX']",
       "const SCALES: { key: RegressionScaleMode; label: string }[]",
       'Local unavailable',
-      'Short history',
-      'Insufficient history',
-      'price history not backfilled or unavailable',
+      'SHORT HISTORY',
+      'NO PRICE HISTORY',
+      'Fallback provider_symbol',
       'computeRegressionChartModel(displayPoints, scaleMode)',
     ]) && hasAll(regressionChart, [
       'computeRegressionChartModel',
@@ -258,6 +259,7 @@ try {
   )
 
   const targetsPage = read('frontend/app/targets/page.tsx')
+  const arbitragePage = read('frontend/app/arbitrage/page.tsx')
   addCheck(
     'frontend.targets.portfolio_drift_mobile_cards',
     hasAll(targetsPage, [
@@ -269,6 +271,20 @@ try {
       'Targets stay read-only',
     ]),
     'Targets should expose Portfolio Drift metrics and mobile cards while staying frontend read-only.'
+  )
+  addCheck(
+    'frontend.arbitrage.decision_dashboard',
+    hasAll(arbitragePage, [
+      'portfolio_decision_items_latest',
+      'DECISION_SELECTOR',
+      'Decision queue',
+      'FilterSelect label="Action"',
+      'FilterSelect label="Data issue"',
+      'rebalance_amount_eur',
+      'reason_codes',
+      'Informative',
+    ]),
+    'Arbitrage should read the decision read model and expose filters, actions, amount, justification, and read-only semantics.'
   )
 
   const fxPage = read('frontend/app/fx/page.tsx')
@@ -294,6 +310,8 @@ try {
       'target_weight_pct?: number | null;',
       'portfolio_ids?: string[];',
       'portfolio_names?: string[];',
+      'provider_symbol: string | null',
+      'PortfolioDecisionItemRow',
     ]),
     'types.ts should carry current trend-state and portfolio model fields.'
   )

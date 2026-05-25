@@ -3,7 +3,7 @@
 import React from 'react'
 import Link from 'next/link'
 import { usePathname } from 'next/navigation'
-import { LayoutDashboard, Activity, Globe, Wallet, Settings, Target, LineChart, Layers, Filter, X } from 'lucide-react'
+import { LayoutDashboard, Activity, Globe, Wallet, Settings, Target, LineChart, Layers, Filter, Scale, X } from 'lucide-react'
 import { cn } from '../lib/utils'
 
 interface SidebarProps {
@@ -21,6 +21,7 @@ export function Sidebar({ mobileOpen = false, onClose }: SidebarProps) {
     { name: 'Currencies', icon: Wallet, href: '/fx' },
     { name: 'Trident Screener', icon: Filter, href: '/trident' },
     { name: 'Targets', icon: Target, href: '/targets' },
+    { name: 'Arbitrage', icon: Scale, href: '/arbitrage' },
     { name: 'Backtest', icon: LineChart, href: '/backtest' },
     { name: 'Compare', icon: Layers, href: '/compare' },
   ]

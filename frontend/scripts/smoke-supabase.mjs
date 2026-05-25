@@ -50,7 +50,7 @@ async function q(name, fn) {
 }
 
 function isMissingColumnError(message) {
-  return /column .* does not exist/i.test(message || '')
+  return /column .* does not exist/i.test(message || '') || /could not find .* column/i.test(message || '')
 }
 
 async function marketWatchCheck() {
@@ -107,12 +107,24 @@ async function marketWatchCheck() {
 }
 
 async function tridentLatestCheck() {
-  const check = await q('trident_screener_latest', () =>
+  let check = await q('trident_screener_latest', () =>
     supabase
       .from('trident_screener_latest')
-      .select('instrument_key,ticker,score,confidence,overall_state,source_provider,source_index,criteria_pass_count,criteria_fail_count,criteria_missing_count,latest_roic,latest_net_debt_to_ebitda,updated_at', { count: 'exact' })
+      .select('instrument_key,ticker,provider_symbol,score,confidence,overall_state,source_provider,source_index,criteria_pass_count,criteria_fail_count,criteria_missing_count,latest_roic,latest_net_debt_to_ebitda,updated_at', { count: 'exact' })
       .limit(5)
   )
+
+  if (!check.ok && isMissingColumnError(check.error) && check.error.includes('provider_symbol')) {
+    check = await q('trident_screener_latest', () =>
+      supabase
+        .from('trident_screener_latest')
+        .select('instrument_key,ticker,score,confidence,overall_state,source_provider,source_index,criteria_pass_count,criteria_fail_count,criteria_missing_count,latest_roic,latest_net_debt_to_ebitda,updated_at', { count: 'exact' })
+        .limit(5)
+    )
+    if (check.ok) {
+      check.schema_warning = 'provider_symbol is missing from trident_screener_latest; apply backend/sql/20260525_portfolio_decision_items.sql.'
+    }
+  }
 
   if (check.ok && check.row_count === 0) {
     if (requireTridentRows) {
@@ -134,6 +146,84 @@ async function tridentLatestCheck() {
   return check
 }
 
+async function tridentPriceCoverageCheck() {
+  const topN = Number.parseInt(process.env.TRIDENT_HISTORY_TOP_N || '20', 10)
+  const enforce = process.env.REQUIRE_TRIDENT_HISTORY_COVERAGE === 'true'
+  const minimumCoveragePct = Number.parseFloat(process.env.TRIDENT_HISTORY_MIN_COVERAGE_PCT || '80')
+  let { data, error } = await supabase
+    .from('trident_screener_latest')
+    .select('ticker,provider_symbol,score')
+    .order('score', { ascending: false, nullsFirst: false })
+    .limit(Number.isFinite(topN) && topN > 0 ? topN : 20)
+
+  let schemaWarning
+  if (error && isMissingColumnError(error.message) && error.message.includes('provider_symbol')) {
+    const fallback = await supabase
+      .from('trident_screener_latest')
+      .select('ticker,score')
+      .order('score', { ascending: false, nullsFirst: false })
+      .limit(Number.isFinite(topN) && topN > 0 ? topN : 20)
+    data = fallback.data
+    error = fallback.error
+    schemaWarning = 'provider_symbol is missing from trident_screener_latest; coverage checked by ticker only.'
+  }
+
+  if (error) {
+    return {
+      name: 'trident_top_price_history',
+      ok: false,
+      status: 'FAIL',
+      error: error.message,
+    }
+  }
+
+  const rows = data ?? []
+  if (rows.length === 0) {
+    return {
+      name: 'trident_top_price_history',
+      ok: true,
+      status: 'PASS',
+      feature_state: 'UNCONFIGURED_OR_EMPTY',
+      warning: 'No Trident rows to evaluate for historical price coverage.',
+    }
+  }
+
+  const coverage = []
+  for (const row of rows) {
+    const symbols = Array.from(
+      new Set([row.ticker, row.provider_symbol].filter(Boolean).map((value) => String(value).trim().toUpperCase()))
+    )
+    const query = supabase
+      .from('historical_prices')
+      .select('ticker', { count: 'exact', head: true })
+    const history = symbols.length === 1 ? await query.eq('ticker', symbols[0]) : await query.in('ticker', symbols)
+    coverage.push({
+      ticker: row.ticker,
+      provider_symbol: row.provider_symbol ?? null,
+      score: row.score ?? null,
+      historical_rows: history.error ? 0 : history.count ?? 0,
+      error: history.error?.message,
+    })
+  }
+
+  const missing = coverage.filter((row) => row.historical_rows === 0)
+  const coveragePct = ((coverage.length - missing.length) / coverage.length) * 100
+  const pass = !enforce || coveragePct >= minimumCoveragePct
+
+  return {
+    name: 'trident_top_price_history',
+    ok: pass,
+    status: pass ? 'PASS' : 'FAIL',
+    enforced: enforce,
+    top_n: coverage.length,
+    coverage_pct: Number(coveragePct.toFixed(2)),
+    minimum_coverage_pct: minimumCoveragePct,
+    missing_count: missing.length,
+    missing: missing.slice(0, 20),
+    warning: schemaWarning ?? (missing.length > 0 ? 'Some top Trident rows have no historical price rows for ticker/provider_symbol.' : undefined),
+  }
+}
+
 const checks = await Promise.all([
   marketWatchCheck(),
   q('currencies', () => supabase.from('currencies').select('id,symbol,rate_to_eur,last_update', { count: 'exact' }).limit(5)),
@@ -149,6 +239,7 @@ const checks = await Promise.all([
   q('backtest_portfolios', () => supabase.from('backtest_portfolios').select('run_id,portfolio_key,portfolio_id,preset_key,label,role,start_date_effective', { count: 'exact' }).limit(5)),
   q('backtest_results', () => supabase.from('backtest_results').select('run_id,portfolio_key,date,nav,drawdown,returns_daily', { count: 'exact' }).limit(5)),
   q('backtest_kpis', () => supabase.from('backtest_kpis').select('run_id,portfolio_key,cagr,vol,sharpe,sortino,max_drawdown,calmar,worst_year,best_year', { count: 'exact' }).limit(5)),
+  tridentPriceCoverageCheck(),
 ])
 
 const hasFail = checks.some((c) => c.status === 'FAIL')

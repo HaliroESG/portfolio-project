@@ -117,10 +117,43 @@ export async function loadAssetPriceHistory(
 
   return {
     ticker: normalizedTicker,
+    source_ticker: normalizedTicker,
+    requested_tickers: [normalizedTicker],
+    fallback_used: false,
     horizon,
     requested_start_date: requestedStartDate,
     points: rows
       .map(parseAssetPriceHistoryRow)
       .filter((point): point is AssetPricePoint => point !== null),
+  }
+}
+
+export async function loadAssetPriceHistoryWithFallback(
+  supabase: SupabaseClient,
+  ticker: string,
+  providerSymbol: string | null | undefined,
+  horizon: PriceHistoryHorizon,
+): Promise<AssetPriceHistoryResult> {
+  const normalizedTicker = ticker.trim().toUpperCase()
+  const normalizedProviderSymbol = providerSymbol?.trim().toUpperCase()
+  const requestedTickers = Array.from(
+    new Set([normalizedTicker, normalizedProviderSymbol].filter((value): value is string => Boolean(value)))
+  )
+
+  const primary = await loadAssetPriceHistory(supabase, normalizedTicker, horizon)
+  if (primary.points.length > 0 || !normalizedProviderSymbol || normalizedProviderSymbol === normalizedTicker) {
+    return {
+      ...primary,
+      requested_tickers: requestedTickers,
+    }
+  }
+
+  const fallback = await loadAssetPriceHistory(supabase, normalizedProviderSymbol, horizon)
+  return {
+    ...fallback,
+    ticker: normalizedTicker,
+    source_ticker: fallback.points.length > 0 ? normalizedProviderSymbol : null,
+    requested_tickers: requestedTickers,
+    fallback_used: fallback.points.length > 0,
   }
 }

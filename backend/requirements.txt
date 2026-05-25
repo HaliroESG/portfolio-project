@@ -11,3 +11,4 @@ python-dotenv
 feedparser>=6.0.10
 requests>=2.31.0
 pytest>=7.4.0
+openpyxl>=3.1.0,<4.0.0

@@ -9,7 +9,7 @@ import { SWR_REFRESH, swrOptions } from '../lib/swrConfig'
 import {
   buildDisplayPriceSeries,
   getPriceHistoryStartDate,
-  loadAssetPriceHistory,
+  loadAssetPriceHistoryWithFallback,
 } from '../lib/priceHistory'
 import {
   MA200_WINDOW,
@@ -223,10 +223,12 @@ function buildRegressionRenderChart(
 export function TridentRegressionChart({
   ticker,
   instrumentKey,
+  providerSymbol,
   assetCurrency,
 }: {
   ticker: string
   instrumentKey?: string | null
+  providerSymbol?: string | null
   assetCurrency: string | null
 }) {
   const [horizon, setHorizon] = useState<PriceHistoryHorizon>('MAX')
@@ -235,8 +237,8 @@ export function TridentRegressionChart({
   const [showMa200, setShowMa200] = useState(true)
 
   const { data, error, isLoading } = useSWR(
-    ['trident-regression-history', ticker, horizon],
-    () => loadAssetPriceHistory(supabase, ticker, horizon),
+    ['trident-regression-history', ticker, providerSymbol, horizon],
+    () => loadAssetPriceHistoryWithFallback(supabase, ticker, providerSymbol, horizon),
     swrOptions(SWR_REFRESH.SLOW),
   )
 
@@ -292,11 +294,13 @@ export function TridentRegressionChart({
   )
   const sources = Array.from(new Set(displayPoints.map((point) => point.source).filter(Boolean)))
   const sourceLabel = sources.length > 1 ? `${sources[0]} +${sources.length - 1}` : sources[0] ?? 'unknown'
-  const providerSymbol = useMemo(() => {
+  const displayProviderSymbol = useMemo(() => {
     const rawProviderSymbol = instrumentKey?.includes(':') ? instrumentKey.split(':').slice(1).join(':') : null
-    const normalized = rawProviderSymbol?.trim().toUpperCase()
+    const normalized = providerSymbol?.trim().toUpperCase() || rawProviderSymbol?.trim().toUpperCase()
     return normalized && normalized !== ticker.toUpperCase() ? normalized : ticker
-  }, [instrumentKey, ticker])
+  }, [instrumentKey, providerSymbol, ticker])
+  const requestedTickers = data?.requested_tickers?.length ? data.requested_tickers.join(' -> ') : ticker
+  const historySourceTicker = data?.source_ticker ?? null
   const renderRegressionSvg = (renderChart: RegressionRenderChart, className: string, idSuffix: string, density: 'inline' | 'fullscreen') => {
     if (!model) return null
     const gradientId = `tridentRegressionBand-${safeId(ticker)}-${idSuffix}`
@@ -514,9 +518,9 @@ export function TridentRegressionChart({
         {!isLoading && !error && displayPoints.length === 0 && (
           <div className="flex h-[285px] flex-col items-center justify-center gap-2 rounded-md border border-amber-300 bg-amber-50 px-4 text-center dark:border-amber-900/60 dark:bg-amber-950/20">
             <AlertTriangle className="h-4 w-4 text-amber-600 dark:text-amber-400" />
-            <div className="text-xs font-black uppercase text-amber-800 dark:text-amber-300">No price history</div>
+            <div className="text-xs font-black uppercase text-amber-800 dark:text-amber-300">NO PRICE HISTORY</div>
             <div className="text-[10px] font-mono text-amber-700/80 dark:text-amber-300/80">
-              {ticker} / {providerSymbol}: price history not backfilled or unavailable.
+              Tried {requestedTickers}. Price history is not backfilled or unavailable.
             </div>
           </div>
         )}
@@ -524,9 +528,9 @@ export function TridentRegressionChart({
         {!isLoading && !error && displayPoints.length > 0 && !model && (
           <div className="flex h-[285px] flex-col items-center justify-center gap-2 rounded-md border border-amber-300 bg-amber-50 px-4 text-center dark:border-amber-900/60 dark:bg-amber-950/20">
             <AlertTriangle className="h-4 w-4 text-amber-600 dark:text-amber-400" />
-            <div className="text-xs font-black uppercase text-amber-800 dark:text-amber-300">Insufficient history</div>
+            <div className="text-xs font-black uppercase text-amber-800 dark:text-amber-300">SHORT HISTORY</div>
             <div className="text-[10px] font-mono text-amber-700/80 dark:text-amber-300/80">
-              {displayPoints.length} points, minimum {REGRESSION_MIN_POINTS}.
+              {displayPoints.length} points from {historySourceTicker ?? displayProviderSymbol}, minimum {REGRESSION_MIN_POINTS}.
             </div>
           </div>
         )}
@@ -544,11 +548,13 @@ export function TridentRegressionChart({
             <div className="flex flex-wrap items-center gap-x-2 gap-y-1 text-[9px] font-mono uppercase tracking-wider text-slate-500 dark:text-gray-500">
               <span>{currency}</span>
               <span>{scaleMode.toLowerCase()}</span>
+              <span>history {historySourceTicker ?? displayProviderSymbol}</span>
               <span>{sourceLabel}</span>
               <span>MM{MA200_WINDOW}</span>
               {!hasLocalPrices && <span className="text-amber-600 dark:text-amber-400">Local unavailable</span>}
-              {shortHistory && <span className="text-amber-600 dark:text-amber-400">Short history</span>}
-              {isStale && <span className="text-red-600 dark:text-red-400">Stale {staleDays}d</span>}
+              {data?.fallback_used && <span className="text-sky-600 dark:text-sky-300">Fallback provider_symbol</span>}
+              {shortHistory && <span className="text-amber-600 dark:text-amber-400">SHORT HISTORY</span>}
+              {isStale && <span className="text-red-600 dark:text-red-400">STALE {staleDays}d</span>}
             </div>
           </div>
         )}

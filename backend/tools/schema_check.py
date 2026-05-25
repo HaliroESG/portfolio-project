@@ -26,7 +26,7 @@ CRITICAL_SCHEMA: dict[str, list[str]] = {
     "currencies": ["id", "symbol", "rate_to_eur", "last_update"],
     "news_feed": ["ticker", "published_at", "impact_score", "impact_level"],
     "macro_indicators": ["id", "value", "last_update"],
-    "portfolio_positions": ["portfolio_id", "ticker", "quantity_current", "target_weight_pct"],
+    "portfolio_positions": ["portfolio_id", "ticker", "quantity_current", "target_weight_pct", "isin", "target_notes"],
     "portfolios": ["id", "name"],
     "historical_prices": [
         "ticker", "date", "adj_close", "currency", "source", "updated_at",
@@ -76,9 +76,30 @@ CRITICAL_SCHEMA: dict[str, list[str]] = {
     ],
     "trident_screener_latest": [
         "instrument_key", "ticker", "name", "exchange", "country", "sector",
-        "provider", "source_provider", "source_index", "overall_state", "score", "confidence", "latest_roic",
+        "provider", "provider_symbol", "source_provider", "source_index", "overall_state", "score", "confidence", "latest_roic",
         "latest_net_debt_to_ebitda", "horizons", "summary",
         "criteria_pass_count", "criteria_fail_count", "criteria_missing_count",
+    ],
+    "broker_transactions": [
+        "id", "broker", "account_id", "external_txn_id", "idempotency_key",
+        "trade_date", "settlement_date", "symbol", "isin", "side", "quantity",
+        "price", "gross_amount", "fees", "taxes", "net_amount", "currency",
+        "envelope", "raw_type", "source_file",
+    ],
+    "broker_reconciliation_runs": [
+        "id", "broker", "account_id", "reconciliation_date", "mode", "status",
+        "parsed_count", "position_count", "state_counts", "report_json", "idempotency_key",
+    ],
+    "broker_reconciliation_items": [
+        "id", "run_id", "instrument_key", "symbol", "isin", "currency", "state",
+        "ledger_quantity", "broker_quantity", "quantity_delta", "ledger_average_cost",
+        "broker_average_cost", "transaction_count",
+    ],
+    "portfolio_decision_items_latest": [
+        "portfolio_id", "ticker", "name", "currency", "current_quantity",
+        "current_value_eur", "current_weight_pct", "target_weight_pct", "drift_pct",
+        "rebalance_amount_eur", "action", "confidence", "reason_codes",
+        "data_state", "price_state", "updated_at",
     ],
 }
 

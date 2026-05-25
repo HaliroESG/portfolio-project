@@ -24,11 +24,16 @@ on:
       - "backend/supabase_key_guard.py"
       - "backend/scripts/run_data_refresh.py"
       - "backend/scripts/update_target_allocations.py"
+      - "backend/scripts/import_target_allocations_excel.py"
+      - "backend/scripts/import_broker_transactions.py"
       - "backend/scripts/sync_trident_screener.py"
       - "backend/tests/test_trident_screener.py"
       - "backend/tests/test_refresh_ops.py"
+      - "backend/tests/test_target_excel_import.py"
+      - "backend/tests/broker_ingest/**"
       - "backend/tools/schema_check.py"
       - "frontend/app/trident/**"
+      - "frontend/app/arbitrage/**"
       - "frontend/lib/tridentData.ts"
       - "frontend/types.ts"
       - "frontend/scripts/smoke-supabase.mjs"
@@ -60,7 +65,7 @@ jobs:
 
       - name: Backend compile check
         working-directory: ./backend
-        run: python3.11 -m py_compile bridge.py technical_state.py etl_stats.py historical_prices_sync.py trident_screener.py scripts/run_data_refresh.py scripts/update_target_allocations.py scripts/sync_trident_screener.py
+        run: python3.11 -m py_compile bridge.py technical_state.py etl_stats.py historical_prices_sync.py trident_screener.py scripts/run_data_refresh.py scripts/update_target_allocations.py scripts/import_target_allocations_excel.py scripts/import_broker_transactions.py scripts/sync_trident_screener.py tools/schema_check.py
 
       - name: Setup Node
         uses: actions/setup-node@v4
@@ -154,16 +159,21 @@ jobs:
           psql "$SUPABASE_DB_URL" \
             -v ON_ERROR_STOP=1 \
             -f backend/sql/20260210_market_watch_phase2_technicals.sql \
+            -f backend/sql/20260210_portfolio_positions_phase3.sql \
+            -f backend/sql/20260213_isin_identifier_map.sql \
             -f backend/sql/20260222_historical_prices.sql \
             -f backend/sql/20260524_historical_price_local_columns.sql \
             -f backend/sql/20260222_backtest_model.sql \
             -f backend/sql/20260222_backtest_common_start.sql \
             -f backend/sql/20260222_backtest_portfolio_key_relax.sql \
             -f backend/sql/20260222_backtest_config_hash_idx.sql \
-            -f backend/sql/20260524_trident_screener.sql
+            -f backend/sql/20260511_broker_transactions.sql \
+            -f backend/sql/20260524_trident_screener.sql \
+            -f backend/sql/20260525_portfolio_decision_items.sql
 
       - name: Post-migration schema check
         working-directory: ./backend
+        continue-on-error: ${{ env.APPLY_SCHEMA != 'true' }}
         run: python tools/schema_check.py --pretty --output schema-check-after.json
 
       - name: Run Trident ETL when configured

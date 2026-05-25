@@ -157,6 +157,38 @@ const maxPaged = await priceHistory.loadAssetPriceHistory(fakeMaxSupabase, 'abc'
 assert.equal(maxPaged.points.length, 2010)
 assert.deepEqual(maxRanges, [[0, 999], [1000, 1999], [2000, 2999]])
 
+const fallbackQueries = []
+const fallbackSupabase = {
+  from(table) {
+    assert.equal(table, 'historical_prices')
+    let ticker = null
+    const query = {
+      select() { return query },
+      eq(column, value) {
+        assert.equal(column, 'ticker')
+        ticker = value
+        fallbackQueries.push(value)
+        return query
+      },
+      gte() { return query },
+      order() { return query },
+      async range() {
+        if (ticker === 'ABC') return { data: [], error: null }
+        return { data: makeRows(2), error: null }
+      },
+    }
+    return query
+  },
+}
+
+const fallbackPaged = await priceHistory.loadAssetPriceHistoryWithFallback(fallbackSupabase, 'abc', 'abc.pa', 'YTD')
+assert.equal(fallbackPaged.ticker, 'ABC')
+assert.equal(fallbackPaged.source_ticker, 'ABC.PA')
+assert.equal(fallbackPaged.fallback_used, true)
+assert.deepEqual(fallbackPaged.requested_tickers, ['ABC', 'ABC.PA'])
+assert.equal(fallbackPaged.points.length, 2)
+assert.deepEqual(fallbackQueries, ['ABC', 'ABC.PA'])
+
 const regressionPoints = Array.from({ length: 260 }, (_, index) => {
   const date = new Date(Date.UTC(2025, 0, 1 + index))
   return {

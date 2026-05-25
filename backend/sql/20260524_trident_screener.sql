@@ -176,6 +176,7 @@ select
   u.industry,
   u.currency,
   u.provider,
+  u.provider_symbol,
   u.provider as source_provider,
   u.source_index,
   u.source_license_note,

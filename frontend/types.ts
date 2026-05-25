@@ -46,6 +46,8 @@ export interface Asset {
   pnl_pct?: number | null;
   portfolio_ids?: string[];
   portfolio_names?: string[];
+  isin?: string | null;
+  target_notes?: string | null;
   technical?: {
     ma200_value?: number | null;
     ma200_status?: 'above' | 'below' | null;
@@ -79,6 +81,9 @@ export interface AssetPricePoint {
 
 export interface AssetPriceHistoryResult {
   ticker: string
+  source_ticker?: string | null
+  requested_tickers?: string[]
+  fallback_used?: boolean
   horizon: PriceHistoryHorizon
   requested_start_date: string
   points: AssetPricePoint[]
@@ -192,6 +197,7 @@ export interface TridentScreenerRow {
   industry: string | null
   currency: string | null
   provider: string
+  provider_symbol: string | null
   source_provider: string
   source_index: string | null
   source_license_note: string | null
@@ -350,4 +356,43 @@ export interface BrokerReconciliationItemRow {
   broker_average_cost: number | null
   transaction_count: number | null
   created_at: string
+}
+
+export type PortfolioDecisionAction = 'BUY' | 'REDUCE' | 'EXIT' | 'HOLD' | 'UNAVAILABLE'
+export type PortfolioDecisionDataState =
+  | 'READY'
+  | 'TARGET_MISSING'
+  | 'TARGET_INVALID'
+  | 'QUANTITY_MISSING'
+  | 'PRICE_MISSING'
+  | 'FX_MISSING'
+export type PortfolioDecisionPriceState = 'LIVE' | 'STALE' | 'MISSING'
+
+export interface PortfolioDecisionItemRow {
+  portfolio_id: string
+  ticker: string
+  name: string
+  asset_class: string | null
+  isin: string | null
+  currency: string
+  current_quantity: number | null
+  current_value_eur: number | null
+  current_weight_pct: number | null
+  target_weight_pct: number | null
+  drift_pct: number | null
+  rebalance_amount_eur: number | null
+  action: PortfolioDecisionAction
+  confidence: number
+  reason_codes: string[]
+  data_state: PortfolioDecisionDataState
+  price_state: PortfolioDecisionPriceState
+  market_data_status: string | null
+  reconciliation_state: BrokerReconciliationState | null
+  trident_provider_symbol: string | null
+  trident_score: number | null
+  trident_confidence: number | null
+  history_coverage_pct: number | null
+  target_total_pct: number | null
+  total_value_eur: number | null
+  updated_at: string | null
 }

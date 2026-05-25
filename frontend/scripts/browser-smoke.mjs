@@ -1,7 +1,7 @@
 import { chromium } from 'playwright'
 
 const baseUrl = process.env.BASE_URL || 'http://127.0.0.1:3001'
-const routes = ['/', '/trident', '/geo', '/fx', '/compare', '/targets']
+const routes = ['/', '/trident', '/geo', '/fx', '/compare', '/targets', '/arbitrage']
 const viewports = [
   { name: 'desktop', width: 1280, height: 720 },
   { name: 'mobile', width: 390, height: 844 },
@@ -13,8 +13,14 @@ function fail(message) {
 
 function isIgnoredConsoleError(entry) {
   return (
-    entry.text.includes('Failed to load resource: the server responded with a status of 400') &&
-    (entry.url.includes('supabase.co') || entry.url.includes('/_next/static/'))
+    (
+      entry.text.includes('Failed to load resource: the server responded with a status of 400') &&
+      (entry.url.includes('supabase.co') || entry.url.includes('/_next/static/'))
+    ) ||
+    (
+      entry.text.includes('Failed to load resource: the server responded with a status of 404') &&
+      entry.url.includes('portfolio_decision_items_latest')
+    )
   )
 }
 

@@ -413,3 +413,19 @@ data health panel
   - simulation and post-trade reconciliation
 
 Reference architecture and full roadmap: `docs/roadmap_portfolio_intelligence.md`.
+
+## 2026-05-25 - Portfolio File Workflow And Arbitrage MVP
+
+Status: IMPLEMENTED IN CODE, SCHEMA DEPLOY PENDING
+
+Scope delivered:
+- Trident regression now supports `provider_symbol` as an explicit frontend contract and falls back from `ticker` to `provider_symbol` for historical price reads.
+- Supabase smoke reports top Trident scored symbols without historical price coverage; current live check still reports 19/20 missing because `historical_prices_trident_sync` remains failed.
+- Target Excel import script added for service-role backend workflows; accepted columns: `portfolio_id`, `ticker` or resolvable `isin`, `name`, `asset_class`, `currency`, `target_weight_pct`, `notes`.
+- Broker CSV import is hardened to reject public Supabase keys; broker reconciliation RLS grants remain read-only for frontend state.
+- Additive SQL read model `portfolio_decision_items_latest` added for arbitration decisions.
+- New `/arbitrage` route added with action, data issue, asset class and currency filters.
+
+Deployment note:
+- Apply `backend/sql/20260511_broker_transactions.sql`, `backend/sql/20260524_trident_screener.sql`, and `backend/sql/20260525_portfolio_decision_items.sql` before expecting `/arbitrage` to show decision rows.
+- Rerun `historical_prices_trident_sync` with backend service-role credentials after schema deployment.
