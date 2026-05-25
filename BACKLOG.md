@@ -237,6 +237,65 @@ Acceptance criteria
 
 ## P2 - Performance and Product Hardening
 
+BL-011 — Trident DOM Scalability
+
+Priority: P1
+Status: IMPLEMENTED (pagination)
+
+Problem
+
+`/trident` contains 1270 screener rows. Rendering all rows and mobile cards at once creates a heavy DOM and makes mobile interaction sluggish.
+
+Implemented
+	•	Local pagination with default page size 100
+	•	Existing filters, sorting, row selection, and detail panel preserved
+	•	Runtime DOM marker added for browser budget checks
+	•	Regression chart lazy-loaded in the detail panel
+
+Acceptance criteria
+	•	Trident renders a bounded row DOM instead of the full universe
+	•	Sorting and filters reset to the first page
+	•	Selected row detail remains stable after sorting/filtering
+
+BL-012 — Portfolio Drift Workflow
+
+Priority: P1
+Status: IMPLEMENTED (read-only UI + backend update workflow)
+
+Problem
+
+Targets showed target weights but did not expose current allocation drift, rebalance amount, or mobile-friendly review.
+
+Implemented
+	•	`/targets` renamed around Portfolio Drift semantics
+	•	Current value, current weight, target weight, drift, and rebalance amount displayed
+	•	Mobile card layout replaces the overflowing table
+	•	Backend/service-role script added for target allocation updates
+
+Acceptance criteria
+	•	Frontend remains read-only
+	•	No public write path is added
+	•	Mobile width 390px has no horizontal overflow
+
+BL-013 — Runtime QA and CI Guardrails
+
+Priority: P2
+Status: IMPLEMENTED (static budgets + browser smoke workflow)
+
+Problem
+
+Build and type checks passed, but runtime regressions like mobile overflow, framework overlays, and excessive Trident DOM could still slip through.
+
+Implemented
+	•	`npm run perf:budget`
+	•	`npm run smoke:browser`
+	•	GitHub Actions workflow `Frontend Runtime Smoke`
+	•	Ops playbook updated for data incidents and Vercel failures
+
+Acceptance criteria
+	•	CI catches overlay, blank page, horizontal overflow, and Trident row DOM budget failures when Supabase runtime secrets are available
+	•	Static budgets run even when browser smoke is skipped
+
 ## Notes
 
 - Current technical signal stack:

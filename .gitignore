@@ -1,21 +1,34 @@
 # Node.js
 node_modules/
 .next/
+frontend/.next/
 .vercel/
+frontend/.vercel/
 *.tsbuildinfo
 next-env.d.ts
 
 # Python
 __pycache__/
-*.pyc
-*.pyo
-*.pyd
+*.py[cod]
+.pytest_cache/
 .Python
 venv/
 env/
 .venv/
 
-# Common
+# Secrets / local config
 .env*
+configs/prod/live-ingestion.env
+backend/finance-dash-*.json
+*service-account*.json
+*credentials*.json
+
+# Reports / generated artifacts
+frontend/smoke-supabase-report.json
+backend/schema-check*.json
+backend/refresh-*-report.json
+refresh-report.json
+
+# OS / logs
 .DS_Store
 *.log

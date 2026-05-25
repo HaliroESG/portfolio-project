@@ -24,6 +24,7 @@ const anon = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY || localEnv.NEXT_PUBLIC_S
 const ciSkipMissing = process.argv.includes('--ci-skip-missing-env')
 const outArg = process.argv.find((a) => a.startsWith('--output='))
 const output = outArg ? outArg.split('=')[1] : 'smoke-supabase-report.json'
+const requireTridentRows = process.env.REQUIRE_TRIDENT_ROWS === 'true'
 const MARKET_WATCH_TECHNICAL_SELECTOR =
   'ticker,last_update,macd_line,macd_signal,macd_hist,rsi_14,momentum_20,trend_state,trend_changed'
 const MARKET_WATCH_BASE_SELECTOR = 'ticker,last_update,data_status,last_price,currency'
@@ -114,7 +115,7 @@ async function tridentLatestCheck() {
   )
 
   if (check.ok && check.row_count === 0) {
-    if (process.env.REQUIRE_TRIDENT_ROWS === 'true') {
+    if (requireTridentRows) {
       return {
         ...check,
         ok: false,
@@ -154,7 +155,7 @@ const hasFail = checks.some((c) => c.status === 'FAIL')
 const hasBlocked = checks.some((c) => c.status === 'BLOCKED')
 const status = hasFail ? 'FAIL' : hasBlocked ? 'BLOCKED' : 'PASS'
 const ok = status === 'PASS'
-const report = { ok, status, checks }
+const report = { ok, status, require_trident_rows: requireTridentRows, checks }
 console.log(JSON.stringify(report, null, 2))
 fs.writeFileSync(output, JSON.stringify(report, null, 2))
 if (status === 'PASS') {

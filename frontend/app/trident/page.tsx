@@ -1,5 +1,6 @@
 "use client"
 
+import dynamic from 'next/dynamic'
 import React, { useMemo, useState } from 'react'
 import useSWR from 'swr'
 import {
@@ -17,7 +18,6 @@ import {
 } from 'lucide-react'
 import { AppShell } from '../../components/AppShell'
 import { EmptyState } from '../../components/EmptyState'
-import { TridentRegressionChart } from '../../components/TridentRegressionChart'
 import { supabase } from '../../lib/supabase'
 import { loadTridentBundle, loadTridentCriteria } from '../../lib/tridentData'
 import { swrOptions, SWR_REFRESH } from '../../lib/swrConfig'
@@ -38,8 +38,21 @@ type SortConfig = { key: SortKey; direction: SortDirection }
 type ScoreFilter = 'ALL' | '80' | '60' | '40'
 type Horizon = 1 | 3 | 5 | 10
 
+const TridentRegressionChart = dynamic(
+  () => import('../../components/TridentRegressionChart').then((mod) => mod.TridentRegressionChart),
+  {
+    ssr: false,
+    loading: () => (
+      <div className="mt-4 h-[270px] rounded-lg border border-slate-200 bg-slate-50 p-3 text-[10px] font-mono text-slate-500 dark:border-white/10 dark:bg-black/20 dark:text-gray-400">
+        Loading regression chart.
+      </div>
+    ),
+  }
+)
+
 const HORIZONS: Horizon[] = [1, 3, 5, 10]
 const EMPTY_ROWS: TridentScreenerRow[] = []
+const TRIDENT_PAGE_SIZE = 100
 const CATEGORIES: Array<{ key: TridentCategory; label: string }> = [
   { key: 'growth', label: 'Growth' },
   { key: 'profitability', label: 'Profitability' },
@@ -241,6 +254,53 @@ function SortableHeader({
   )
 }
 
+function PaginationBar({
+  page,
+  totalPages,
+  start,
+  end,
+  total,
+  onPrevious,
+  onNext,
+}: {
+  page: number
+  totalPages: number
+  start: number
+  end: number
+  total: number
+  onPrevious: () => void
+  onNext: () => void
+}) {
+  return (
+    <div className="flex flex-wrap items-center justify-between gap-2 border-b border-slate-200 bg-slate-50 px-3 py-2 text-[10px] font-mono text-slate-500 dark:border-white/10 dark:bg-[#080A0F] dark:text-gray-400">
+      <span>
+        Rows {start}-{end} of {total}
+      </span>
+      <div className="flex items-center gap-2">
+        <button
+          type="button"
+          onClick={onPrevious}
+          disabled={page <= 1}
+          className="rounded border border-slate-200 px-2 py-1 font-black uppercase tracking-wider text-slate-600 transition enabled:hover:bg-white disabled:cursor-not-allowed disabled:opacity-40 dark:border-white/10 dark:text-gray-300 dark:enabled:hover:bg-white/10"
+        >
+          Prev
+        </button>
+        <span className="font-black text-slate-700 dark:text-gray-200">
+          {page}/{totalPages}
+        </span>
+        <button
+          type="button"
+          onClick={onNext}
+          disabled={page >= totalPages}
+          className="rounded border border-slate-200 px-2 py-1 font-black uppercase tracking-wider text-slate-600 transition enabled:hover:bg-white disabled:cursor-not-allowed disabled:opacity-40 dark:border-white/10 dark:text-gray-300 dark:enabled:hover:bg-white/10"
+        >
+          Next
+        </button>
+      </div>
+    </div>
+  )
+}
+
 function summaryNumber(row: TridentScreenerRow, key: string): number {
   const value = row.summary[key]
   return typeof value === 'number' && Number.isFinite(value) ? value : 0
@@ -270,6 +330,7 @@ export default function TridentPage() {
   const [sortConfig, setSortConfig] = useState<SortConfig>({ key: 'score', direction: 'desc' })
   const [selectedKey, setSelectedKey] = useState<string | null>(null)
   const [horizon, setHorizon] = useState<Horizon>(3)
+  const [page, setPage] = useState(1)
   const [detailWidth, setDetailWidth] = usePersistedPanelWidth(TRIDENT_DETAIL_WIDTH)
 
   const { data, isLoading, error } = useSWR(
@@ -304,6 +365,14 @@ export default function TridentPage() {
   const selectedRow = useMemo(() => {
     return filteredRows.find((row) => row.instrument_key === selectedKey) ?? filteredRows[0] ?? null
   }, [filteredRows, selectedKey])
+  const totalPages = Math.max(1, Math.ceil(filteredRows.length / TRIDENT_PAGE_SIZE))
+  const boundedPage = Math.min(page, totalPages)
+  const pageStartIndex = (boundedPage - 1) * TRIDENT_PAGE_SIZE
+  const pageRows = useMemo(() => {
+    return filteredRows.slice(pageStartIndex, pageStartIndex + TRIDENT_PAGE_SIZE)
+  }, [filteredRows, pageStartIndex])
+  const visibleStart = filteredRows.length === 0 ? 0 : pageStartIndex + 1
+  const visibleEnd = Math.min(pageStartIndex + TRIDENT_PAGE_SIZE, filteredRows.length)
 
   const {
     data: horizonCriteria = [],
@@ -332,6 +401,7 @@ export default function TridentPage() {
     if (selectedRow && selectedRow.instrument_key !== selectedKey) {
       setSelectedKey(selectedRow.instrument_key)
     }
+    setPage(1)
 
     setSortConfig((current) => {
       if (current.key === nextSortKey) {
@@ -340,6 +410,14 @@ export default function TridentPage() {
       return { key: nextSortKey, direction: DEFAULT_SORT_DIRECTIONS[nextSortKey] }
     })
   }
+
+  const resetPageWith = <T,>(setter: (value: T) => void) => (value: T) => {
+    setter(value)
+    setPage(1)
+  }
+
+  const goToPreviousPage = () => setPage((current) => Math.max(1, current - 1))
+  const goToNextPage = () => setPage((current) => Math.min(totalPages, current + 1))
 
   const handleDetailResizePointerDown = (event: React.PointerEvent<HTMLButtonElement>) => {
     event.preventDefault()
@@ -419,18 +497,24 @@ export default function TridentPage() {
               <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" />
               <input
                 value={search}
-                onChange={(event) => setSearch(event.target.value)}
+                onChange={(event) => {
+                  setSearch(event.target.value)
+                  setPage(1)
+                }}
                 placeholder="Search name or ticker"
                 className="h-9 w-full rounded-md border border-slate-200 bg-slate-50 pl-9 pr-3 text-sm font-semibold outline-none transition focus:border-slate-400 dark:border-white/10 dark:bg-black/20 dark:text-white"
               />
             </div>
 
-            <FilterSelect label="Country" value={country} options={data?.countries ?? []} onChange={setCountry} />
-            <FilterSelect label="Exchange" value={exchange} options={data?.exchanges ?? []} onChange={setExchange} />
-            <FilterSelect label="Sector" value={sector} options={data?.sectors ?? []} onChange={setSector} />
+            <FilterSelect label="Country" value={country} options={data?.countries ?? []} onChange={resetPageWith(setCountry)} />
+            <FilterSelect label="Exchange" value={exchange} options={data?.exchanges ?? []} onChange={resetPageWith(setExchange)} />
+            <FilterSelect label="Sector" value={sector} options={data?.sectors ?? []} onChange={resetPageWith(setSector)} />
             <select
               value={state}
-              onChange={(event) => setState(event.target.value as 'ALL' | TridentOverallState)}
+              onChange={(event) => {
+                setState(event.target.value as 'ALL' | TridentOverallState)
+                setPage(1)
+              }}
               className="h-9 rounded-md border border-slate-200 bg-slate-50 px-2 text-xs font-black uppercase outline-none dark:border-white/10 dark:bg-black/20 dark:text-white"
             >
               <option value="ALL">All states</option>
@@ -441,7 +525,10 @@ export default function TridentPage() {
             </select>
             <select
               value={scoreFilter}
-              onChange={(event) => setScoreFilter(event.target.value as ScoreFilter)}
+              onChange={(event) => {
+                setScoreFilter(event.target.value as ScoreFilter)
+                setPage(1)
+              }}
               className="h-9 rounded-md border border-slate-200 bg-slate-50 px-2 text-xs font-black uppercase outline-none dark:border-white/10 dark:bg-black/20 dark:text-white"
             >
               <option value="ALL">Any score</option>
@@ -496,9 +583,19 @@ export default function TridentPage() {
               } as React.CSSProperties}
             >
               <div className="h-[560px] min-h-0 overflow-hidden rounded-lg border border-slate-200 bg-white dark:border-white/10 dark:bg-[#0D1117] 2xl:h-[calc(100vh-260px)] 2xl:rounded-r-none">
-                <div className="block h-full overflow-auto p-2 md:hidden">
+                <div className="flex h-full min-h-0 flex-col">
+                  <PaginationBar
+                    page={boundedPage}
+                    totalPages={totalPages}
+                    start={visibleStart}
+                    end={visibleEnd}
+                    total={filteredRows.length}
+                    onPrevious={goToPreviousPage}
+                    onNext={goToNextPage}
+                  />
+                <div className="block min-h-0 flex-1 overflow-auto p-2 md:hidden">
                   <div className="space-y-2">
-                    {filteredRows.map((row) => {
+                    {pageRows.map((row) => {
                       const isSelected = row.instrument_key === selectedRow?.instrument_key
                       const failTotal = row.criteria_fail_count ?? summaryNumber(row, 'criteria_fail')
                       const missingTotal = row.criteria_missing_count ?? summaryNumber(row, 'criteria_missing')
@@ -506,6 +603,7 @@ export default function TridentPage() {
                         <button
                           key={row.instrument_key}
                           type="button"
+                          data-trident-row="true"
                           onClick={() => setSelectedKey(row.instrument_key)}
                           className={cn(
                             'w-full rounded-lg border p-3 text-left transition-colors',
@@ -547,7 +645,7 @@ export default function TridentPage() {
                   </div>
                 </div>
 
-                <div className="hidden h-full overflow-auto md:block">
+                <div className="hidden min-h-0 flex-1 overflow-auto md:block">
                   <table className="min-w-[1180px] w-full border-collapse text-left">
                     <thead className="sticky top-0 z-10 bg-slate-100 text-[10px] font-black uppercase tracking-widest text-slate-600 dark:bg-[#101722] dark:text-gray-400">
                       <tr>
@@ -563,13 +661,14 @@ export default function TridentPage() {
                       </tr>
                     </thead>
                     <tbody className="divide-y divide-slate-100 dark:divide-white/5">
-                      {filteredRows.map((row) => {
+                      {pageRows.map((row) => {
                         const isSelected = row.instrument_key === selectedRow?.instrument_key
                         const failTotal = row.criteria_fail_count ?? summaryNumber(row, 'criteria_fail')
                         const missingTotal = row.criteria_missing_count ?? summaryNumber(row, 'criteria_missing')
                         return (
                           <tr
                             key={row.instrument_key}
+                            data-trident-row="true"
                             onClick={() => setSelectedKey(row.instrument_key)}
                             className={cn(
                               'cursor-pointer transition-colors hover:bg-slate-50 dark:hover:bg-white/5',
@@ -622,6 +721,7 @@ export default function TridentPage() {
                       })}
                     </tbody>
                   </table>
+                </div>
                 </div>
               </div>
 

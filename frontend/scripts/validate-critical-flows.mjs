@@ -118,13 +118,24 @@ try {
   addCheck(
     'frontend.trident_regression_chart_present',
     hasAll(tridentPage, [
-      "import { TridentRegressionChart } from '../../components/TridentRegressionChart'",
+      "const TridentRegressionChart = dynamic",
+      "import('../../components/TridentRegressionChart')",
       '<TridentRegressionChart',
       'ticker={selectedRow.ticker}',
       'instrumentKey={selectedRow.instrument_key}',
       'assetCurrency={selectedRow.currency}',
     ]),
     'Trident selected-row panel should render the regression price chart.'
+  )
+  addCheck(
+    'frontend.trident_pagination_dom_budget',
+    hasAll(tridentPage, [
+      'const TRIDENT_PAGE_SIZE = 100',
+      'pageRows.map',
+      'data-trident-row="true"',
+      '<PaginationBar',
+    ]),
+    'Trident should page large result sets and expose a DOM marker for browser budget checks.'
   )
   addCheck(
     'frontend.trident_detail_resizable_width',
@@ -220,18 +231,44 @@ try {
     ]),
     'Dashboard should use shared aggregation fetch and include DataHealth panel.'
   )
+  addCheck(
+    'frontend.dashboard.lazy_heavy_surfaces',
+    hasAll(dashboard, [
+      "import dynamic from 'next/dynamic'",
+      "import('../components/GeographicMap')",
+      "import('../components/AssetDetailDrawer')",
+      "import('../components/DataHealthPanel')",
+    ]),
+    'Dashboard should lazy-load heavy map, drawer, and data operations surfaces.'
+  )
 
   const dataHealth = read('frontend/components/DataHealthPanel.tsx')
   addCheck(
     'frontend.data_health.threshold_and_trend_semantics',
     hasAll(dataHealth, [
+      'Data Operations',
       "type EtlQualityState = 'OK' | 'WARNING' | 'CRITICAL' | 'UNKNOWN'",
       'ETL_QUALITY_THRESHOLDS',
       'trendDirectionLabel',
       'trendBasisLabel',
       'technicalBackfilled',
+      'operationActionForRun',
     ]),
-    'Data health should classify threshold states and expose ETL trend semantics.'
+    'Data operations should classify threshold states, expose ETL trends, and provide action hints.'
+  )
+
+  const targetsPage = read('frontend/app/targets/page.tsx')
+  addCheck(
+    'frontend.targets.portfolio_drift_mobile_cards',
+    hasAll(targetsPage, [
+      'Portfolio Drift',
+      'currentWeightPct',
+      'rebalanceAmountEur',
+      'md:hidden',
+      'hidden md:block',
+      'Targets stay read-only',
+    ]),
+    'Targets should expose Portfolio Drift metrics and mobile cards while staying frontend read-only.'
   )
 
   const fxPage = read('frontend/app/fx/page.tsx')

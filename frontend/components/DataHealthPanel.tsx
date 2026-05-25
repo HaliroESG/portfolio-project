@@ -76,6 +76,8 @@ const FRESHNESS_SOURCES = [
 
 const ETL_HISTORY_LIMIT = 120
 const ETL_TREND_POINTS = 8
+const GITHUB_ACTIONS_URL = 'https://github.com/HaliroESG/portfolio-project/actions'
+const VERCEL_DASHBOARD_URL = 'https://vercel.com/dashboard'
 
 const ETL_QUALITY_THRESHOLDS = {
   failRateWarnPct: 5,
@@ -546,6 +548,36 @@ function shortError(error: string | null | undefined): string {
   return error.length > 140 ? `${error.slice(0, 140)}...` : error
 }
 
+function operationActionForRun(run: EtlRun): string {
+  const jobName = run.job_name.toLowerCase()
+  if (jobName.includes('historical_prices_trident')) {
+    return 'Run Financial Data Sync with scope=trident, trident_mode=full, and a backend service_role key.'
+  }
+  if (jobName.includes('macro')) {
+    return 'Run the macro refresh and verify macro_indicators freshness after completion.'
+  }
+  if (jobName.includes('bridge')) {
+    return 'Run bridge_sync after market history is available, then verify technical coverage.'
+  }
+  if (jobName.includes('news')) {
+    return 'Run news_sync and verify macro/high-impact news is available.'
+  }
+  return 'Open the latest GitHub Actions run, fix the failing step, then rerun the data refresh.'
+}
+
+function operationAction(view: EtlJobView): string {
+  if (view.run.status === 'FAILED' || view.qualityState === 'CRITICAL') {
+    return operationActionForRun(view.run)
+  }
+  if (view.metrics.technicalReady !== null && view.metrics.technicalReady === 0) {
+    return 'Backfill market_watch technical indicators or mark the rows explicitly non-calculable.'
+  }
+  if (view.metrics.coveragePct !== null && view.metrics.coveragePct < ETL_QUALITY_THRESHOLDS.coverageWarnPct) {
+    return 'Increase provider coverage, then rerun the same job and compare the coverage trend.'
+  }
+  return 'Monitor the next scheduled refresh.'
+}
+
 export function DataHealthPanel() {
   const [items, setItems] = useState<HealthItem[]>([])
   const [etlJobViews, setEtlJobViews] = useState<EtlJobView[]>([])
@@ -598,7 +630,7 @@ export function DataHealthPanel() {
         <div>
           <div className="flex items-center gap-2">
             <Database className="w-4 h-4 text-blue-600 dark:text-[#00FF88]" />
-            <h3 className="text-[11px] font-black uppercase tracking-[0.18em] text-slate-500 dark:text-gray-400">Data Health</h3>
+            <h3 className="text-[11px] font-black uppercase tracking-[0.18em] text-slate-500 dark:text-gray-400">Data Operations</h3>
           </div>
           {!expanded && (
             <p className="mt-1 text-[10px] font-mono text-slate-500 dark:text-gray-500">
@@ -640,22 +672,41 @@ export function DataHealthPanel() {
 
       {!expanded && latestFailedRun && (
         <div className="mt-3 rounded-lg border border-red-400/60 bg-red-50 px-3 py-2 text-[11px] font-mono text-red-700 dark:bg-red-950/20 dark:text-red-300">
-          Latest ETL failure: {latestFailedRun.job_name} - {shortError(latestFailedRun.error)}
+          <div>Latest ETL failure: {latestFailedRun.job_name} - {shortError(latestFailedRun.error)}</div>
+          <div className="mt-1">Action: {operationActionForRun(latestFailedRun)}</div>
         </div>
       )}
 
       {expanded && (
-        <div className="fixed inset-0 z-[80] bg-black/50 p-3 backdrop-blur-sm sm:p-6" role="dialog" aria-modal="true" aria-label="Data health details">
+        <div className="fixed inset-0 z-[80] bg-black/50 p-3 backdrop-blur-sm sm:p-6" role="dialog" aria-modal="true" aria-label="Data operations details">
           <div className="mx-auto flex h-full max-w-6xl flex-col overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-2xl dark:border-white/10 dark:bg-[#080A0F]">
             <div className="flex items-center justify-between gap-3 border-b border-slate-200 px-4 py-3 dark:border-white/10">
               <div className="flex min-w-0 items-center gap-2">
                 <Database className="h-4 w-4 shrink-0 text-blue-600 dark:text-[#00FF88]" />
                 <div className="min-w-0">
-                  <div className="text-[11px] font-black uppercase tracking-[0.18em] text-slate-700 dark:text-gray-300">Data Health Details</div>
+                  <div className="text-[11px] font-black uppercase tracking-[0.18em] text-slate-700 dark:text-gray-300">Data Operations Details</div>
                   <div className="truncate text-[10px] font-mono text-slate-500 dark:text-gray-500">
                     {liveCount}/{items.length || 4} live · {criticalEtlCount} ETL critical
                   </div>
                 </div>
+              </div>
+              <div className="ml-auto hidden items-center gap-2 sm:flex">
+                <a
+                  href={GITHUB_ACTIONS_URL}
+                  target="_blank"
+                  rel="noreferrer"
+                  className="rounded border border-slate-200 bg-slate-50 px-2 py-1 text-[10px] font-black uppercase tracking-wider text-slate-600 transition hover:bg-slate-100 dark:border-white/10 dark:bg-white/5 dark:text-gray-300 dark:hover:bg-white/10"
+                >
+                  Actions
+                </a>
+                <a
+                  href={VERCEL_DASHBOARD_URL}
+                  target="_blank"
+                  rel="noreferrer"
+                  className="rounded border border-slate-200 bg-slate-50 px-2 py-1 text-[10px] font-black uppercase tracking-wider text-slate-600 transition hover:bg-slate-100 dark:border-white/10 dark:bg-white/5 dark:text-gray-300 dark:hover:bg-white/10"
+                >
+                  Vercel
+                </a>
               </div>
               <button
                 type="button"
@@ -736,6 +787,9 @@ export function DataHealthPanel() {
               <div className="mt-1 text-[10px] font-mono text-red-700/90 dark:text-red-300/90">
                 {shortError(latestFailedRun.error)}
               </div>
+              <div className="mt-2 text-[10px] font-mono font-bold text-red-700/90 dark:text-red-300/90">
+                Action: {operationActionForRun(latestFailedRun)}
+              </div>
             </div>
           )}
           <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
@@ -800,6 +854,9 @@ export function DataHealthPanel() {
                     </div>
                   )}
                   <div className="text-[9px] text-slate-600 dark:text-gray-300">{view.qualityReason}</div>
+                  <div className="text-[9px] font-mono font-bold text-slate-600 dark:text-gray-300">
+                    Action: {operationAction(view)}
+                  </div>
                   <div className="mt-1">
                     <div className="flex items-end gap-1 h-8">
                       {view.trendPoints.map((point, index) => (

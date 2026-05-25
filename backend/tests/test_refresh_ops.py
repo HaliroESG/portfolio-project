@@ -4,6 +4,7 @@ import json
 
 from scripts.check_refresh_freshness import build_report
 from scripts.run_data_refresh import build_step_plan, normalize_env, run_step, trident_price_start_date
+from scripts.update_target_allocations import parse_allocations, validate_allocation_totals
 
 
 def _jwt_for_role(role: str) -> str:
@@ -161,3 +162,33 @@ def test_trident_price_start_defaults_to_ten_days_before_now():
     now = datetime(2026, 5, 24, 12, 0, tzinfo=timezone.utc)
 
     assert trident_price_start_date(None, now) == "2026-05-14"
+
+
+def test_parse_target_allocations_supports_portfolio_wrapper():
+    allocations = parse_allocations({
+        "portfolio_id": "main",
+        "allocations": [
+            {"ticker": "msft", "target_weight_pct": 40},
+            {"ticker": "GOOGL", "weight_pct": "60"},
+        ],
+    })
+
+    assert [(row.portfolio_id, row.ticker, row.target_weight_pct) for row in allocations] == [
+        ("main", "MSFT", 40.0),
+        ("main", "GOOGL", 60.0),
+    ]
+
+
+def test_target_allocations_require_full_total_by_default():
+    allocations = parse_allocations([
+        {"portfolio_id": "main", "ticker": "MSFT", "target_weight_pct": 80},
+    ])
+
+    try:
+        validate_allocation_totals(allocations)
+    except ValueError as exc:
+        assert "must sum to 100%" in str(exc)
+    else:
+        raise AssertionError("Expected allocation total validation to fail.")
+
+    assert validate_allocation_totals(allocations, allow_partial=True) == {"main": 80.0}

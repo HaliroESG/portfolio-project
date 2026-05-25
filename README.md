@@ -125,6 +125,12 @@ python3.11 historical_prices_sync.py
 python3.11 scripts/sync_trident_screener.py --dry-run --limit 25
 ```
 
+Production refresh orchestrator:
+```bash
+python3.11 scripts/run_data_refresh.py --scope all --output refresh-report.json
+python3.11 scripts/check_refresh_freshness.py --scope all --output refresh-freshness-report.json
+```
+
 Historical prices helper script:
 ```bash
 python3.11 scripts/sync_historical_prices.py --dry-run
@@ -185,8 +191,10 @@ python3.11 -m py_compile bridge.py technical_state.py etl_stats.py
 
 - Frontend deployment notes: `VERCEL_SETUP.md`
 - CI schedule: `.github/workflows/schedule.yml`
-  - Daily scheduled run (`0 8 * * *`, UTC)
-  - Runs backend sync jobs (`bridge.py`, `macro_sync.py`, `news_sync.py`)
+  - Weekday core/history/backtest run (`37 22 * * 1-5`, UTC)
+  - Weekly full Trident run (`17 7 * * 0`, UTC)
+  - Manual `workflow_dispatch` supports `all`, `core`, `history`, `trident`, `backtest`, and `validate`
+  - Post-refresh gates run schema parity, `etl_runs` freshness, and anon Supabase smoke with Trident rows required
 - Codex long-running task guidance: `docs/codex_goal_best_practices.md`
 
 ## Known Limitations / Current Roadmap Highlights

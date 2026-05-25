@@ -1,16 +1,14 @@
 "use client"
 
+import dynamic from 'next/dynamic'
 import React, { useMemo, useState } from 'react'
 import useSWR from 'swr'
 import { supabase } from '../lib/supabase'
 import { AppShell } from '../components/AppShell'
 import { AssetTable } from '../components/AssetTable'
-import { GeographicMap } from '../components/GeographicMap'
 import { MacroStrip } from '../components/MacroStrip'
-import { AssetDetailDrawer } from '../components/AssetDetailDrawer'
 import { HotNewsTickerTape } from '../components/HotNewsTickerTape'
 import { GovernanceWidget } from '../components/GovernanceWidget'
-import { DataHealthPanel } from '../components/DataHealthPanel'
 import { Asset, GeoTimeframe } from '../types'
 import {
   PORTFOLIO_AGGREGATION_SWR_KEY,
@@ -20,6 +18,35 @@ import {
 import { cn } from '../lib/utils'
 import { stateFromList, stateLabel as dataStateLabel } from '../lib/dataStates'
 import { swrOptions, SWR_REFRESH } from '../lib/swrConfig'
+
+const GeographicMap = dynamic(
+  () => import('../components/GeographicMap').then((mod) => mod.GeographicMap),
+  {
+    ssr: false,
+    loading: () => (
+      <div className="flex h-full min-h-[260px] items-center justify-center text-xs font-mono text-slate-500 dark:text-gray-400">
+        Loading regional exposure.
+      </div>
+    ),
+  }
+)
+
+const AssetDetailDrawer = dynamic(
+  () => import('../components/AssetDetailDrawer').then((mod) => mod.AssetDetailDrawer),
+  { ssr: false }
+)
+
+const DataHealthPanel = dynamic(
+  () => import('../components/DataHealthPanel').then((mod) => mod.DataHealthPanel),
+  {
+    ssr: false,
+    loading: () => (
+      <div className="rounded-xl border border-slate-200 bg-white/80 p-3 text-[10px] font-mono text-slate-500 shadow-sm dark:border-white/10 dark:bg-[#0D1117]/70 dark:text-gray-400">
+        Loading data operations.
+      </div>
+    ),
+  }
+)
 
 export default function PortfolioDashboard() {
   const [hoveredAsset, setHoveredAsset] = useState<Asset | null>(null)

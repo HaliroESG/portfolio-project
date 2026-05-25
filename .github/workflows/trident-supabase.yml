@@ -20,8 +20,13 @@ on:
     paths:
       - "backend/sql/**"
       - "backend/trident_screener.py"
+      - "backend/historical_prices_sync.py"
+      - "backend/supabase_key_guard.py"
+      - "backend/scripts/run_data_refresh.py"
+      - "backend/scripts/update_target_allocations.py"
       - "backend/scripts/sync_trident_screener.py"
       - "backend/tests/test_trident_screener.py"
+      - "backend/tests/test_refresh_ops.py"
       - "backend/tools/schema_check.py"
       - "frontend/app/trident/**"
       - "frontend/lib/tridentData.ts"
@@ -55,7 +60,7 @@ jobs:
 
       - name: Backend compile check
         working-directory: ./backend
-        run: python3.11 -m py_compile bridge.py technical_state.py etl_stats.py trident_screener.py scripts/sync_trident_screener.py
+        run: python3.11 -m py_compile bridge.py technical_state.py etl_stats.py historical_prices_sync.py trident_screener.py scripts/run_data_refresh.py scripts/update_target_allocations.py scripts/sync_trident_screener.py
 
       - name: Setup Node
         uses: actions/setup-node@v4
