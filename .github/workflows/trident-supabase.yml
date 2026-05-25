@@ -41,6 +41,7 @@ on:
       - "frontend/scripts/smoke-supabase.mjs"
       - ".github/workflows/trident-supabase.yml"
       - ".github/workflows/trident-price-backfill.yml"
+      - ".github/workflows/production-data-remediation.yml"
       - ".github/workflows/schedule.yml"
 
 jobs:
