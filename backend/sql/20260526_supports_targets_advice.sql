@@ -8,12 +8,16 @@ create table if not exists public.support_sources (
   source_name text not null,
   source_kind text not null,
   provider text null,
+  source_quality text not null default 'COMPLETE',
   source_file text null,
   source_date date null,
   report_json jsonb not null default '{}'::jsonb,
   imported_at timestamptz not null default now(),
   updated_at timestamptz not null default now()
 );
+
+alter table public.support_sources
+  add column if not exists source_quality text not null default 'COMPLETE';
 
 create table if not exists public.investment_supports (
   source_id text not null references public.support_sources(id) on delete cascade,
@@ -61,6 +65,39 @@ create table if not exists public.support_availability (
   primary key (source_id, isin, envelope),
   foreign key (source_id, isin) references public.investment_supports(source_id, isin) on delete cascade
 );
+
+create table if not exists public.support_source_rows (
+  source_id text not null references public.support_sources(id) on delete cascade,
+  external_id text not null,
+  isin text null,
+  name text not null,
+  support_type text not null default 'UNKNOWN',
+  legal_form text null,
+  manager text null,
+  sri integer null,
+  performance_1y_pct numeric null,
+  performance_5y_pct numeric null,
+  asset_fee_pct numeric null,
+  contract_fee_pct numeric null,
+  total_fee_pct numeric null,
+  retrocession_pct numeric null,
+  source_quality text not null default 'IDENTIFIER_MISSING',
+  identifier_state text not null default 'IDENTIFIER_MISSING',
+  envelope text not null,
+  score numeric null,
+  score_details jsonb not null default '{}'::jsonb,
+  page integer null,
+  raw_text text null,
+  updated_at timestamptz not null default now(),
+  primary key (source_id, external_id)
+);
+
+create index if not exists support_source_rows_envelope_idx
+  on public.support_source_rows (envelope, source_quality, identifier_state);
+
+create index if not exists support_source_rows_isin_idx
+  on public.support_source_rows (isin)
+  where isin is not null;
 
 create table if not exists public.target_models (
   id text primary key,
@@ -312,6 +349,7 @@ from base;
 alter table public.support_sources enable row level security;
 alter table public.investment_supports enable row level security;
 alter table public.support_availability enable row level security;
+alter table public.support_source_rows enable row level security;
 alter table public.target_models enable row level security;
 alter table public.target_buckets enable row level security;
 alter table public.target_envelope_lines enable row level security;
@@ -323,6 +361,8 @@ drop policy if exists investment_supports_read on public.investment_supports;
 create policy investment_supports_read on public.investment_supports for select to anon, authenticated using (true);
 drop policy if exists support_availability_read on public.support_availability;
 create policy support_availability_read on public.support_availability for select to anon, authenticated using (true);
+drop policy if exists support_source_rows_read on public.support_source_rows;
+create policy support_source_rows_read on public.support_source_rows for select to anon, authenticated using (true);
 drop policy if exists target_models_read on public.target_models;
 create policy target_models_read on public.target_models for select to anon, authenticated using (true);
 drop policy if exists target_buckets_read on public.target_buckets;
@@ -338,6 +378,8 @@ drop policy if exists investment_supports_service_role_write on public.investmen
 create policy investment_supports_service_role_write on public.investment_supports for all to service_role using (true) with check (true);
 drop policy if exists support_availability_service_role_write on public.support_availability;
 create policy support_availability_service_role_write on public.support_availability for all to service_role using (true) with check (true);
+drop policy if exists support_source_rows_service_role_write on public.support_source_rows;
+create policy support_source_rows_service_role_write on public.support_source_rows for all to service_role using (true) with check (true);
 drop policy if exists target_models_service_role_write on public.target_models;
 create policy target_models_service_role_write on public.target_models for all to service_role using (true) with check (true);
 drop policy if exists target_buckets_service_role_write on public.target_buckets;
@@ -352,6 +394,7 @@ grant select on table
   public.support_sources,
   public.investment_supports,
   public.support_availability,
+  public.support_source_rows,
   public.target_models,
   public.target_buckets,
   public.target_envelope_lines,
@@ -364,6 +407,7 @@ grant select, insert, update, delete on table
   public.support_sources,
   public.investment_supports,
   public.support_availability,
+  public.support_source_rows,
   public.target_models,
   public.target_buckets,
   public.target_envelope_lines,

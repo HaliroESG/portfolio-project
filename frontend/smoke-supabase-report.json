@@ -10,8 +10,8 @@
       "technical_schema": "present",
       "row_count": 39,
       "sample": {
-        "ticker": "EIMI",
-        "last_update": "2026-05-18T10:36:17.412152+00:00",
+        "ticker": "DG",
+        "last_update": "2026-05-26T21:37:21.987172+00:00",
         "macd_line": null,
         "macd_signal": null,
         "macd_hist": null,
@@ -29,8 +29,8 @@
       "sample": {
         "id": "USD",
         "symbol": "$",
-        "rate_to_eur": 0.859499990940094,
-        "last_update": "2026-05-26T20:46:15.877671+00:00"
+        "rate_to_eur": 0.859600007534027,
+        "last_update": "2026-05-26T21:37:00.42299+00:00"
       }
     },
     {
@@ -72,13 +72,13 @@
       "name": "etl_runs",
       "ok": true,
       "status": "PASS",
-      "row_count": 246,
+      "row_count": 249,
       "sample": {
         "job_name": "historical_prices_trident_sync",
-        "status": "SUCCESS",
-        "started_at": "2026-05-25T22:28:47.035103+00:00",
-        "finished_at": "2026-05-25T23:27:06.629436+00:00",
-        "duration_sec": 3499.59
+        "status": "RUNNING",
+        "started_at": "2026-05-26T21:33:11.282217+00:00",
+        "finished_at": null,
+        "duration_sec": null
       }
     },
     {
@@ -99,7 +99,7 @@
         "criteria_missing_count": 6,
         "latest_roic": 0.054366556450964575,
         "latest_net_debt_to_ebitda": 2.078292865285297,
-        "updated_at": "2026-05-25T22:27:56.44156+00:00"
+        "updated_at": "2026-05-26T21:32:21.226635+00:00"
       },
       "schema_warning": "provider_symbol is missing from trident_screener_latest; apply backend/sql/20260525_portfolio_decision_items.sql."
     },
@@ -141,13 +141,13 @@
       "status": "PASS",
       "row_count": 1280,
       "sample": {
-        "ticker": "2020.HK",
+        "ticker": "2FE.DE",
         "requested_start_date": "1999-01-01",
         "requested_end_date": "2026-05-25",
-        "earliest_date": "2007-07-10",
-        "coverage_pct": 65.09024765635931,
+        "earliest_date": "2016-02-18",
+        "coverage_pct": 36.46285154610326,
         "used_proxy": false,
-        "updated_at": "2026-05-25T22:38:30.332824+00:00"
+        "updated_at": "2026-05-25T22:39:21.508862+00:00"
       }
     },
     {
@@ -227,12 +227,28 @@
       "warning": "provider_symbol is missing from trident_screener_latest; coverage checked by ticker only."
     },
     {
+      "name": "support_sources",
+      "ok": true,
+      "status": "PASS",
+      "error": "Could not find the table 'public.support_sources' in the schema cache",
+      "feature_state": "SCHEMA_PENDING",
+      "schema_warning": "Apply backend/sql/20260526_supports_targets_advice.sql and run import_support_universe.py."
+    },
+    {
       "name": "investment_supports",
       "ok": true,
       "status": "PASS",
       "error": "Could not find the table 'public.investment_supports' in the schema cache",
       "feature_state": "SCHEMA_PENDING",
       "schema_warning": "Apply backend/sql/20260526_supports_targets_advice.sql and run import_support_universe.py."
+    },
+    {
+      "name": "support_source_rows",
+      "ok": true,
+      "status": "PASS",
+      "error": "Could not find the table 'public.support_source_rows' in the schema cache",
+      "feature_state": "SCHEMA_PENDING",
+      "schema_warning": "Apply backend/sql/20260526_supports_targets_advice.sql and run import_support_universe.py for Linxea/Fortuneo partial source rows."
     },
     {
       "name": "target_models",

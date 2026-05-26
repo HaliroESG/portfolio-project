@@ -260,9 +260,19 @@ const checks = await Promise.all([
   q('backtest_kpis', () => supabase.from('backtest_kpis').select('run_id,portfolio_key,cagr,vol,sharpe,sortino,max_drawdown,calmar,worst_year,best_year', { count: 'exact' }).limit(5)),
   tridentPriceCoverageCheck(),
   optionalReadModelCheck(
+    'support_sources',
+    () => supabase.from('support_sources').select('id,source_name,source_kind,provider,source_quality,source_file,source_date,updated_at', { count: 'exact' }).limit(5),
+    'Apply backend/sql/20260526_supports_targets_advice.sql and run import_support_universe.py.'
+  ),
+  optionalReadModelCheck(
     'investment_supports',
     () => supabase.from('investment_supports').select('source_id,isin,name,support_type,sri,total_fee_pct,score,metrics_state,updated_at', { count: 'exact' }).limit(5),
     'Apply backend/sql/20260526_supports_targets_advice.sql and run import_support_universe.py.'
+  ),
+  optionalReadModelCheck(
+    'support_source_rows',
+    () => supabase.from('support_source_rows').select('source_id,external_id,isin,name,support_type,source_quality,identifier_state,envelope,updated_at', { count: 'exact' }).limit(5),
+    'Apply backend/sql/20260526_supports_targets_advice.sql and run import_support_universe.py for Linxea/Fortuneo partial source rows.'
   ),
   optionalReadModelCheck(
     'target_models',

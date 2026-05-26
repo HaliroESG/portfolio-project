@@ -1,6 +1,11 @@
 from __future__ import annotations
 
-from scripts.import_support_universe import _parse_support_line, run_import
+from scripts.import_support_universe import (
+    _is_valid_isin,
+    _parse_linxea_candidate,
+    _parse_support_line,
+    run_import,
+)
 
 
 def test_parse_lucya_cardif_support_line_extracts_etf_metrics():
@@ -25,6 +30,31 @@ def test_parse_lucya_cardif_support_line_extracts_etf_metrics():
     assert row.quantalys_rating is None
 
 
+def test_isin_validation_rejects_words_and_accepts_offshore_prefixes():
+    assert _is_valid_isin("LU0496786574")
+    assert _is_valid_isin("BMG0112X1056")
+    assert not _is_valid_isin("AGRIBUSINESS")
+    assert not _is_valid_isin("LU0496786575")
+
+
+def test_parse_linxea_candidate_creates_identifier_missing_source_row():
+    row = _parse_linxea_candidate(
+        "Amundi Core S&P 500 Swap ETF EUR Dist 10.81% 102.22%",
+        source_id="linxea-funds:2026-05-26",
+        envelope="Linxea",
+        page=4,
+    )
+
+    assert row is not None
+    assert row.isin is None
+    assert row.name == "Amundi Core S&P 500 Swap ETF EUR Dist"
+    assert row.support_type == "ETF"
+    assert row.performance_1y_pct == 10.81
+    assert row.performance_5y_pct == 102.22
+    assert row.source_quality == "IDENTIFIER_MISSING"
+    assert row.identifier_state == "IDENTIFIER_MISSING"
+
+
 def test_support_import_rejects_unsupported_source(tmp_path):
     source = tmp_path / "empty.pdf"
     source.write_bytes(b"%PDF-1.4\n%%EOF")
@@ -32,6 +62,6 @@ def test_support_import_rejects_unsupported_source(tmp_path):
     try:
         run_import(source, source="unknown", dry_run=True)
     except RuntimeError as exc:
-        assert "Only --source lucya-cardif" in str(exc)
+        assert "Unsupported --source" in str(exc)
     else:
         raise AssertionError("unsupported source should fail")

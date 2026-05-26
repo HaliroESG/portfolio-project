@@ -118,7 +118,7 @@ CRITICAL_SCHEMA: dict[str, list[str]] = {
     ],
     "support_sources": [
         "id", "source_name", "source_kind", "provider", "source_file", "source_date",
-        "report_json", "imported_at", "updated_at",
+        "source_quality", "report_json", "imported_at", "updated_at",
     ],
     "investment_supports": [
         "source_id", "isin", "name", "support_type", "legal_form", "manager",
@@ -129,6 +129,13 @@ CRITICAL_SCHEMA: dict[str, list[str]] = {
     ],
     "support_availability": [
         "source_id", "isin", "envelope", "available", "constraints_json", "updated_at",
+    ],
+    "support_source_rows": [
+        "source_id", "external_id", "isin", "name", "support_type", "legal_form",
+        "manager", "sri", "performance_1y_pct", "performance_5y_pct",
+        "asset_fee_pct", "contract_fee_pct", "total_fee_pct", "retrocession_pct",
+        "source_quality", "identifier_state", "envelope", "score", "score_details",
+        "page", "raw_text", "updated_at",
     ],
     "target_models": [
         "id", "portfolio_scope", "model_name", "source_file", "source_kind",

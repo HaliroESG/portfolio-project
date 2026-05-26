@@ -455,12 +455,15 @@ export type InvestmentSupportType =
   | 'PRIVATE_ASSET'
   | 'UNKNOWN'
 export type SupportMetricsState = 'READY' | 'PARTIAL' | 'METRICS_UNAVAILABLE'
+export type SupportSourceQuality = 'COMPLETE' | 'PARTIAL' | 'IDENTIFIER_MISSING'
+export type SupportIdentifierState = 'READY' | 'PARTIAL_SOURCE' | 'IDENTIFIER_MISSING' | 'INVALID_IDENTIFIER'
 
 export interface SupportSourceRow {
   id: string
   source_name: string
   source_kind: string
   provider: string | null
+  source_quality: SupportSourceQuality
   source_file: string | null
   source_date: string | null
   report_json: Record<string, unknown>
@@ -503,6 +506,31 @@ export interface SupportAvailabilityRow {
   envelope: string
   available: boolean
   constraints_json: Record<string, unknown>
+  updated_at: string
+}
+
+export interface SupportSourceLineRow {
+  source_id: string
+  external_id: string
+  isin: string | null
+  name: string
+  support_type: InvestmentSupportType
+  legal_form: string | null
+  manager: string | null
+  sri: number | null
+  performance_1y_pct: number | null
+  performance_5y_pct: number | null
+  asset_fee_pct: number | null
+  contract_fee_pct: number | null
+  total_fee_pct: number | null
+  retrocession_pct: number | null
+  source_quality: SupportSourceQuality
+  identifier_state: SupportIdentifierState
+  envelope: string
+  score: number | null
+  score_details: Record<string, unknown>
+  page: number | null
+  raw_text: string | null
   updated_at: string
 }
 

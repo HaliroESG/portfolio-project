@@ -7,15 +7,37 @@ import { AppShell } from '../../components/AppShell'
 import { EmptyState } from '../../components/EmptyState'
 import { supabase } from '../../lib/supabase'
 import { cn } from '../../lib/utils'
-import type { AllocationAdviceAction, AllocationAdviceExecution, AllocationAdviceRow, PortfolioDecisionAction, PortfolioDecisionItemRow, PortfolioScope } from '../../types'
+import type {
+  AllocationAdviceAction,
+  AllocationAdviceExecution,
+  AllocationAdviceRow,
+  PortfolioDecisionAction,
+  PortfolioDecisionItemRow,
+  PortfolioScope,
+  SupportIdentifierState,
+  SupportSourceQuality,
+} from '../../types'
 
 type SortKey = 'priority' | 'ticker' | 'action' | 'amount' | 'drift' | 'confidence'
 type SortDirection = 'asc' | 'desc'
 type SortConfig = { key: SortKey; direction: SortDirection }
+type ExecutionUniverseStatus = 'READY' | 'PARTIAL_SOURCE' | 'MANUAL_REQUIRED'
 
 interface PortfolioRow {
   id: string
   name: string | null
+}
+
+interface ExecutionUniverseRow {
+  key: string
+  sourceId: string
+  sourceName: string
+  envelope: string
+  sourceQuality: SupportSourceQuality
+  identifierState: SupportIdentifierState
+  mappedCount: number
+  sourceRowCount: number
+  status: ExecutionUniverseStatus
 }
 
 type RawDecisionRow = Record<string, unknown>
@@ -60,6 +82,13 @@ const ACTION_RANK: Record<PortfolioDecisionAction, number> = {
 
 const DEFAULT_SORT: SortConfig = { key: 'priority', direction: 'asc' }
 
+function isMissingSchemaError(message: string | undefined): boolean {
+  return /could not find the table/i.test(message || '')
+    || /relation .* does not exist/i.test(message || '')
+    || /column .* does not exist/i.test(message || '')
+    || /could not find .* column/i.test(message || '')
+}
+
 function readString(value: unknown): string | null {
   return typeof value === 'string' && value.trim() ? value.trim() : null
 }
@@ -95,6 +124,44 @@ function parsePortfolioScope(value: unknown): PortfolioScope {
 function parseExecution(value: unknown): AllocationAdviceExecution {
   if (value === 'NEW_CASH_FIRST' || value === 'INTERNAL_ARBITRAGE' || value === 'MONITOR' || value === 'CURRENT_UNAVAILABLE') return value
   return 'CURRENT_UNAVAILABLE'
+}
+
+function parseSourceQuality(value: unknown, sourceKind?: string | null): SupportSourceQuality {
+  if (value === 'COMPLETE' || value === 'PARTIAL' || value === 'IDENTIFIER_MISSING') return value
+  if (sourceKind === 'fortuneo-av') return 'PARTIAL'
+  if (sourceKind === 'linxea-funds') return 'IDENTIFIER_MISSING'
+  return 'COMPLETE'
+}
+
+function parseIdentifierState(value: unknown): SupportIdentifierState {
+  if (value === 'READY' || value === 'PARTIAL_SOURCE' || value === 'IDENTIFIER_MISSING' || value === 'INVALID_IDENTIFIER') return value
+  return 'IDENTIFIER_MISSING'
+}
+
+function rankQuality(value: SupportSourceQuality): number {
+  if (value === 'IDENTIFIER_MISSING') return 2
+  if (value === 'PARTIAL') return 1
+  return 0
+}
+
+function rankIdentifierState(value: SupportIdentifierState): number {
+  if (value === 'IDENTIFIER_MISSING' || value === 'INVALID_IDENTIFIER') return 2
+  if (value === 'PARTIAL_SOURCE') return 1
+  return 0
+}
+
+function worseQuality(left: SupportSourceQuality, right: SupportSourceQuality): SupportSourceQuality {
+  return rankQuality(right) > rankQuality(left) ? right : left
+}
+
+function worseIdentifierState(left: SupportIdentifierState, right: SupportIdentifierState): SupportIdentifierState {
+  return rankIdentifierState(right) > rankIdentifierState(left) ? right : left
+}
+
+function resolveExecutionStatus(quality: SupportSourceQuality, identifierState: SupportIdentifierState): ExecutionUniverseStatus {
+  if (quality === 'IDENTIFIER_MISSING' || identifierState === 'IDENTIFIER_MISSING' || identifierState === 'INVALID_IDENTIFIER') return 'MANUAL_REQUIRED'
+  if (quality === 'PARTIAL' || identifierState === 'PARTIAL_SOURCE') return 'PARTIAL_SOURCE'
+  return 'READY'
 }
 
 function parseAdviceRow(raw: RawRow): AllocationAdviceRow | null {
@@ -212,6 +279,24 @@ function executionLabel(value: AllocationAdviceExecution): string {
   return 'Current unavailable'
 }
 
+function sourceQualityLabel(value: SupportSourceQuality): string {
+  if (value === 'COMPLETE') return 'Complete'
+  if (value === 'PARTIAL') return 'Partial source'
+  return 'Identifier missing'
+}
+
+function executionUniverseLabel(value: ExecutionUniverseStatus): string {
+  if (value === 'READY') return 'Executable'
+  if (value === 'PARTIAL_SOURCE') return 'Manual check'
+  return 'Manual required'
+}
+
+function executionUniverseClass(value: ExecutionUniverseStatus): string {
+  if (value === 'READY') return 'border-emerald-300 bg-emerald-50 text-emerald-700 dark:border-emerald-900/60 dark:bg-emerald-950/20 dark:text-emerald-300'
+  if (value === 'PARTIAL_SOURCE') return 'border-amber-300 bg-amber-50 text-amber-700 dark:border-amber-900/60 dark:bg-amber-950/20 dark:text-amber-300'
+  return 'border-red-300 bg-red-50 text-red-700 dark:border-red-900/60 dark:bg-red-950/20 dark:text-red-300'
+}
+
 function compareText(left: string | null | undefined, right: string | null | undefined, direction: SortDirection): number {
   const multiplier = direction === 'asc' ? 1 : -1
   return (left ?? '').localeCompare(right ?? '', 'en', { sensitivity: 'base' }) * multiplier
@@ -243,6 +328,89 @@ function compareRows(left: PortfolioDecisionItemRow, right: PortfolioDecisionIte
 function sortIcon(active: boolean, direction: SortDirection) {
   if (!active) return <ChevronsUpDown className="h-3 w-3 opacity-50" />
   return direction === 'asc' ? <ArrowUp className="h-3 w-3" /> : <ArrowDown className="h-3 w-3" />
+}
+
+async function loadExecutionUniverse(): Promise<ExecutionUniverseRow[]> {
+  const sourceResult = await supabase
+    .from('support_sources')
+    .select('id,source_name,source_kind,source_quality')
+    .limit(500)
+
+  if (sourceResult.error) {
+    if (isMissingSchemaError(sourceResult.error.message)) return []
+    throw sourceResult.error
+  }
+
+  const availabilityResult = await supabase
+    .from('support_availability')
+    .select('source_id,isin,envelope,available')
+    .limit(10000)
+  if (availabilityResult.error && !isMissingSchemaError(availabilityResult.error.message)) throw availabilityResult.error
+
+  const sourceRowsResult = await supabase
+    .from('support_source_rows')
+    .select('source_id,external_id,isin,envelope,source_quality,identifier_state')
+    .limit(10000)
+  if (sourceRowsResult.error && !isMissingSchemaError(sourceRowsResult.error.message)) throw sourceRowsResult.error
+
+  const sourceById = new Map<string, { name: string; kind: string | null; quality: SupportSourceQuality }>()
+  ;((sourceResult.data ?? []) as unknown as RawRow[]).forEach((row) => {
+    const id = readString(row.id)
+    if (!id) return
+    const kind = readString(row.source_kind)
+    sourceById.set(id, {
+      name: readString(row.source_name) ?? id,
+      kind,
+      quality: parseSourceQuality(row.source_quality, kind),
+    })
+  })
+
+  const grouped = new Map<string, ExecutionUniverseRow>()
+  const ensureRow = (sourceId: string, envelope: string): ExecutionUniverseRow => {
+    const key = `${sourceId}:${envelope}`
+    const existing = grouped.get(key)
+    if (existing) return existing
+    const source = sourceById.get(sourceId)
+    const row: ExecutionUniverseRow = {
+      key,
+      sourceId,
+      sourceName: source?.name ?? sourceId,
+      envelope,
+      sourceQuality: source?.quality ?? 'COMPLETE',
+      identifierState: 'READY',
+      mappedCount: 0,
+      sourceRowCount: 0,
+      status: 'READY',
+    }
+    grouped.set(key, row)
+    return row
+  }
+
+  ;((availabilityResult.data ?? []) as unknown as RawRow[]).forEach((row) => {
+    if (row.available !== true) return
+    const sourceId = readString(row.source_id)
+    const envelope = readString(row.envelope)
+    if (!sourceId || !envelope) return
+    const groupedRow = ensureRow(sourceId, envelope)
+    groupedRow.mappedCount += 1
+  })
+
+  ;((sourceRowsResult.data ?? []) as unknown as RawRow[]).forEach((row) => {
+    const sourceId = readString(row.source_id)
+    const envelope = readString(row.envelope)
+    if (!sourceId || !envelope) return
+    const groupedRow = ensureRow(sourceId, envelope)
+    groupedRow.sourceRowCount += 1
+    groupedRow.sourceQuality = worseQuality(groupedRow.sourceQuality, parseSourceQuality(row.source_quality))
+    groupedRow.identifierState = worseIdentifierState(groupedRow.identifierState, parseIdentifierState(row.identifier_state))
+  })
+
+  return Array.from(grouped.values())
+    .map((row) => ({
+      ...row,
+      status: resolveExecutionStatus(row.sourceQuality, row.identifierState),
+    }))
+    .sort((left, right) => left.envelope.localeCompare(right.envelope, 'fr') || left.sourceName.localeCompare(right.sourceName, 'fr'))
 }
 
 function SortHeader({
@@ -321,6 +489,11 @@ export default function ArbitragePage() {
         .map(parseAdviceRow)
         .filter((row): row is AllocationAdviceRow => row !== null)
     }
+  )
+
+  const { data: executionRows = [], error: executionError } = useSWR(
+    'arbitrage-execution-universe',
+    loadExecutionUniverse
   )
 
   const filters = useMemo(() => {
@@ -452,6 +625,39 @@ export default function ArbitragePage() {
             <FilterSelect label="Data issue" value={issueFilter} options={filters.issueCodes} onChange={setIssueFilter} />
             <FilterSelect label="Asset class" value={assetClassFilter} options={filters.assetClasses} onChange={setAssetClassFilter} />
             <FilterSelect label="Currency" value={currencyFilter} options={filters.currencies} onChange={setCurrencyFilter} />
+          </section>
+
+          <section className="overflow-hidden rounded-xl border border-slate-200 bg-white dark:border-white/10 dark:bg-[#0D1117]/70">
+            <div className="flex flex-wrap items-center justify-between gap-2 border-b border-slate-200 px-4 py-3 dark:border-white/10">
+              <div>
+                <h2 className="text-sm font-black uppercase tracking-tight text-slate-950 dark:text-white">Execution universe</h2>
+                <div className="mt-1 text-[10px] font-mono text-slate-500 dark:text-gray-400">
+                  Supports disponibles par enveloppe pour executer les arbitrages.
+                </div>
+              </div>
+              <span className="rounded border border-slate-300 bg-slate-50 px-2 py-1 text-[10px] font-black uppercase tracking-wider text-slate-600 dark:border-white/10 dark:bg-white/5 dark:text-gray-300">
+                Read only
+              </span>
+            </div>
+            {executionError ? (
+              <div className="p-4">
+                <EmptyState
+                  tone="error"
+                  title="Execution universe unavailable"
+                  message="Apply the support catalogue migration and re-run the PDF imports."
+                />
+              </div>
+            ) : executionRows.length === 0 ? (
+              <div className="p-4">
+                <EmptyState title="No execution supports" message="No insurance/PER support catalogue has been imported yet." />
+              </div>
+            ) : (
+              <div className="grid gap-3 p-4 md:grid-cols-2 xl:grid-cols-3">
+                {executionRows.map((row) => (
+                  <ExecutionUniverseCard key={row.key} row={row} />
+                ))}
+              </div>
+            )}
           </section>
 
           <section className="overflow-hidden rounded-xl border border-slate-200 bg-white dark:border-white/10 dark:bg-[#0D1117]/70">
@@ -713,6 +919,41 @@ function AdviceCard({ row }: { row: AllocationAdviceRow }) {
         <div className="font-black uppercase">Confidence {row.confidence}%</div>
         <div className="mt-2"><ReasonCodes codes={row.reason_codes} /></div>
       </div>
+    </article>
+  )
+}
+
+function ExecutionUniverseCard({ row }: { row: ExecutionUniverseRow }) {
+  return (
+    <article className="rounded-lg border border-slate-200 bg-slate-50 p-4 dark:border-white/10 dark:bg-black/20">
+      <div className="flex items-start justify-between gap-3">
+        <div className="min-w-0">
+          <div className="truncate text-sm font-black text-slate-950 dark:text-white">{row.envelope}</div>
+          <div className="mt-1 truncate text-[10px] font-mono text-slate-500 dark:text-gray-400">{row.sourceName}</div>
+        </div>
+        <span className={cn('shrink-0 rounded border px-2 py-0.5 text-[9px] font-black uppercase tracking-wider', executionUniverseClass(row.status))}>
+          {executionUniverseLabel(row.status)}
+        </span>
+      </div>
+      <div className="mt-3 grid grid-cols-2 gap-2">
+        <Metric label="Mapped" value={row.mappedCount.toString()} />
+        <Metric label="Source rows" value={row.sourceRowCount.toString()} />
+      </div>
+      <div className="mt-3 flex flex-wrap gap-1.5 text-[9px] font-black uppercase tracking-wider">
+        <span className="rounded border border-slate-300 bg-white px-2 py-1 text-slate-600 dark:border-white/10 dark:bg-white/5 dark:text-gray-300">
+          {sourceQualityLabel(row.sourceQuality)}
+        </span>
+        <span className="rounded border border-slate-300 bg-white px-2 py-1 text-slate-600 dark:border-white/10 dark:bg-white/5 dark:text-gray-300">
+          {row.identifierState}
+        </span>
+      </div>
+      {row.status !== 'READY' && (
+        <div className="mt-3 rounded-md border border-amber-300 bg-amber-50 px-3 py-2 text-[10px] font-mono text-amber-800 dark:border-amber-900/60 dark:bg-amber-950/20 dark:text-amber-300">
+          {row.status === 'MANUAL_REQUIRED'
+            ? 'Mapping manuel requis avant proposition executable.'
+            : 'Source partielle: confirmer le support disponible avant execution.'}
+        </div>
+      )}
     </article>
   )
 }

@@ -317,12 +317,28 @@ try {
     'Arbitrage should expose bucket-level allocation advice using the flux-first policy.'
   )
   addCheck(
+    'frontend.arbitrage.execution_universe',
+    hasAll(arbitragePage, [
+      'support_sources',
+      'support_source_rows',
+      'support_availability',
+      'Execution universe',
+      'MANUAL_REQUIRED',
+      'PARTIAL_SOURCE',
+    ]),
+    'Arbitrage should expose support availability by envelope and surface manual checks for partial/missing identifiers.'
+  )
+  addCheck(
     'frontend.supports.catalogue_screen',
     hasAll(supportsPage, [
       'investment_supports',
+      'support_source_rows',
       'support_availability',
       'Support selector',
       'METRICS_UNAVAILABLE',
+      'IDENTIFIER_MISSING',
+      'PARTIAL',
+      'A mapper',
       'External ratings optional',
       'data-support-row="true"',
     ]) && hasAll(sidebar, [
@@ -361,6 +377,9 @@ try {
       'PortfolioDecisionItemRow',
       'InvestmentSupportRow',
       'SupportAvailabilityRow',
+      'SupportSourceLineRow',
+      'SupportSourceQuality',
+      'SupportIdentifierState',
       'TargetBucketRow',
       'TargetEnvelopeLineRow',
       'AllocationAdviceRow',

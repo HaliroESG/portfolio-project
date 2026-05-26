@@ -22,6 +22,8 @@ function isIgnoredConsoleError(entry) {
       (
         entry.url.includes('portfolio_decision_items_latest') ||
         entry.url.includes('broker_position_snapshot_runs') ||
+        entry.url.includes('support_sources') ||
+        entry.url.includes('support_source_rows') ||
         entry.url.includes('investment_supports') ||
         entry.url.includes('support_availability') ||
         entry.url.includes('target_models') ||
