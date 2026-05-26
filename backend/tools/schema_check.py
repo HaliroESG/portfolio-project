@@ -118,7 +118,7 @@ CRITICAL_SCHEMA: dict[str, list[str]] = {
     ],
     "support_sources": [
         "id", "source_name", "source_kind", "provider", "source_file", "source_date",
-        "source_quality", "report_json", "imported_at", "updated_at",
+        "source_quality", "source_url", "report_json", "imported_at", "updated_at",
     ],
     "investment_supports": [
         "source_id", "isin", "name", "support_type", "legal_form", "manager",

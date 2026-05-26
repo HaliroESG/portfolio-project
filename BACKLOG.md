@@ -451,6 +451,10 @@ Scope delivered:
   - `lucya-cardif`: complete ISIN-based catalogue with strict ISIN checksum validation.
   - `linxea-funds`: source rows without ISIN, kept as `IDENTIFIER_MISSING` for manual mapping.
   - `fortuneo-av`: partial visible source, kept as `PARTIAL_SOURCE` / `PARTIAL`.
+- V2 web imports added:
+  - `linxea-web`: public Linxea web tables with ISIN, stored as `PARTIAL` because public pages are not always the full contract universe.
+  - `fortuneo-av-web`: official Fortuneo Vie `PERFSUPPORT` public PDF URL, stored as a complete source for the contract.
+  - `source_url` is persisted on `support_sources` for web provenance.
 - Additive table `support_source_rows` stores support lines that cannot safely enter `investment_supports`, so partial PDFs are visible without corrupting identifier-based matching.
 - Backend CLI `import_target_model.py` imports the PERSO workbook as strategic buckets + envelope execution lines and imports the PRO workbook using `Calcul_allocation_cible` as authority.
 - `/supports` added as a read-only catalogue screen with filters for type, envelope, source quality, metrics state, score, fees, SRI and performance.
@@ -462,6 +466,8 @@ Deployment note:
 - Dry-run Lucya/Cardif supports: `python backend/scripts/import_support_universe.py --source lucya-cardif --file Liste_Supports_Lucya_Cardif_collectif_precontractuel_2026_03_16_VF_REDUIT_NB.pdf --source-date 2026-03-16 --dry-run`
 - Dry-run Linxea source rows: `python backend/scripts/import_support_universe.py --source linxea-funds --file linxea-fonds.pdf --source-date 2026-05-26 --dry-run`
 - Dry-run Fortuneo AV source rows: `python backend/scripts/import_support_universe.py --source fortuneo-av --file "Fortuneo AV.pdf" --source-date 2026-05-26 --dry-run`
+- Dry-run Linxea web: `python backend/scripts/import_support_universe.py --source linxea-web --source-date 2026-05-26 --dry-run`
+- Dry-run Fortuneo web: `python backend/scripts/import_support_universe.py --source fortuneo-av-web --source-date 2026-05-26 --dry-run`
 - Apply supports: same commands with `SUPABASE_URL=... SUPABASE_SERVICE_ROLE_KEY=... --apply`.
 - Dry-run targets: `python backend/scripts/import_target_model.py --kind perso --file Portefeuille_Perso_MultiEnveloppes_v4.xlsx --dry-run` and `python backend/scripts/import_target_model.py --kind pro --file Portefeuille_PRO_v3.xlsx --dry-run`
 - Apply targets: same commands with `SUPABASE_URL=... SUPABASE_SERVICE_ROLE_KEY=... --apply`.
@@ -470,3 +476,5 @@ Dry-run reference on user PDFs:
 - Lucya/Cardif: 2333 strict ISIN accepted, 0 rejected after checksum validation.
 - Linxea funds: 576 extracted source rows, 576 `IDENTIFIER_MISSING`, PDF label says 588 results.
 - Fortuneo AV: 7 ISIN rows accepted, source marked `PARTIAL`.
+- Linxea web default: public labelled-fund tables accepted when ISIN is present, source marked `PARTIAL`.
+- Fortuneo web default: official `PERFSUPPORT` PDF accepted as a fuller contract source.

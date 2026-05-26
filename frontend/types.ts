@@ -465,6 +465,7 @@ export interface SupportSourceRow {
   provider: string | null
   source_quality: SupportSourceQuality
   source_file: string | null
+  source_url: string | null
   source_date: string | null
   report_json: Record<string, unknown>
   imported_at: string

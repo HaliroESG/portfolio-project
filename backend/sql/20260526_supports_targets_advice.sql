@@ -10,6 +10,7 @@ create table if not exists public.support_sources (
   provider text null,
   source_quality text not null default 'COMPLETE',
   source_file text null,
+  source_url text null,
   source_date date null,
   report_json jsonb not null default '{}'::jsonb,
   imported_at timestamptz not null default now(),
@@ -18,6 +19,9 @@ create table if not exists public.support_sources (
 
 alter table public.support_sources
   add column if not exists source_quality text not null default 'COMPLETE';
+
+alter table public.support_sources
+  add column if not exists source_url text null;
 
 create table if not exists public.investment_supports (
   source_id text not null references public.support_sources(id) on delete cascade,

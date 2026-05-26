@@ -83,6 +83,7 @@ const SOURCE_SELECTOR = [
   'provider',
   'source_quality',
   'source_file',
+  'source_url',
   'source_date',
   'report_json',
   'imported_at',
@@ -165,6 +166,7 @@ function parseSupportSource(raw: RawRow): SupportSourceRow | null {
     provider: readString(raw.provider),
     source_quality: parseSourceQuality(raw.source_quality, sourceKind),
     source_file: readString(raw.source_file),
+    source_url: readString(raw.source_url),
     source_date: readString(raw.source_date),
     report_json: raw.report_json && typeof raw.report_json === 'object' && !Array.isArray(raw.report_json)
       ? raw.report_json as Record<string, unknown>
@@ -367,7 +369,7 @@ async function loadSupportSources(): Promise<SupportSourceRow[]> {
       .map(parseSupportSource)
       .filter((row): row is SupportSourceRow => row !== null)
   }
-  if (!error.message.includes('source_quality')) throw error
+  if (!error.message.includes('source_quality') && !error.message.includes('source_url')) throw error
 
   const fallback = await supabase
     .from('support_sources')

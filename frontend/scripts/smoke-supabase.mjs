@@ -261,7 +261,7 @@ const checks = await Promise.all([
   tridentPriceCoverageCheck(),
   optionalReadModelCheck(
     'support_sources',
-    () => supabase.from('support_sources').select('id,source_name,source_kind,provider,source_quality,source_file,source_date,updated_at', { count: 'exact' }).limit(5),
+    () => supabase.from('support_sources').select('id,source_name,source_kind,provider,source_quality,source_file,source_url,source_date,updated_at', { count: 'exact' }).limit(5),
     'Apply backend/sql/20260526_supports_targets_advice.sql and run import_support_universe.py.'
   ),
   optionalReadModelCheck(

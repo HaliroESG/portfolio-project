@@ -3,13 +3,16 @@ from __future__ import annotations
 
 import argparse
 import hashlib
+import html as html_lib
 import json
 import os
 import re
 import sys
-from dataclasses import asdict, dataclass
+from dataclasses import asdict, dataclass, replace
 from datetime import date, datetime, timezone
+from io import BytesIO
 from pathlib import Path
+from urllib.parse import urlparse
 from typing import Any
 
 from pypdf import PdfReader
@@ -25,7 +28,11 @@ from supabase_key_guard import require_backend_supabase_key  # noqa: E402
 ISIN_CANDIDATE_RE = re.compile(r"\b([A-Z]{2}[A-Z0-9]{9}[0-9])\b")
 ISIN_AT_START_RE = re.compile(r"^([A-Z]{2}[A-Z0-9]{9}[0-9])\b")
 LEGAL_FORMS = ("ETF", "FCP", "SICAV", "FIA", "SCI", "SCPI", "OPCI", "SLP")
-SUPPORTED_SOURCES = ("lucya-cardif", "linxea-funds", "fortuneo-av")
+SUPPORTED_SOURCES = ("lucya-cardif", "linxea-funds", "fortuneo-av", "linxea-web", "fortuneo-av-web")
+DEFAULT_SOURCE_URLS = {
+    "linxea-web": "https://www.linxea.com/assurance-vie/fonds-labellises-linxea/",
+    "fortuneo-av-web": "https://mabanque.fortuneo.fr/document-assurance-vie/PERFSUPPORT",
+}
 COUNTRY_PREFIXES = {
     "AN", "AT", "AU", "BE", "BM", "CA", "CH", "CY", "DE", "DK", "ES",
     "FI", "FR", "GB", "HK", "IE", "IM", "IT", "JE", "JP", "LR", "LU",
@@ -54,7 +61,7 @@ class SupportRow:
     metrics_state: str
     score: float | None
     score_details: dict[str, Any]
-    page: int
+    page: int | None
     raw_text: str
 
 
@@ -181,12 +188,75 @@ def _source_metadata(source: str) -> dict[str, str]:
             "source_quality": "PARTIAL",
             "default_envelope": "Fortuneo AV",
         }
+    if source == "linxea-web":
+        return {
+            "source_name": "Linxea public web support list",
+            "provider": "Linxea",
+            "source_quality": "PARTIAL",
+            "default_envelope": "Linxea",
+        }
+    if source == "fortuneo-av-web":
+        return {
+            "source_name": "Fortuneo Vie PERFSUPPORT public list",
+            "provider": "Fortuneo",
+            "source_quality": "COMPLETE",
+            "default_envelope": "Fortuneo AV",
+        }
     supported = ", ".join(SUPPORTED_SOURCES)
     raise RuntimeError(f"Unsupported --source '{source}'. Expected one of: {supported}.")
 
 
 def _source_id(source: str, source_date: date | None) -> str:
     return f"{source}:{source_date.isoformat() if source_date else 'undated'}"
+
+
+def _is_url(value: str | Path | None) -> bool:
+    if value is None:
+        return False
+    parsed = urlparse(str(value))
+    return parsed.scheme in {"http", "https"}
+
+
+def _location_display_name(value: str | Path) -> str:
+    text = str(value)
+    if not _is_url(text):
+        return Path(text).name
+    parsed = urlparse(text)
+    return Path(parsed.path).name or parsed.netloc
+
+
+def _read_binary_location(value: str | Path) -> bytes:
+    if not _is_url(value):
+        return Path(value).read_bytes()
+
+    import requests
+
+    response = requests.get(
+        str(value),
+        timeout=30,
+        headers={
+            "User-Agent": "Mozilla/5.0 (compatible; PortfolioProject/1.0; +https://github.com/HaliroESG/portfolio-project)",
+            "Accept": "text/html,application/pdf;q=0.9,*/*;q=0.8",
+        },
+    )
+    response.raise_for_status()
+    return response.content
+
+
+def _read_text_location(value: str | Path) -> str:
+    content = _read_binary_location(value)
+    for encoding in ("utf-8", "latin-1"):
+        try:
+            return content.decode(encoding)
+        except UnicodeDecodeError:
+            continue
+    return content.decode("utf-8", errors="replace")
+
+
+def _pdf_reader_from_location(value: str | Path) -> PdfReader:
+    if _is_url(value):
+        return PdfReader(BytesIO(_read_binary_location(value)))
+    return PdfReader(str(value))
 
 
 def _find_sri(body: str) -> tuple[int | None, int | None, int | None]:
@@ -281,7 +351,7 @@ def _score_support(
     return round(max(0.0, min(100.0, score)), 2), details
 
 
-def _parse_support_line(line: str, *, page: int, source_id: str) -> SupportRow | None:
+def _parse_support_line(line: str, *, page: int | None, source_id: str) -> SupportRow | None:
     match = ISIN_AT_START_RE.match(line.upper())
     if not match:
         return None
@@ -298,11 +368,24 @@ def _parse_support_line(line: str, *, page: int, source_id: str) -> SupportRow |
     support_type = _support_type(name, legal_form, line)
     percentages = _percent_values(after_sri)
 
-    asset_fee_pct = percentages[0] if len(percentages) >= 1 else None
-    retrocession_pct = percentages[1] if len(percentages) >= 2 and "(dont" in after_sri.lower() else None
-    contract_index = next((index for index, value in enumerate(percentages[2:], start=2) if abs(value - 0.5) < 0.001), None)
-    performance_1y_pct = percentages[2] if contract_index is not None and contract_index >= 4 and len(percentages) >= 3 else None
-    performance_5y_pct = percentages[3] if contract_index is not None and contract_index >= 4 and len(percentages) >= 4 else None
+    contract_index = next(
+        (
+            index
+            for index, value in enumerate(percentages[4:], start=4)
+            if any(abs(value - expected) < 0.001 for expected in (0.5, 0.75, 0.85))
+        ),
+        None,
+    )
+    if contract_index is not None and contract_index >= 6:
+        performance_1y_pct = percentages[0] if len(percentages) >= 1 else None
+        performance_5y_pct = percentages[1] if len(percentages) >= 2 else None
+        asset_fee_pct = percentages[2] if len(percentages) >= 3 else None
+        retrocession_pct = percentages[3] if len(percentages) >= 4 and "(dont" in after_sri.lower() else None
+    else:
+        asset_fee_pct = percentages[0] if len(percentages) >= 1 else None
+        retrocession_pct = percentages[1] if len(percentages) >= 2 and "(dont" in after_sri.lower() else None
+        performance_1y_pct = percentages[2] if contract_index is not None and contract_index >= 4 and len(percentages) >= 3 else None
+        performance_5y_pct = percentages[3] if contract_index is not None and contract_index >= 4 and len(percentages) >= 4 else None
     contract_fee_pct = percentages[contract_index] if contract_index is not None else None
     total_fee_pct = percentages[contract_index + 1] if contract_index is not None and len(percentages) > contract_index + 1 else None
 
@@ -416,7 +499,7 @@ def _source_line(
 
 
 def parse_lucya_cardif_pdf(path: str | Path, *, source_id: str) -> dict[str, Any]:
-    reader = PdfReader(str(path))
+    reader = _pdf_reader_from_location(path)
     rows: list[SupportRow] = []
     rejected: list[dict[str, Any]] = []
     seen: set[str] = set()
@@ -502,7 +585,7 @@ def _parse_linxea_candidate(text: str, *, source_id: str, envelope: str, page: i
 
 
 def parse_linxea_funds_pdf(path: str | Path, *, source_id: str, envelope: str) -> dict[str, Any]:
-    reader = PdfReader(str(path))
+    reader = _pdf_reader_from_location(path)
     source_rows: list[SupportSourceLine] = []
     rejected: list[dict[str, Any]] = []
     seen: set[str] = set()
@@ -576,7 +659,7 @@ def _fortuneo_noise_line(line: str) -> bool:
 
 
 def parse_fortuneo_av_pdf(path: str | Path, *, source_id: str, envelope: str) -> dict[str, Any]:
-    reader = PdfReader(str(path))
+    reader = _pdf_reader_from_location(path)
     lines_by_page: list[tuple[int, str]] = []
     for page_index, page in enumerate(reader.pages, start=1):
         text = page.extract_text() or ""
@@ -657,6 +740,147 @@ def parse_fortuneo_av_pdf(path: str | Path, *, source_id: str, envelope: str) ->
     )
 
 
+def _strip_html(value: str) -> str:
+    without_tags = re.sub(r"<[^>]+>", " ", value)
+    return _clean_line(html_lib.unescape(without_tags))
+
+
+def parse_linxea_web_html(html_text: str, *, source_id: str, envelope: str) -> dict[str, Any]:
+    accepted: list[SupportRow] = []
+    source_rows: list[SupportSourceLine] = []
+    rejected: list[dict[str, Any]] = []
+    seen: set[str] = set()
+
+    table_rows = re.findall(r"<tr\b[^>]*>(.*?)</tr>", html_text, flags=re.IGNORECASE | re.DOTALL)
+    for row_index, raw_row in enumerate(table_rows, start=1):
+        cells = [
+            _strip_html(cell)
+            for cell in re.findall(r"<t[dh]\b[^>]*>(.*?)</t[dh]>", raw_row, flags=re.IGNORECASE | re.DOTALL)
+        ]
+        isin_index = next((index for index, cell in enumerate(cells) if _is_valid_isin(cell)), None)
+        if isin_index is None:
+            continue
+        isin = cells[isin_index].upper()
+        if isin in seen:
+            continue
+
+        if isin_index >= 2:
+            name = cells[isin_index - 1]
+            manager = cells[8] if len(cells) > 8 and cells[8] else None
+            category = cells[9] if len(cells) > 9 and cells[9] else ""
+            risk_cell = cells[11] if len(cells) > 11 else ""
+        else:
+            name = cells[isin_index + 1] if len(cells) > isin_index + 1 else isin
+            manager = cells[isin_index + 2] if len(cells) > isin_index + 2 and cells[isin_index + 2] else None
+            category = cells[isin_index + 3] if len(cells) > isin_index + 3 else ""
+            risk_cell = next((cell for cell in reversed(cells) if re.fullmatch(r"[1-7]", cell)), "")
+
+        sri = int(risk_cell) if re.fullmatch(r"[1-7]", risk_cell or "") else None
+        support_type = _support_type(name, None, f"{name} {category}")
+        if support_type == "UNKNOWN":
+            support_type = "FUND"
+        score, score_details = _score_support(
+            support_type=support_type,
+            sri=sri,
+            total_fee_pct=None,
+            performance_5y_pct=None,
+        )
+        support = SupportRow(
+            source_id=source_id,
+            isin=isin,
+            name=name or isin,
+            support_type=support_type,
+            legal_form=None,
+            manager=manager,
+            sri=sri,
+            performance_1y_pct=None,
+            performance_5y_pct=None,
+            asset_fee_pct=None,
+            contract_fee_pct=None,
+            total_fee_pct=None,
+            retrocession_pct=None,
+            morningstar_rating=None,
+            quantalys_rating=None,
+            metrics_state="METRICS_UNAVAILABLE",
+            score=score,
+            score_details=score_details,
+            page=None,
+            raw_text=" | ".join(cells),
+        )
+        seen.add(isin)
+        accepted.append(support)
+        source_rows.append(
+            _source_line_from_support(
+                support,
+                external_id=_stable_external_id(source_id, isin, support.name),
+                source_quality="PARTIAL",
+                identifier_state="PARTIAL_SOURCE",
+                envelope=envelope,
+            )
+        )
+
+    for isin in _valid_isins(html_lib.unescape(re.sub(r"<[^>]+>", " ", html_text))):
+        if isin in seen:
+            continue
+        rejected.append({"line": isin, "reason": "isin_found_outside_structured_table"})
+
+    return _parse_report(
+        accepted=accepted,
+        source_rows=source_rows,
+        rejected=rejected,
+        expected_count=None,
+        source_quality="PARTIAL",
+    )
+
+
+def parse_linxea_web(location: str | Path, *, source_id: str, envelope: str) -> dict[str, Any]:
+    return parse_linxea_web_html(_read_text_location(location), source_id=source_id, envelope=envelope)
+
+
+def _segments_by_valid_isin(text: str) -> list[str]:
+    normalized = _clean_line(text)
+    matches = [match for match in ISIN_CANDIDATE_RE.finditer(normalized) if _is_valid_isin(match.group(1))]
+    segments: list[str] = []
+    for index, match in enumerate(matches):
+        end = matches[index + 1].start() if index + 1 < len(matches) else len(normalized)
+        segments.append(normalized[match.start():end].strip())
+    return segments
+
+
+def parse_fortuneo_perfsupport_text(text: str, *, source_id: str) -> dict[str, Any]:
+    accepted: list[SupportRow] = []
+    rejected: list[dict[str, Any]] = []
+    seen: set[str] = set()
+
+    for segment in _segments_by_valid_isin(text):
+        isin_match = ISIN_AT_START_RE.match(segment.upper())
+        isin = isin_match.group(1) if isin_match else None
+        if not isin or isin in seen:
+            continue
+        parsed = _parse_support_line(segment, page=None, source_id=source_id)
+        if parsed is None:
+            rejected.append({"line": segment[:500], "reason": "unparsed_fortuneo_web_row"})
+            continue
+        if parsed.support_type == "UNKNOWN":
+            parsed = replace(parsed, support_type="FUND")
+        seen.add(isin)
+        accepted.append(parsed)
+
+    return _parse_report(
+        accepted=accepted,
+        source_rows=[],
+        rejected=rejected,
+        expected_count=None,
+        source_quality="COMPLETE",
+    )
+
+
+def parse_fortuneo_perfsupport(location: str | Path, *, source_id: str) -> dict[str, Any]:
+    reader = _pdf_reader_from_location(location)
+    text = "\n".join(page.extract_text() or "" for page in reader.pages)
+    return parse_fortuneo_perfsupport_text(text, source_id=source_id)
+
+
 def _parse_report(
     *,
     accepted: list[SupportRow],
@@ -707,6 +931,10 @@ def parse_support_source(
         return parse_linxea_funds_pdf(path, source_id=source_id, envelope=envelope)
     if source == "fortuneo-av":
         return parse_fortuneo_av_pdf(path, source_id=source_id, envelope=envelope)
+    if source == "linxea-web":
+        return parse_linxea_web(path, source_id=source_id, envelope=envelope)
+    if source == "fortuneo-av-web":
+        return parse_fortuneo_perfsupport(path, source_id=source_id)
     supported = ", ".join(SUPPORTED_SOURCES)
     raise RuntimeError(f"Unsupported --source '{source}'. Expected one of: {supported}.")
 
@@ -746,6 +974,7 @@ def apply_supports(
     provider: str | None,
     source_quality: str,
     source_file: str,
+    source_url: str | None,
     source_date: date | None,
     envelope: str,
     rows: list[SupportRow],
@@ -760,6 +989,7 @@ def apply_supports(
         "provider": provider,
         "source_quality": source_quality,
         "source_file": source_file,
+        "source_url": source_url,
         "source_date": source_date.isoformat() if source_date else None,
         "report_json": report_json,
         "updated_at": now,
@@ -797,9 +1027,10 @@ def apply_supports(
 
 
 def run_import(
-    input_path: str | Path,
+    input_path: str | Path | None = None,
     *,
     source: str,
+    url: str | None = None,
     source_date: str | None = None,
     envelope: str | None = None,
     dry_run: bool = True,
@@ -809,8 +1040,11 @@ def run_import(
     parsed_source_date = _parse_source_date(source_date)
     resolved_envelope = envelope or metadata["default_envelope"]
     resolved_source_id = _source_id(source, parsed_source_date)
+    input_location = url or input_path or DEFAULT_SOURCE_URLS.get(source)
+    if input_location is None:
+        raise RuntimeError(f"--file is required for --source {source}")
     parse_report = parse_support_source(
-        input_path,
+        input_location,
         source=source,
         source_id=resolved_source_id,
         envelope=resolved_envelope,
@@ -839,7 +1073,8 @@ def run_import(
             source_kind=source,
             provider=metadata["provider"],
             source_quality=metadata["source_quality"],
-            source_file=Path(input_path).name,
+            source_file=_location_display_name(input_location),
+            source_url=str(input_location) if _is_url(input_location) else None,
             source_date=parsed_source_date,
             envelope=resolved_envelope,
             rows=accepted,
@@ -854,7 +1089,8 @@ def run_import(
         "source_id": resolved_source_id,
         "source": source,
         "source_quality": metadata["source_quality"],
-        "source_file": Path(input_path).name,
+        "source_file": _location_display_name(input_location),
+        "source_url": str(input_location) if _is_url(input_location) else None,
         "envelope": resolved_envelope,
         "rows_read": parse_report["rows_read"],
         "rows_accepted": parse_report["rows_accepted"],
@@ -874,9 +1110,10 @@ def run_import(
 
 
 def _parse_args() -> argparse.Namespace:
-    parser = argparse.ArgumentParser(description="Import insurance/PER support universe from source documents")
+    parser = argparse.ArgumentParser(description="Import insurance/PER support universe from source documents or public web sources")
     parser.add_argument("--source", required=True, choices=SUPPORTED_SOURCES, help="Support universe source")
-    parser.add_argument("--file", required=True, help="PDF support list")
+    parser.add_argument("--file", default=None, help="Local PDF/HTML support list")
+    parser.add_argument("--url", default=None, help="Public web/PDF URL. Web sources use a default official URL when omitted.")
     parser.add_argument("--source-date", default=None, help="Source date as YYYY-MM-DD")
     parser.add_argument("--envelope", default=None, help="Envelope availability label")
     parser.add_argument("--dry-run", action="store_true", help="Parse and report without writing Supabase")
@@ -896,6 +1133,7 @@ def main() -> int:
         report = run_import(
             args.file,
             source=args.source,
+            url=args.url,
             source_date=args.source_date,
             envelope=args.envelope,
             dry_run=args.dry_run,
@@ -905,7 +1143,7 @@ def main() -> int:
         report = {
             "ok": False,
             "dry_run": args.dry_run,
-            "source_file": Path(args.file).name,
+            "source_file": _location_display_name(args.url or args.file) if (args.url or args.file) else None,
             "error": str(exc),
         }
     print(json.dumps(report, indent=2, ensure_ascii=False, default=str))
