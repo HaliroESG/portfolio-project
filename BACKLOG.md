@@ -364,7 +364,7 @@ BL-009	DONE
 
 Next Action (P0)
 
-Apply the pending Supabase schema, import the target Excel in dry-run then apply mode, import the latest Fortuneo/IBKR position snapshots in dry-run then apply mode, then backfill technical indicators for `market_watch`.
+Apply the pending Supabase schema, import the target Excel in dry-run then apply mode, import the latest Fortuneo/Linxea/IBKR position snapshots in dry-run then apply mode, then backfill technical indicators for `market_watch`.
 
 Then re-run:
 
@@ -423,7 +423,7 @@ Scope delivered:
 - Supabase smoke reports top Trident scored symbols without historical price coverage; top-score coverage has been restored after remediation and remains a regression guard.
 - Target Excel import script added for service-role backend workflows; accepted columns: `portfolio_id`, `ticker` or resolvable `isin`, `name`, `asset_class`, `currency`, `target_weight_pct`, `notes`.
 - Target imports now stamp `target_source`, `target_source_file`, and `target_updated_at` while preserving `quantity_current` and `pru`.
-- Broker position snapshot import added for Fortuneo/IBKR CSV exports; latest snapshots are persisted and consolidated into `portfolio_positions` as the official current portfolio view.
+- Broker position snapshot import added for Fortuneo `.xls`, Linxea PER `.xlsx`, IBKR PortfolioAnalyst CSV, and generic/manual canonical CSV exports; latest snapshots are persisted and consolidated into `portfolio_positions` as the official current portfolio view.
 - Broker CSV import is hardened to reject public Supabase keys; broker reconciliation RLS grants remain read-only for frontend state.
 - Additive SQL read model `portfolio_decision_items_latest` added for arbitration decisions.
 - New `/arbitrage` route added with action, data issue, asset class and currency filters.
@@ -438,5 +438,5 @@ Deployment note:
 Admin CLI:
 - Dry-run target: `python backend/scripts/import_target_allocations_excel.py --file target.xlsx --dry-run`
 - Apply target: `SUPABASE_URL=... SUPABASE_SERVICE_ROLE_KEY=... python backend/scripts/import_target_allocations_excel.py --file target.xlsx --apply`
-- Dry-run actual snapshot: `python backend/scripts/import_broker_positions.py --broker fortuneo --account-id ... --portfolio-id ... --positions-file positions.csv --dry-run`
+- Dry-run actual snapshot: `python backend/scripts/import_broker_positions.py --broker fortuneo|linxea|ibkr|manual --account-id ... --portfolio-id ... --positions-file positions.csv --dry-run`
 - Apply actual snapshot: `SUPABASE_URL=... SUPABASE_SERVICE_ROLE_KEY=... python backend/scripts/import_broker_positions.py --broker ibkr --account-id ... --portfolio-id ... --positions-file positions.csv --as-of-date 2026-05-25 --apply`

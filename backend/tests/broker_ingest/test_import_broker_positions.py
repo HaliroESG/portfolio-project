@@ -1,8 +1,17 @@
 from __future__ import annotations
 
 from datetime import date
+from decimal import Decimal
 
-from scripts.import_broker_positions import run_import, sync_portfolio_positions_from_snapshots
+import pandas as pd
+
+from scripts.import_broker_positions import (
+    _positions_from_fortuneo_dataframe,
+    _positions_from_linxea_dataframe,
+    parse_positions_file,
+    run_import,
+    sync_portfolio_positions_from_snapshots,
+)
 
 
 class _Response:
@@ -153,6 +162,63 @@ MSFT,US5949181045,Microsoft,5,100,USD
     assert report["items_persisted"] == 0
     assert report["snapshot_preview"][0]["name"] == "Microsoft"
     assert report["portfolio_sync"]["warnings"] == ["dry run: Supabase was not written"]
+
+
+def test_ibkr_portfolio_analyst_positions_are_extracted_from_open_position_summary(tmp_path):
+    source = tmp_path / "ibkr-pa.csv"
+    source.write_text(
+        """Introduction,Header,Name,Account
+Introduction,Data,Astrocyte,U1
+Open Position Summary,Header,Date,FinancialInstrument,Currency,Symbol,Description,Sector,Quantity,ClosePrice,Value,Cost Basis,UnrealizedP&L,FXRateToBase
+Open Position Summary,Data,05/25/2026,ETFs,USD,CSPX,ISHARES CORE S&P 500,Broad,2,806.07,1612.14,1500,112.14,0.85885
+Open Position Summary,Data,05/25/2026,Cash,CHF,CHF,Swiss Franc,Cash,166.23,1.0973,182.41, , ,1.0973
+Open Position Summary,Data,Total,ETFs,EUR,,,,,,1612.14,1500,112.14
+Concentration,Header,SubSection,Symbol
+""",
+        encoding="utf-8",
+    )
+
+    positions = parse_positions_file(source, broker="ibkr")
+
+    assert len(positions) == 2
+    assert positions[0].symbol == "CSPX"
+    assert positions[0].average_cost == Decimal("750")
+    assert positions[1].symbol == "CHF"
+    assert str(positions[1].average_cost) == "1"
+
+
+def test_fortuneo_xls_shape_dataframe_extracts_security_rows_only():
+    frame = pd.DataFrame([
+        ["Portefeuille 014802615316", None, None, None, None, None, None, None, None, None, None, None],
+        ["Libellé", "Cours", None, "Dev", "Var/Veille", "Qté", "PRU", "Valorisation", "+/- values", "+/- values (%)", "Poids", "ISIN"],
+        ["AIR LIQUIDE (AI)", 181.96, None, "EUR", 0, 61, 142.3048, 11099.56, 0, 0, 0.18, "FR0000120073"],
+        ["Solde position CPT", "-", "-", None, None, 61, 142.3048, 11099.56, 0, 0, 0.18, "FR0000120073"],
+    ])
+
+    positions = _positions_from_fortuneo_dataframe(frame)
+
+    assert len(positions) == 1
+    assert positions[0].symbol == "AI"
+    assert positions[0].isin == "FR0000120073"
+    assert str(positions[0].quantity) == "61"
+
+
+def test_linxea_dataframe_extracts_per_supports_by_isin():
+    frame = pd.DataFrame([
+        {
+            "Nom du support": "Amundi Core EURO STOXX 50 UCITS ETF EUR Acc",
+            "ISIN": "LU1681047236",
+            "Nbre de parts": 33.04727,
+            "Prix de Revient Moyen": 146.99,
+        }
+    ])
+
+    positions = _positions_from_linxea_dataframe(frame)
+
+    assert len(positions) == 1
+    assert positions[0].symbol is None
+    assert positions[0].isin == "LU1681047236"
+    assert positions[0].currency == "EUR"
 
 
 def test_run_import_apply_persists_snapshot_and_preserves_targets(tmp_path):

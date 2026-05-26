@@ -1,8 +1,10 @@
 from __future__ import annotations
 
 import argparse
+import csv
 import json
 import os
+import re
 import sys
 from dataclasses import dataclass, field
 from datetime import date, datetime, timezone
@@ -18,7 +20,7 @@ from broker_ingest.reconciliation import BrokerPosition, parse_broker_positions_
 from supabase_key_guard import require_backend_supabase_key  # noqa: E402
 
 
-SUPPORTED_BROKERS = {"fortuneo", "ibkr"}
+SUPPORTED_BROKERS = {"fortuneo", "ibkr", "linxea", "manual"}
 
 
 @dataclass
@@ -123,19 +125,22 @@ def resolve_ticker_from_isin(supabase_client: Any, isin: str) -> str | None:
 
 def _resolve_ticker_for_item(item: dict[str, Any], supabase_client: Any | None) -> tuple[str | None, str | None]:
     symbol = _clean_upper(str(item.get("symbol") or "")) if item.get("symbol") is not None else None
+    isin = _clean_upper(str(item.get("isin") or "")) if item.get("isin") is not None else None
+    if isin and supabase_client is not None:
+        try:
+            ticker = resolve_ticker_from_isin(supabase_client, isin)
+        except Exception as exc:
+            if symbol:
+                return symbol, f"ISIN resolution failed for {isin}; fell back to symbol {symbol}: {exc}"
+            return None, f"ISIN resolution failed for {isin}: {exc}"
+        if ticker:
+            return ticker, None
     if symbol:
         return symbol, None
-    isin = _clean_upper(str(item.get("isin") or "")) if item.get("isin") is not None else None
     if not isin:
         return None, "missing symbol and isin"
     if supabase_client is None:
         return None, f"ticker missing and ISIN {isin} cannot be resolved without Supabase"
-    try:
-        ticker = resolve_ticker_from_isin(supabase_client, isin)
-    except Exception as exc:
-        return None, f"ISIN resolution failed for {isin}: {exc}"
-    if ticker:
-        return ticker, None
     return None, f"ticker missing and ISIN {isin} could not be resolved"
 
 
@@ -182,7 +187,157 @@ def _read_snapshot_items(supabase_client: Any, run_ids: list[str]) -> list[dict[
 def _decimal_from_row(value: Any) -> Decimal:
     if value is None or value == "":
         return Decimal("0")
-    return Decimal(str(value))
+    text = str(value).strip().replace("\u00a0", "").replace(" ", "").replace(",", ".")
+    if not text or text == "-":
+        return Decimal("0")
+    return Decimal(text)
+
+
+def _optional_decimal_from_row(value: Any) -> Decimal | None:
+    if value is None or value == "":
+        return None
+    text = str(value).strip().replace("\u00a0", "").replace(" ", "").replace(",", ".")
+    if not text or text == "-":
+        return None
+    return Decimal(text)
+
+
+def _extract_parenthesized_symbol(label: str | None) -> str | None:
+    if not label:
+        return None
+    match = re.search(r"\(([^()]*)\)\s*$", label.strip())
+    if not match:
+        return None
+    symbol = match.group(1).strip()
+    return None if not symbol or symbol == "-" else _clean_upper(symbol)
+
+
+def _rows_from_ibkr_portfolio_analyst_csv(path: str | Path) -> list[BrokerPosition]:
+    positions: list[BrokerPosition] = []
+    header: list[str] | None = None
+    with open(path, "r", encoding="utf-8-sig", newline="") as handle:
+        reader = csv.reader(handle)
+        for raw_row in reader:
+            if len(raw_row) >= 3 and raw_row[0] == "Open Position Summary" and raw_row[1] == "Header":
+                header = raw_row[2:]
+                continue
+            if header is None:
+                continue
+            if len(raw_row) >= 2 and raw_row[1] == "Header":
+                break
+            if len(raw_row) < 3 or raw_row[0] != "Open Position Summary" or raw_row[1] != "Data":
+                continue
+
+            payload = dict(zip(header, raw_row[2:]))
+            if payload.get("Date") == "Total":
+                continue
+            quantity = _decimal_from_row(payload.get("Quantity"))
+            if quantity == 0:
+                continue
+
+            instrument = str(payload.get("FinancialInstrument") or "").strip()
+            currency = _clean_upper(payload.get("Currency"))
+            symbol = _clean_upper(payload.get("Symbol"))
+            cost_basis = _optional_decimal_from_row(payload.get("Cost Basis"))
+            average_cost = None
+            if instrument.lower() == "cash":
+                average_cost = Decimal("1")
+                symbol = currency
+            elif cost_basis is not None and quantity != 0:
+                average_cost = cost_basis / quantity
+
+            positions.append(
+                BrokerPosition(
+                    symbol=symbol,
+                    isin=None,
+                    quantity=quantity,
+                    average_cost=average_cost,
+                    currency=currency,
+                    name=str(payload.get("Description") or "").strip() or None,
+                )
+            )
+    return positions
+
+
+def _positions_from_fortuneo_dataframe(frame: Any) -> list[BrokerPosition]:
+    header_index = None
+    for idx, row in frame.iterrows():
+        values = [str(value).strip() for value in row.tolist()]
+        if "Libellé" in values:
+            header_index = idx
+            break
+    if header_index is None:
+        raise RuntimeError("Fortuneo positions file does not contain a Libellé header row")
+
+    headers = [str(value).strip() if str(value) != "nan" else "" for value in frame.iloc[header_index].tolist()]
+    positions: list[BrokerPosition] = []
+    for row_number, row in frame.iloc[header_index + 1 :].iterrows():
+        payload = {headers[i]: row.iloc[i] for i in range(min(len(headers), len(row))) if headers[i]}
+        label = str(payload.get("Libellé") or "").strip()
+        if not label or label == "nan" or label == "Solde position CPT":
+            continue
+        quantity = _decimal_from_row(payload.get("Qté"))
+        if quantity == 0:
+            continue
+        positions.append(
+            BrokerPosition(
+                symbol=_extract_parenthesized_symbol(label),
+                isin=_clean_upper(str(payload.get("ISIN") or "")),
+                quantity=quantity,
+                average_cost=_optional_decimal_from_row(payload.get("PRU")),
+                currency=_clean_upper(str(payload.get("Dev") or "")) or "EUR",
+                name=label,
+                source_row=int(row_number) + 1,
+            )
+        )
+    return positions
+
+
+def _positions_from_linxea_dataframe(frame: Any) -> list[BrokerPosition]:
+    positions: list[BrokerPosition] = []
+    for row_number, row in frame.iterrows():
+        name = str(row.get("Nom du support") or "").strip()
+        isin = _clean_upper(str(row.get("ISIN") or ""))
+        quantity = _decimal_from_row(row.get("Nbre de parts"))
+        if not name or not isin or quantity == 0:
+            continue
+        positions.append(
+            BrokerPosition(
+                symbol=None,
+                isin=isin,
+                quantity=quantity,
+                average_cost=_optional_decimal_from_row(row.get("Prix de Revient Moyen")),
+                currency="EUR",
+                name=name,
+                source_row=int(row_number) + 2,
+            )
+        )
+    return positions
+
+
+def parse_positions_file(path: str | Path, *, broker: str) -> list[BrokerPosition]:
+    source = Path(path)
+    broker_key = broker.lower()
+    suffix = source.suffix.lower()
+
+    if broker_key == "ibkr" and suffix == ".csv":
+        positions = _rows_from_ibkr_portfolio_analyst_csv(source)
+        if positions:
+            return positions
+
+    if broker_key == "fortuneo" and suffix in {".xls", ".xlsx"}:
+        import pandas as pd
+
+        frame = pd.read_excel(source, sheet_name=0, header=None)
+        return _positions_from_fortuneo_dataframe(frame)
+
+    if broker_key == "linxea" and suffix in {".xls", ".xlsx"}:
+        import pandas as pd
+
+        frame = pd.read_excel(source, sheet_name=0)
+        return _positions_from_linxea_dataframe(frame)
+
+    return parse_broker_positions_csv(source)
 
 
 def aggregate_snapshot_items(
@@ -440,7 +595,7 @@ def run_import(
 
     path = Path(positions_file)
     snapshot_date = as_of_date or date.today()
-    positions = parse_broker_positions_csv(path)
+    positions = parse_positions_file(path, broker=broker_key)
     base_report = {
         "ok": True,
         "dry_run": dry_run,
