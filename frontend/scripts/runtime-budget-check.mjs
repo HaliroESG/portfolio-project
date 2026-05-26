@@ -18,6 +18,7 @@ function assertCheck(name, ok, detail) {
 
 const trident = read('frontend/app/trident/page.tsx')
 const targets = read('frontend/app/targets/page.tsx')
+const supports = read('frontend/app/supports/page.tsx')
 const dashboard = read('frontend/app/page.tsx')
 const dataHealth = read('frontend/components/DataHealthPanel.tsx')
 
@@ -36,6 +37,11 @@ const checks = [
     'targets.mobile_cards',
     targets.includes('md:hidden') && targets.includes('hidden md:block') && targets.includes('Portfolio Drift'),
     'Targets should expose mobile cards and keep the table desktop-only.'
+  ),
+  assertCheck(
+    'supports.pagination',
+    supports.includes('const PAGE_SIZE = 100') && supports.includes('pageRows.map') && supports.includes('data-support-row="true"'),
+    'Supports should page large support catalogues and expose a DOM marker.'
   ),
   assertCheck(
     'dashboard.lazy_heavy_surfaces',

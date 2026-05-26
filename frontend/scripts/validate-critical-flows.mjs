@@ -260,6 +260,8 @@ try {
 
   const targetsPage = read('frontend/app/targets/page.tsx')
   const arbitragePage = read('frontend/app/arbitrage/page.tsx')
+  const supportsPage = read('frontend/app/supports/page.tsx')
+  const sidebar = read('frontend/components/Sidebar.tsx')
   addCheck(
     'frontend.targets.portfolio_drift_mobile_cards',
     hasAll(targetsPage, [
@@ -276,6 +278,19 @@ try {
     'Targets should expose Portfolio Drift metrics, broker snapshot freshness, target import status, and mobile cards while staying frontend read-only.'
   )
   addCheck(
+    'frontend.targets.target_studio_two_level_models',
+    hasAll(targetsPage, [
+      'Target Studio',
+      'target_models',
+      'target_buckets',
+      'target_envelope_lines',
+      'Strategic buckets',
+      'Envelope execution lines',
+      'Two-level target model',
+    ]),
+    'Targets should expose Target Studio with strategic buckets and envelope execution lines.'
+  )
+  addCheck(
     'frontend.arbitrage.decision_dashboard',
     hasAll(arbitragePage, [
       'portfolio_decision_items_latest',
@@ -288,6 +303,33 @@ try {
       'Informative',
     ]),
     'Arbitrage should read the decision read model and expose filters, actions, amount, justification, and read-only semantics.'
+  )
+  addCheck(
+    'frontend.arbitrage.allocation_advice',
+    hasAll(arbitragePage, [
+      'allocation_advice_items_latest',
+      'Allocation advice',
+      "Flux d'abord",
+      'NEW_CASH_FIRST',
+      'INTERNAL_ARBITRAGE',
+      'preferred_execution',
+    ]),
+    'Arbitrage should expose bucket-level allocation advice using the flux-first policy.'
+  )
+  addCheck(
+    'frontend.supports.catalogue_screen',
+    hasAll(supportsPage, [
+      'investment_supports',
+      'support_availability',
+      'Support selector',
+      'METRICS_UNAVAILABLE',
+      'External ratings optional',
+      'data-support-row="true"',
+    ]) && hasAll(sidebar, [
+      "name: 'Supports'",
+      "href: '/supports'",
+    ]),
+    'Supports should expose the insurance/PER support catalogue and be reachable from navigation.'
   )
 
   const fxPage = read('frontend/app/fx/page.tsx')
@@ -317,6 +359,11 @@ try {
       'actual_source_accounts?: BrokerPositionSourceAccount[] | null;',
       'provider_symbol: string | null',
       'PortfolioDecisionItemRow',
+      'InvestmentSupportRow',
+      'SupportAvailabilityRow',
+      'TargetBucketRow',
+      'TargetEnvelopeLineRow',
+      'AllocationAdviceRow',
     ]),
     'types.ts should carry current trend-state and portfolio model fields.'
   )

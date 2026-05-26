@@ -10,8 +10,8 @@
       "technical_schema": "present",
       "row_count": 39,
       "sample": {
-        "ticker": "GOLD",
-        "last_update": "2026-05-25T20:36:45.545604+00:00",
+        "ticker": "EIMI",
+        "last_update": "2026-05-18T10:36:17.412152+00:00",
         "macd_line": null,
         "macd_signal": null,
         "macd_hist": null,
@@ -29,8 +29,8 @@
       "sample": {
         "id": "USD",
         "symbol": "$",
-        "rate_to_eur": 0.85860002040863,
-        "last_update": "2026-05-25T20:36:35.541578+00:00"
+        "rate_to_eur": 0.859499990940094,
+        "last_update": "2026-05-26T20:46:15.877671+00:00"
       }
     },
     {
@@ -72,13 +72,13 @@
       "name": "etl_runs",
       "ok": true,
       "status": "PASS",
-      "row_count": 243,
+      "row_count": 246,
       "sample": {
         "job_name": "historical_prices_trident_sync",
-        "status": "RUNNING",
-        "started_at": "2026-05-25T20:36:41.918251+00:00",
-        "finished_at": null,
-        "duration_sec": null
+        "status": "SUCCESS",
+        "started_at": "2026-05-25T22:28:47.035103+00:00",
+        "finished_at": "2026-05-25T23:27:06.629436+00:00",
+        "duration_sec": 3499.59
       }
     },
     {
@@ -99,7 +99,7 @@
         "criteria_missing_count": 6,
         "latest_roic": 0.054366556450964575,
         "latest_net_debt_to_ebitda": 2.078292865285297,
-        "updated_at": "2026-05-25T20:35:55.931597+00:00"
+        "updated_at": "2026-05-25T22:27:56.44156+00:00"
       },
       "schema_warning": "provider_symbol is missing from trident_screener_latest; apply backend/sql/20260525_portfolio_decision_items.sql."
     },
@@ -124,30 +124,30 @@
       "status": "PASS",
       "row_count": 5,
       "sample": {
-        "ticker": "COH.AX",
-        "date": "2007-06-28",
-        "adj_close": 25.5163633712732,
+        "ticker": "ITW",
+        "date": "2016-04-18",
+        "adj_close": 73.64462998539693,
         "currency": "EUR",
         "source": "yfinance",
-        "updated_at": "2026-05-25T21:00:25.965069+00:00",
-        "adj_close_local": 40.534976959228516,
-        "local_currency": "AUD",
-        "fx_rate_to_eur": 0.6294900178909302
+        "updated_at": "2026-05-25T23:03:10.411614+00:00",
+        "adj_close_local": 83.21803283691406,
+        "local_currency": "USD",
+        "fx_rate_to_eur": 0.8849599957466125
       }
     },
     {
       "name": "historical_price_coverage",
       "ok": true,
       "status": "PASS",
-      "row_count": 956,
+      "row_count": 1280,
       "sample": {
-        "ticker": "000080.KS",
+        "ticker": "2020.HK",
         "requested_start_date": "1999-01-01",
         "requested_end_date": "2026-05-25",
-        "earliest_date": "2000-01-04",
-        "coverage_pct": 92.30446341122149,
+        "earliest_date": "2007-07-10",
+        "coverage_pct": 65.09024765635931,
         "used_proxy": false,
-        "updated_at": "2026-05-25T20:36:46.380288+00:00"
+        "updated_at": "2026-05-25T22:38:30.332824+00:00"
       }
     },
     {
@@ -225,6 +225,30 @@
       "missing_count": 0,
       "missing": [],
       "warning": "provider_symbol is missing from trident_screener_latest; coverage checked by ticker only."
+    },
+    {
+      "name": "investment_supports",
+      "ok": true,
+      "status": "PASS",
+      "error": "Could not find the table 'public.investment_supports' in the schema cache",
+      "feature_state": "SCHEMA_PENDING",
+      "schema_warning": "Apply backend/sql/20260526_supports_targets_advice.sql and run import_support_universe.py."
+    },
+    {
+      "name": "target_models",
+      "ok": true,
+      "status": "PASS",
+      "error": "Could not find the table 'public.target_models' in the schema cache",
+      "feature_state": "SCHEMA_PENDING",
+      "schema_warning": "Apply backend/sql/20260526_supports_targets_advice.sql and run import_target_model.py."
+    },
+    {
+      "name": "allocation_advice_items_latest",
+      "ok": true,
+      "status": "PASS",
+      "error": "Could not find the table 'public.allocation_advice_items_latest' in the schema cache",
+      "feature_state": "SCHEMA_PENDING",
+      "schema_warning": "Apply backend/sql/20260526_supports_targets_advice.sql and import active target models."
     }
   ]
 }

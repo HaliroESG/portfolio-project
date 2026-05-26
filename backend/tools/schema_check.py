@@ -116,6 +116,46 @@ CRITICAL_SCHEMA: dict[str, list[str]] = {
         "rebalance_amount_eur", "action", "confidence", "reason_codes",
         "data_state", "price_state", "updated_at",
     ],
+    "support_sources": [
+        "id", "source_name", "source_kind", "provider", "source_file", "source_date",
+        "report_json", "imported_at", "updated_at",
+    ],
+    "investment_supports": [
+        "source_id", "isin", "name", "support_type", "legal_form", "manager",
+        "sri", "performance_1y_pct", "performance_5y_pct", "asset_fee_pct",
+        "contract_fee_pct", "total_fee_pct", "morningstar_rating",
+        "quantalys_rating", "metrics_state", "score", "score_details",
+        "page", "raw_text", "updated_at",
+    ],
+    "support_availability": [
+        "source_id", "isin", "envelope", "available", "constraints_json", "updated_at",
+    ],
+    "target_models": [
+        "id", "portfolio_scope", "model_name", "source_file", "source_kind",
+        "as_of_date", "is_active", "target_total_pct", "status", "report_json",
+        "imported_at", "updated_at",
+    ],
+    "target_buckets": [
+        "id", "model_id", "portfolio_scope", "bucket_key", "bucket_label",
+        "parent_bucket_key", "target_weight_pct", "lower_band_pct",
+        "upper_band_pct", "source_sheet", "source_row", "updated_at",
+    ],
+    "target_envelope_lines": [
+        "id", "model_id", "portfolio_scope", "envelope", "ticker", "isin",
+        "instrument", "asset_class", "region", "currency", "target_weight_pct",
+        "target_value_eur", "notes", "source_sheet", "source_row", "updated_at",
+    ],
+    "target_model_audit_holdings": [
+        "id", "model_id", "portfolio_scope", "envelope", "ticker", "isin",
+        "instrument", "asset_class", "region", "currency", "market_value_eur",
+        "quantity", "notes", "source_sheet", "source_row", "updated_at",
+    ],
+    "allocation_advice_items_latest": [
+        "portfolio_scope", "model_id", "model_name", "bucket_key",
+        "bucket_label", "current_value_eur", "current_weight_pct",
+        "target_weight_pct", "drift_pct", "rebalance_amount_eur",
+        "action", "confidence", "reason_codes", "preferred_execution", "updated_at",
+    ],
 }
 
 

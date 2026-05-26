@@ -1,7 +1,7 @@
 import { chromium } from 'playwright'
 
 const baseUrl = process.env.BASE_URL || 'http://127.0.0.1:3001'
-const routes = ['/', '/trident', '/geo', '/fx', '/compare', '/targets', '/arbitrage']
+const routes = ['/', '/trident', '/geo', '/fx', '/compare', '/targets', '/arbitrage', '/supports']
 const viewports = [
   { name: 'desktop', width: 1280, height: 720 },
   { name: 'mobile', width: 390, height: 844 },
@@ -19,7 +19,16 @@ function isIgnoredConsoleError(entry) {
     ) ||
     (
       entry.text.includes('Failed to load resource: the server responded with a status of 404') &&
-      (entry.url.includes('portfolio_decision_items_latest') || entry.url.includes('broker_position_snapshot_runs'))
+      (
+        entry.url.includes('portfolio_decision_items_latest') ||
+        entry.url.includes('broker_position_snapshot_runs') ||
+        entry.url.includes('investment_supports') ||
+        entry.url.includes('support_availability') ||
+        entry.url.includes('target_models') ||
+        entry.url.includes('target_buckets') ||
+        entry.url.includes('target_envelope_lines') ||
+        entry.url.includes('allocation_advice_items_latest')
+      )
     )
   )
 }

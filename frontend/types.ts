@@ -444,3 +444,137 @@ export interface PortfolioDecisionItemRow {
   total_value_eur: number | null
   updated_at: string | null
 }
+
+export type InvestmentSupportType =
+  | 'ETF'
+  | 'FUND'
+  | 'FONDS_EURO'
+  | 'SCPI'
+  | 'SCI'
+  | 'OPCI'
+  | 'PRIVATE_ASSET'
+  | 'UNKNOWN'
+export type SupportMetricsState = 'READY' | 'PARTIAL' | 'METRICS_UNAVAILABLE'
+
+export interface SupportSourceRow {
+  id: string
+  source_name: string
+  source_kind: string
+  provider: string | null
+  source_file: string | null
+  source_date: string | null
+  report_json: Record<string, unknown>
+  imported_at: string
+  updated_at: string
+}
+
+export interface InvestmentSupportRow {
+  source_id: string
+  isin: string
+  name: string
+  support_type: InvestmentSupportType
+  legal_form: string | null
+  manager: string | null
+  sri: number | null
+  performance_1y_pct: number | null
+  performance_5y_pct: number | null
+  asset_fee_pct: number | null
+  contract_fee_pct: number | null
+  total_fee_pct: number | null
+  retrocession_pct: number | null
+  morningstar_rating: number | null
+  quantalys_rating: number | null
+  computed_momentum_pct: number | null
+  computed_volatility_pct: number | null
+  computed_drawdown_pct: number | null
+  computed_beta: number | null
+  computed_alpha_pct: number | null
+  metrics_state: SupportMetricsState
+  score: number | null
+  score_details: Record<string, unknown>
+  page: number | null
+  raw_text: string | null
+  updated_at: string
+}
+
+export interface SupportAvailabilityRow {
+  source_id: string
+  isin: string
+  envelope: string
+  available: boolean
+  constraints_json: Record<string, unknown>
+  updated_at: string
+}
+
+export type PortfolioScope = 'PERSO' | 'PRO'
+
+export interface TargetModelRow {
+  id: string
+  portfolio_scope: PortfolioScope
+  model_name: string
+  source_file: string
+  source_kind: string
+  as_of_date: string | null
+  is_active: boolean
+  target_total_pct: number | null
+  status: string
+  report_json: Record<string, unknown>
+  imported_at: string
+  updated_at: string
+}
+
+export interface TargetBucketRow {
+  id: number
+  model_id: string
+  portfolio_scope: PortfolioScope
+  bucket_key: string
+  bucket_label: string
+  parent_bucket_key: string | null
+  target_weight_pct: number
+  lower_band_pct: number | null
+  upper_band_pct: number | null
+  source_sheet: string | null
+  source_row: number | null
+  updated_at: string
+}
+
+export interface TargetEnvelopeLineRow {
+  id: number
+  model_id: string
+  portfolio_scope: PortfolioScope
+  envelope: string
+  ticker: string | null
+  isin: string | null
+  instrument: string | null
+  asset_class: string | null
+  region: string | null
+  currency: string | null
+  target_weight_pct: number | null
+  target_value_eur: number | null
+  notes: string | null
+  source_sheet: string | null
+  source_row: number | null
+  updated_at: string
+}
+
+export type AllocationAdviceAction = 'BUY' | 'REDUCE' | 'HOLD' | 'UNAVAILABLE'
+export type AllocationAdviceExecution = 'NEW_CASH_FIRST' | 'INTERNAL_ARBITRAGE' | 'MONITOR' | 'CURRENT_UNAVAILABLE'
+
+export interface AllocationAdviceRow {
+  portfolio_scope: PortfolioScope
+  model_id: string
+  model_name: string
+  source_file: string
+  bucket_key: string
+  bucket_label: string
+  current_value_eur: number | null
+  current_weight_pct: number | null
+  target_weight_pct: number | null
+  drift_pct: number | null
+  rebalance_amount_eur: number | null
+  action: AllocationAdviceAction
+  confidence: number
+  reason_codes: string[]
+  preferred_execution: AllocationAdviceExecution
+  updated_at: string | null
+}

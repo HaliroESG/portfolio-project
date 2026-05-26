@@ -27,16 +27,22 @@ on:
       - "backend/scripts/import_target_allocations_excel.py"
       - "backend/scripts/import_broker_transactions.py"
       - "backend/scripts/import_broker_positions.py"
+      - "backend/scripts/import_support_universe.py"
+      - "backend/scripts/import_target_model.py"
       - "backend/scripts/backfill_top_trident_prices.py"
       - "backend/scripts/sync_trident_screener.py"
       - "backend/tests/test_trident_screener.py"
       - "backend/tests/test_refresh_ops.py"
       - "backend/tests/test_target_excel_import.py"
+      - "backend/tests/test_support_universe_import.py"
+      - "backend/tests/test_target_model_import.py"
       - "backend/tests/test_backfill_top_trident_prices.py"
       - "backend/tests/broker_ingest/**"
       - "backend/tools/schema_check.py"
       - "frontend/app/trident/**"
       - "frontend/app/arbitrage/**"
+      - "frontend/app/supports/**"
+      - "frontend/app/targets/**"
       - "frontend/lib/tridentData.ts"
       - "frontend/types.ts"
       - "frontend/scripts/smoke-supabase.mjs"
@@ -70,7 +76,7 @@ jobs:
 
       - name: Backend compile check
         working-directory: ./backend
-        run: python3.11 -m py_compile bridge.py technical_state.py etl_stats.py historical_prices_sync.py trident_screener.py scripts/run_data_refresh.py scripts/update_target_allocations.py scripts/import_target_allocations_excel.py scripts/import_broker_transactions.py scripts/import_broker_positions.py scripts/backfill_top_trident_prices.py scripts/sync_trident_screener.py tools/schema_check.py
+        run: python3.11 -m py_compile bridge.py technical_state.py etl_stats.py historical_prices_sync.py trident_screener.py scripts/run_data_refresh.py scripts/update_target_allocations.py scripts/import_target_allocations_excel.py scripts/import_broker_transactions.py scripts/import_broker_positions.py scripts/import_support_universe.py scripts/import_target_model.py scripts/backfill_top_trident_prices.py scripts/sync_trident_screener.py tools/schema_check.py
 
       - name: Setup Node
         uses: actions/setup-node@v4
@@ -175,7 +181,8 @@ jobs:
             -f backend/sql/20260511_broker_transactions.sql \
             -f backend/sql/20260525_broker_position_snapshots.sql \
             -f backend/sql/20260524_trident_screener.sql \
-            -f backend/sql/20260525_portfolio_decision_items.sql
+            -f backend/sql/20260525_portfolio_decision_items.sql \
+            -f backend/sql/20260526_supports_targets_advice.sql
 
       - name: Post-migration schema check
         working-directory: ./backend

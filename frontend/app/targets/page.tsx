@@ -7,6 +7,7 @@ import { AppShell } from '../../components/AppShell'
 import { EmptyState } from '../../components/EmptyState'
 import { supabase } from '../../lib/supabase'
 import { cn } from '../../lib/utils'
+import type { PortfolioScope, TargetBucketRow, TargetEnvelopeLineRow, TargetModelRow } from '../../types'
 
 interface PortfolioRow {
   id: string
@@ -69,6 +70,8 @@ interface CurrencyRow {
   id: string
   rate_to_eur: number | string | null
 }
+
+type RawRow = Record<string, unknown>
 
 type DriftPriority = 'ACTION' | 'WATCH' | 'OK' | 'UNAVAILABLE'
 type PriceSource = 'market' | 'pru' | 'missing'
@@ -136,6 +139,85 @@ function formatDate(value: string | null | undefined): string {
   return date.toLocaleDateString('fr-FR', { day: '2-digit', month: '2-digit', year: '2-digit' })
 }
 
+function readString(value: unknown): string | null {
+  return typeof value === 'string' && value.trim() ? value.trim() : null
+}
+
+function parseScope(value: unknown): PortfolioScope {
+  return value === 'PRO' ? 'PRO' : 'PERSO'
+}
+
+function parseTargetModel(raw: RawRow): TargetModelRow | null {
+  const id = readString(raw.id)
+  const modelName = readString(raw.model_name)
+  const sourceFile = readString(raw.source_file)
+  if (!id || !modelName || !sourceFile) return null
+  return {
+    id,
+    portfolio_scope: parseScope(raw.portfolio_scope),
+    model_name: modelName,
+    source_file: sourceFile,
+    source_kind: readString(raw.source_kind) ?? 'unknown',
+    as_of_date: readString(raw.as_of_date),
+    is_active: raw.is_active === true,
+    target_total_pct: readNumber(raw.target_total_pct as number | string | null),
+    status: readString(raw.status) ?? 'UNKNOWN',
+    report_json: raw.report_json && typeof raw.report_json === 'object' && !Array.isArray(raw.report_json)
+      ? raw.report_json as Record<string, unknown>
+      : {},
+    imported_at: readString(raw.imported_at) ?? '',
+    updated_at: readString(raw.updated_at) ?? '',
+  }
+}
+
+function parseTargetBucket(raw: RawRow): TargetBucketRow | null {
+  const id = readNumber(raw.id as number | string | null)
+  const modelId = readString(raw.model_id)
+  const bucketKey = readString(raw.bucket_key)
+  const bucketLabel = readString(raw.bucket_label)
+  const targetWeight = readNumber(raw.target_weight_pct as number | string | null)
+  if (id === null || !modelId || !bucketKey || !bucketLabel || targetWeight === null) return null
+  return {
+    id,
+    model_id: modelId,
+    portfolio_scope: parseScope(raw.portfolio_scope),
+    bucket_key: bucketKey,
+    bucket_label: bucketLabel,
+    parent_bucket_key: readString(raw.parent_bucket_key),
+    target_weight_pct: targetWeight,
+    lower_band_pct: readNumber(raw.lower_band_pct as number | string | null),
+    upper_band_pct: readNumber(raw.upper_band_pct as number | string | null),
+    source_sheet: readString(raw.source_sheet),
+    source_row: readNumber(raw.source_row as number | string | null),
+    updated_at: readString(raw.updated_at) ?? '',
+  }
+}
+
+function parseTargetEnvelopeLine(raw: RawRow): TargetEnvelopeLineRow | null {
+  const id = readNumber(raw.id as number | string | null)
+  const modelId = readString(raw.model_id)
+  const envelope = readString(raw.envelope)
+  if (id === null || !modelId || !envelope) return null
+  return {
+    id,
+    model_id: modelId,
+    portfolio_scope: parseScope(raw.portfolio_scope),
+    envelope,
+    ticker: readString(raw.ticker),
+    isin: readString(raw.isin),
+    instrument: readString(raw.instrument),
+    asset_class: readString(raw.asset_class),
+    region: readString(raw.region),
+    currency: readString(raw.currency),
+    target_weight_pct: readNumber(raw.target_weight_pct as number | string | null),
+    target_value_eur: readNumber(raw.target_value_eur as number | string | null),
+    notes: readString(raw.notes),
+    source_sheet: readString(raw.source_sheet),
+    source_row: readNumber(raw.source_row as number | string | null),
+    updated_at: readString(raw.updated_at) ?? '',
+  }
+}
+
 function parseSourceAccounts(value: unknown): ActualSourceAccount[] {
   if (Array.isArray(value)) return value as ActualSourceAccount[]
   if (typeof value === 'string' && value.trim()) {
@@ -201,6 +283,7 @@ function resolveDataState(
 
 export default function TargetsPage() {
   const [selectedPortfolioIdOverride, setSelectedPortfolioIdOverride] = useState<string>('')
+  const [selectedScope, setSelectedScope] = useState<PortfolioScope>('PERSO')
 
   const { data: portfolios } = useSWR('portfolios', async () => {
     const { data, error } = await supabase.from('portfolios').select('id,name')
@@ -289,6 +372,51 @@ export default function TargetsPage() {
     if (error) throw error
     return (data ?? []) as CurrencyRow[]
   })
+
+  const { data: targetModels = [], error: targetModelError } = useSWR('target-models', async () => {
+    const { data, error } = await supabase
+      .from('target_models')
+      .select('id,portfolio_scope,model_name,source_file,source_kind,as_of_date,is_active,target_total_pct,status,report_json,imported_at,updated_at')
+      .eq('is_active', true)
+      .order('updated_at', { ascending: false })
+    if (error) throw error
+    return ((data ?? []) as unknown as RawRow[])
+      .map(parseTargetModel)
+      .filter((row): row is TargetModelRow => row !== null)
+  })
+
+  const selectedTargetModel = targetModels.find((model) => model.portfolio_scope === selectedScope) ?? null
+
+  const { data: targetBuckets = [] } = useSWR(
+    selectedTargetModel ? ['target-buckets', selectedTargetModel.id] : null,
+    async () => {
+      const { data, error } = await supabase
+        .from('target_buckets')
+        .select('id,model_id,portfolio_scope,bucket_key,bucket_label,parent_bucket_key,target_weight_pct,lower_band_pct,upper_band_pct,source_sheet,source_row,updated_at')
+        .eq('model_id', selectedTargetModel!.id)
+        .order('source_row', { ascending: true })
+      if (error) throw error
+      return ((data ?? []) as unknown as RawRow[])
+        .map(parseTargetBucket)
+        .filter((row): row is TargetBucketRow => row !== null)
+    }
+  )
+
+  const { data: targetEnvelopeLines = [] } = useSWR(
+    selectedTargetModel ? ['target-envelope-lines', selectedTargetModel.id] : null,
+    async () => {
+      const { data, error } = await supabase
+        .from('target_envelope_lines')
+        .select('id,model_id,portfolio_scope,envelope,ticker,isin,instrument,asset_class,region,currency,target_weight_pct,target_value_eur,notes,source_sheet,source_row,updated_at')
+        .eq('model_id', selectedTargetModel!.id)
+        .order('envelope', { ascending: true })
+        .order('source_row', { ascending: true })
+      if (error) throw error
+      return ((data ?? []) as unknown as RawRow[])
+        .map(parseTargetEnvelopeLine)
+        .filter((row): row is TargetEnvelopeLineRow => row !== null)
+    }
+  )
 
   const marketByTicker = useMemo(() => {
     const map = new Map<string, MarketRow>()
@@ -502,6 +630,109 @@ export default function TargetsPage() {
           <div className="rounded-lg border border-amber-300/70 bg-amber-50 px-4 py-3 text-xs font-mono text-amber-800 dark:border-amber-500/30 dark:bg-amber-950/20 dark:text-amber-300">
             Targets stay read-only in the frontend. Allocation updates must come from a backend/service-role workflow or a future auth-gated route.
           </div>
+
+          <section className="rounded-xl border border-slate-200 bg-white/80 p-4 dark:border-white/10 dark:bg-[#0D1117]/70">
+            <div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
+              <div className="min-w-0">
+                <h2 className="text-[11px] font-black uppercase tracking-[0.18em] text-slate-700 dark:text-gray-300">Target Studio</h2>
+                <p className="mt-1 text-[10px] font-mono text-slate-500 dark:text-gray-500">
+                  Two-level target model: strategic buckets for decisions, envelope/instrument lines for execution.
+                </p>
+              </div>
+              <div className="flex rounded-lg border border-slate-200 bg-slate-50 p-1 dark:border-white/10 dark:bg-black/20">
+                {(['PERSO', 'PRO'] as PortfolioScope[]).map((scope) => (
+                  <button
+                    key={scope}
+                    type="button"
+                    onClick={() => setSelectedScope(scope)}
+                    className={cn(
+                      'rounded-md px-3 py-2 text-[10px] font-black uppercase tracking-wider transition',
+                      selectedScope === scope
+                        ? 'bg-slate-950 text-white dark:bg-[#00FF88] dark:text-black'
+                        : 'text-slate-500 hover:text-slate-900 dark:text-gray-400 dark:hover:text-white'
+                    )}
+                  >
+                    {scope}
+                  </button>
+                ))}
+              </div>
+            </div>
+
+            {targetModelError ? (
+              <div className="mt-4 rounded-lg border border-amber-300 bg-amber-50 px-4 py-3 text-xs font-mono text-amber-800 dark:border-amber-900/60 dark:bg-amber-950/20 dark:text-amber-300">
+                Target model schema unavailable. Apply `20260526_supports_targets_advice.sql`, then run `import_target_model.py`.
+              </div>
+            ) : selectedTargetModel ? (
+              <div className="mt-4 space-y-4">
+                <div className="grid grid-cols-1 gap-3 md:grid-cols-4">
+                  <OperationMetric label="Model" value={selectedTargetModel.model_name} detail={selectedTargetModel.source_file} />
+                  <OperationMetric label="Target total" value={formatPercent(selectedTargetModel.target_total_pct)} detail={selectedTargetModel.status} />
+                  <OperationMetric label="Buckets" value={targetBuckets.length.toString()} detail="Strategic decision level" />
+                  <OperationMetric label="Envelope lines" value={targetEnvelopeLines.length.toString()} detail="Execution level" />
+                </div>
+
+                <div className="grid gap-4 xl:grid-cols-[minmax(0,1fr)_minmax(0,1.15fr)]">
+                  <div className="overflow-hidden rounded-lg border border-slate-200 dark:border-white/10">
+                    <div className="border-b border-slate-200 px-3 py-2 text-[10px] font-black uppercase tracking-widest text-slate-500 dark:border-white/10 dark:text-gray-500">
+                      Strategic buckets
+                    </div>
+                    <div className="divide-y divide-slate-200 dark:divide-white/10">
+                      {targetBuckets.map((bucket) => (
+                        <div key={bucket.id} className="grid grid-cols-[minmax(0,1fr)_auto] gap-3 px-3 py-2">
+                          <div className="min-w-0">
+                            <div className="truncate text-xs font-black text-slate-900 dark:text-white">{bucket.bucket_label}</div>
+                            <div className="mt-0.5 text-[10px] font-mono text-slate-500 dark:text-gray-500">
+                              {bucket.lower_band_pct !== null || bucket.upper_band_pct !== null
+                                ? `${formatPercent(bucket.lower_band_pct)} - ${formatPercent(bucket.upper_band_pct)}`
+                                : bucket.parent_bucket_key ?? 'direct'}
+                            </div>
+                          </div>
+                          <div className="text-right text-sm font-mono font-black text-slate-950 dark:text-white">{formatPercent(bucket.target_weight_pct)}</div>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+
+                  <div className="overflow-hidden rounded-lg border border-slate-200 dark:border-white/10">
+                    <div className="border-b border-slate-200 px-3 py-2 text-[10px] font-black uppercase tracking-widest text-slate-500 dark:border-white/10 dark:text-gray-500">
+                      Envelope execution lines
+                    </div>
+                    <div className="max-h-[360px] overflow-auto">
+                      <table className="min-w-[640px] w-full">
+                        <thead className="bg-slate-50 dark:bg-black/20">
+                          <tr>
+                            {['Envelope', 'Instrument', 'ISIN/Ticker', 'Target', 'Notes'].map((header) => (
+                              <th key={header} className="px-3 py-2 text-left text-[9px] font-black uppercase tracking-widest text-slate-500 dark:text-gray-500">{header}</th>
+                            ))}
+                          </tr>
+                        </thead>
+                        <tbody className="divide-y divide-slate-200 dark:divide-white/10">
+                          {targetEnvelopeLines.map((line) => (
+                            <tr key={line.id}>
+                              <td className="p-3 text-[10px] font-mono font-bold text-slate-600 dark:text-gray-300">{line.envelope}</td>
+                              <td className="max-w-[220px] p-3 text-xs font-black text-slate-900 dark:text-white">
+                                <div className="truncate">{line.instrument ?? '--'}</div>
+                                <div className="mt-0.5 text-[10px] font-mono font-normal text-slate-500">{line.region ?? line.asset_class ?? '--'}</div>
+                              </td>
+                              <td className="p-3 text-[10px] font-mono text-slate-500 dark:text-gray-400">{line.isin ?? line.ticker ?? '--'}</td>
+                              <td className="p-3 text-right text-xs font-mono font-black text-slate-800 dark:text-gray-200">{formatPercent(line.target_weight_pct)}</td>
+                              <td className="max-w-[180px] p-3 text-[10px] font-mono text-slate-500 dark:text-gray-400">
+                                <div className="truncate">{line.notes ?? '--'}</div>
+                              </td>
+                            </tr>
+                          ))}
+                        </tbody>
+                      </table>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            ) : (
+              <div className="mt-4 rounded-lg border border-slate-200 bg-slate-50 px-4 py-3 text-xs font-mono text-slate-600 dark:border-white/10 dark:bg-black/20 dark:text-gray-400">
+                No target model imported for {selectedScope}. Run `import_target_model.py --kind {selectedScope === 'PRO' ? 'pro' : 'perso'} --dry-run`, then apply with service-role credentials.
+              </div>
+            )}
+          </section>
 
           <section className="rounded-xl border border-slate-200 bg-white/80 p-4 dark:border-white/10 dark:bg-[#0D1117]/70">
             <div className="flex flex-wrap items-center justify-between gap-3">

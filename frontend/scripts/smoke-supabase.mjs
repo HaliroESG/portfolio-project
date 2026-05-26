@@ -53,6 +53,10 @@ function isMissingColumnError(message) {
   return /column .* does not exist/i.test(message || '') || /could not find .* column/i.test(message || '')
 }
 
+function isMissingRelationError(message) {
+  return /could not find the table/i.test(message || '') || /relation .* does not exist/i.test(message || '')
+}
+
 async function marketWatchCheck() {
   const technicalAttempt = await supabase
     .from('market_watch')
@@ -224,6 +228,21 @@ async function tridentPriceCoverageCheck() {
   }
 }
 
+async function optionalReadModelCheck(name, queryFactory, schemaWarning) {
+  const check = await q(name, queryFactory)
+  if (check.ok) return check
+  if (isMissingColumnError(check.error) || isMissingRelationError(check.error)) {
+    return {
+      ...check,
+      ok: true,
+      status: 'PASS',
+      feature_state: 'SCHEMA_PENDING',
+      schema_warning: schemaWarning,
+    }
+  }
+  return check
+}
+
 const checks = await Promise.all([
   marketWatchCheck(),
   q('currencies', () => supabase.from('currencies').select('id,symbol,rate_to_eur,last_update', { count: 'exact' }).limit(5)),
@@ -240,6 +259,21 @@ const checks = await Promise.all([
   q('backtest_results', () => supabase.from('backtest_results').select('run_id,portfolio_key,date,nav,drawdown,returns_daily', { count: 'exact' }).limit(5)),
   q('backtest_kpis', () => supabase.from('backtest_kpis').select('run_id,portfolio_key,cagr,vol,sharpe,sortino,max_drawdown,calmar,worst_year,best_year', { count: 'exact' }).limit(5)),
   tridentPriceCoverageCheck(),
+  optionalReadModelCheck(
+    'investment_supports',
+    () => supabase.from('investment_supports').select('source_id,isin,name,support_type,sri,total_fee_pct,score,metrics_state,updated_at', { count: 'exact' }).limit(5),
+    'Apply backend/sql/20260526_supports_targets_advice.sql and run import_support_universe.py.'
+  ),
+  optionalReadModelCheck(
+    'target_models',
+    () => supabase.from('target_models').select('id,portfolio_scope,model_name,source_file,target_total_pct,status,updated_at', { count: 'exact' }).limit(5),
+    'Apply backend/sql/20260526_supports_targets_advice.sql and run import_target_model.py.'
+  ),
+  optionalReadModelCheck(
+    'allocation_advice_items_latest',
+    () => supabase.from('allocation_advice_items_latest').select('portfolio_scope,model_id,bucket_key,action,preferred_execution,confidence,updated_at', { count: 'exact' }).limit(5),
+    'Apply backend/sql/20260526_supports_targets_advice.sql and import active target models.'
+  ),
 ])
 
 const hasFail = checks.some((c) => c.status === 'FAIL')

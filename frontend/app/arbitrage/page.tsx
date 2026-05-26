@@ -7,7 +7,7 @@ import { AppShell } from '../../components/AppShell'
 import { EmptyState } from '../../components/EmptyState'
 import { supabase } from '../../lib/supabase'
 import { cn } from '../../lib/utils'
-import type { PortfolioDecisionAction, PortfolioDecisionItemRow } from '../../types'
+import type { AllocationAdviceAction, AllocationAdviceExecution, AllocationAdviceRow, PortfolioDecisionAction, PortfolioDecisionItemRow, PortfolioScope } from '../../types'
 
 type SortKey = 'priority' | 'ticker' | 'action' | 'amount' | 'drift' | 'confidence'
 type SortDirection = 'asc' | 'desc'
@@ -19,6 +19,7 @@ interface PortfolioRow {
 }
 
 type RawDecisionRow = Record<string, unknown>
+type RawRow = Record<string, unknown>
 
 const DECISION_SELECTOR = [
   'portfolio_id',
@@ -80,6 +81,47 @@ function parseStringArray(value: unknown): string[] {
 function parseAction(value: unknown): PortfolioDecisionAction {
   if (value === 'BUY' || value === 'REDUCE' || value === 'EXIT' || value === 'HOLD' || value === 'UNAVAILABLE') return value
   return 'UNAVAILABLE'
+}
+
+function parseAdviceAction(value: unknown): AllocationAdviceAction {
+  if (value === 'BUY' || value === 'REDUCE' || value === 'HOLD' || value === 'UNAVAILABLE') return value
+  return 'UNAVAILABLE'
+}
+
+function parsePortfolioScope(value: unknown): PortfolioScope {
+  return value === 'PRO' ? 'PRO' : 'PERSO'
+}
+
+function parseExecution(value: unknown): AllocationAdviceExecution {
+  if (value === 'NEW_CASH_FIRST' || value === 'INTERNAL_ARBITRAGE' || value === 'MONITOR' || value === 'CURRENT_UNAVAILABLE') return value
+  return 'CURRENT_UNAVAILABLE'
+}
+
+function parseAdviceRow(raw: RawRow): AllocationAdviceRow | null {
+  const modelId = readString(raw.model_id)
+  const modelName = readString(raw.model_name)
+  const sourceFile = readString(raw.source_file)
+  const bucketKey = readString(raw.bucket_key)
+  const bucketLabel = readString(raw.bucket_label)
+  if (!modelId || !modelName || !sourceFile || !bucketKey || !bucketLabel) return null
+  return {
+    portfolio_scope: parsePortfolioScope(raw.portfolio_scope),
+    model_id: modelId,
+    model_name: modelName,
+    source_file: sourceFile,
+    bucket_key: bucketKey,
+    bucket_label: bucketLabel,
+    current_value_eur: readNumber(raw.current_value_eur),
+    current_weight_pct: readNumber(raw.current_weight_pct),
+    target_weight_pct: readNumber(raw.target_weight_pct),
+    drift_pct: readNumber(raw.drift_pct),
+    rebalance_amount_eur: readNumber(raw.rebalance_amount_eur),
+    action: parseAdviceAction(raw.action),
+    confidence: readNumber(raw.confidence) ?? 0,
+    reason_codes: parseStringArray(raw.reason_codes),
+    preferred_execution: parseExecution(raw.preferred_execution),
+    updated_at: readString(raw.updated_at),
+  }
 }
 
 function parseDecisionRow(raw: RawDecisionRow): PortfolioDecisionItemRow | null {
@@ -156,6 +198,20 @@ function actionClass(action: PortfolioDecisionAction): string {
   return 'border-slate-300 bg-slate-50 text-slate-600 dark:border-white/10 dark:bg-white/5 dark:text-gray-300'
 }
 
+function adviceActionClass(action: AllocationAdviceAction): string {
+  if (action === 'BUY') return 'border-emerald-300 bg-emerald-50 text-emerald-700 dark:border-emerald-900/60 dark:bg-emerald-950/20 dark:text-emerald-300'
+  if (action === 'REDUCE') return 'border-red-300 bg-red-50 text-red-700 dark:border-red-900/60 dark:bg-red-950/20 dark:text-red-300'
+  if (action === 'UNAVAILABLE') return 'border-amber-300 bg-amber-50 text-amber-700 dark:border-amber-900/60 dark:bg-amber-950/20 dark:text-amber-300'
+  return 'border-slate-300 bg-slate-50 text-slate-600 dark:border-white/10 dark:bg-white/5 dark:text-gray-300'
+}
+
+function executionLabel(value: AllocationAdviceExecution): string {
+  if (value === 'NEW_CASH_FIRST') return 'New cash first'
+  if (value === 'INTERNAL_ARBITRAGE') return 'Internal arbitrage'
+  if (value === 'MONITOR') return 'Monitor'
+  return 'Current unavailable'
+}
+
 function compareText(left: string | null | undefined, right: string | null | undefined, direction: SortDirection): number {
   const multiplier = direction === 'asc' ? 1 : -1
   return (left ?? '').localeCompare(right ?? '', 'en', { sensitivity: 'base' }) * multiplier
@@ -224,6 +280,7 @@ function SortHeader({
 
 export default function ArbitragePage() {
   const [selectedPortfolioIdOverride, setSelectedPortfolioIdOverride] = useState('')
+  const [selectedScope, setSelectedScope] = useState<PortfolioScope>('PERSO')
   const [actionFilter, setActionFilter] = useState<'ALL' | PortfolioDecisionAction>('ALL')
   const [issueFilter, setIssueFilter] = useState('ALL')
   const [assetClassFilter, setAssetClassFilter] = useState('ALL')
@@ -248,6 +305,21 @@ export default function ArbitragePage() {
       return ((data ?? []) as unknown as RawDecisionRow[])
         .map(parseDecisionRow)
         .filter((row): row is PortfolioDecisionItemRow => row !== null)
+    }
+  )
+
+  const { data: adviceRows = [], error: adviceError } = useSWR(
+    ['allocation-advice', selectedScope],
+    async () => {
+      const { data, error } = await supabase
+        .from('allocation_advice_items_latest')
+        .select('portfolio_scope,model_id,model_name,source_file,bucket_key,bucket_label,current_value_eur,current_weight_pct,target_weight_pct,drift_pct,rebalance_amount_eur,action,confidence,reason_codes,preferred_execution,updated_at')
+        .eq('portfolio_scope', selectedScope)
+        .order('action', { ascending: true })
+      if (error) throw error
+      return ((data ?? []) as unknown as RawRow[])
+        .map(parseAdviceRow)
+        .filter((row): row is AllocationAdviceRow => row !== null)
     }
   )
 
@@ -365,10 +437,86 @@ export default function ArbitragePage() {
           </div>
 
           <section className="flex flex-wrap items-center gap-2 rounded-lg border border-slate-200 bg-white px-3 py-3 dark:border-white/10 dark:bg-[#0D1117]">
+            <label className="flex min-w-[150px] flex-1 items-center gap-2 rounded-md border border-slate-200 bg-slate-50 px-2 py-2 dark:border-white/10 dark:bg-black/20 sm:flex-none">
+              <span className="text-[9px] font-black uppercase tracking-wider text-slate-500 dark:text-gray-400">Scope</span>
+              <select
+                value={selectedScope}
+                onChange={(event) => setSelectedScope(event.target.value as PortfolioScope)}
+                className="min-w-0 flex-1 bg-transparent text-[10px] font-black uppercase text-slate-900 outline-none dark:text-white"
+              >
+                <option value="PERSO">PERSO</option>
+                <option value="PRO">PRO</option>
+              </select>
+            </label>
             <FilterSelect label="Action" value={actionFilter} options={['BUY', 'REDUCE', 'EXIT', 'HOLD', 'UNAVAILABLE']} onChange={(value) => setActionFilter(value as 'ALL' | PortfolioDecisionAction)} />
             <FilterSelect label="Data issue" value={issueFilter} options={filters.issueCodes} onChange={setIssueFilter} />
             <FilterSelect label="Asset class" value={assetClassFilter} options={filters.assetClasses} onChange={setAssetClassFilter} />
             <FilterSelect label="Currency" value={currencyFilter} options={filters.currencies} onChange={setCurrencyFilter} />
+          </section>
+
+          <section className="overflow-hidden rounded-xl border border-slate-200 bg-white dark:border-white/10 dark:bg-[#0D1117]/70">
+            <div className="flex flex-wrap items-center justify-between gap-2 border-b border-slate-200 px-4 py-3 dark:border-white/10">
+              <div>
+                <h2 className="text-sm font-black uppercase tracking-tight text-slate-950 dark:text-white">Allocation advice</h2>
+                <div className="mt-1 text-[10px] font-mono text-slate-500 dark:text-gray-400">
+                  {"Flux d'abord by strategic bucket"} - {selectedScope}
+                </div>
+              </div>
+              <span className="rounded border border-slate-300 bg-slate-50 px-2 py-1 text-[10px] font-black uppercase tracking-wider text-slate-600 dark:border-white/10 dark:bg-white/5 dark:text-gray-300">
+                Informative
+              </span>
+            </div>
+            {adviceError ? (
+              <div className="p-4">
+                <EmptyState
+                  tone="error"
+                  title="Allocation advice unavailable"
+                  message="Apply the supports/targets/advice migration, then import PERSO and PRO target models."
+                />
+              </div>
+            ) : adviceRows.length === 0 ? (
+              <div className="p-4">
+                <EmptyState title="No allocation advice" message={`No active ${selectedScope} target model is available yet.`} />
+              </div>
+            ) : (
+              <>
+                <div className="divide-y divide-slate-200 dark:divide-white/10 md:hidden">
+                  {adviceRows.map((row) => (
+                    <AdviceCard key={`${row.model_id}-${row.bucket_key}`} row={row} />
+                  ))}
+                </div>
+                <div className="hidden overflow-x-auto md:block">
+                  <table className="min-w-[940px] w-full">
+                    <thead className="bg-slate-50 text-slate-600 dark:bg-[#080A0F] dark:text-gray-500">
+                      <tr>
+                        {['Bucket', 'Action', 'Execution', 'Amount', 'Current / Target', 'Drift', 'Confidence', 'Reasons'].map((header) => (
+                          <th key={header} className={cn('px-3 py-3 text-[10px] font-black uppercase tracking-widest', ['Amount', 'Current / Target', 'Drift', 'Confidence'].includes(header) ? 'text-right' : 'text-left')}>
+                            {header}
+                          </th>
+                        ))}
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y divide-slate-200 dark:divide-white/5">
+                      {adviceRows.map((row) => (
+                        <tr key={`${row.model_id}-${row.bucket_key}`} className="transition-colors hover:bg-slate-50/70 dark:hover:bg-white/5">
+                          <td className="p-3 text-sm font-black text-slate-950 dark:text-white">
+                            {row.bucket_label}
+                            <div className="mt-0.5 text-[10px] font-mono font-normal text-slate-500">{row.source_file}</div>
+                          </td>
+                          <td className="p-3"><AdviceActionBadge action={row.action} /></td>
+                          <td className="p-3 text-[10px] font-mono font-bold text-slate-600 dark:text-gray-300">{executionLabel(row.preferred_execution)}</td>
+                          <td className="p-3 text-right text-sm font-mono font-black text-slate-800 dark:text-white">{formatSignedEur(row.rebalance_amount_eur)}</td>
+                          <td className="p-3 text-right text-xs font-mono text-slate-600 dark:text-gray-300">{formatPct(row.current_weight_pct)} / {formatPct(row.target_weight_pct)}</td>
+                          <td className="p-3 text-right text-sm font-mono font-black text-slate-800 dark:text-white">{formatSignedPts(row.drift_pct)}</td>
+                          <td className="p-3 text-right text-sm font-mono font-black text-slate-800 dark:text-white">{row.confidence}%</td>
+                          <td className="max-w-[260px] p-3 text-[10px] font-mono text-slate-500 dark:text-gray-400"><ReasonCodes codes={row.reason_codes} /></td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              </>
+            )}
           </section>
 
           {error ? (
@@ -535,6 +683,34 @@ function DecisionCard({ row }: { row: PortfolioDecisionItemRow }) {
       <div className="mt-3 rounded-lg border border-slate-200 bg-slate-50 px-3 py-2 text-[10px] font-mono text-slate-600 dark:border-white/10 dark:bg-black/20 dark:text-gray-300">
         <div className="font-black uppercase">Confidence {row.confidence}%</div>
         <div className="mt-1">{row.data_state} / {row.price_state}</div>
+        <div className="mt-2"><ReasonCodes codes={row.reason_codes} /></div>
+      </div>
+    </article>
+  )
+}
+
+function AdviceActionBadge({ action }: { action: AllocationAdviceAction }) {
+  return <span className={cn('rounded border px-2 py-0.5 text-[9px] font-black uppercase tracking-wider', adviceActionClass(action))}>{action}</span>
+}
+
+function AdviceCard({ row }: { row: AllocationAdviceRow }) {
+  return (
+    <article className="bg-white p-4 dark:bg-transparent">
+      <div className="flex items-start justify-between gap-3">
+        <div className="min-w-0">
+          <div className="truncate text-sm font-black text-slate-950 dark:text-white">{row.bucket_label}</div>
+          <div className="mt-1 text-[10px] font-mono text-slate-500 dark:text-gray-400">{executionLabel(row.preferred_execution)}</div>
+        </div>
+        <AdviceActionBadge action={row.action} />
+      </div>
+      <div className="mt-3 grid grid-cols-2 gap-2">
+        <Metric label="Amount" value={formatSignedEur(row.rebalance_amount_eur)} />
+        <Metric label="Drift" value={formatSignedPts(row.drift_pct)} />
+        <Metric label="Current" value={formatPct(row.current_weight_pct)} />
+        <Metric label="Target" value={formatPct(row.target_weight_pct)} />
+      </div>
+      <div className="mt-3 rounded-lg border border-slate-200 bg-slate-50 px-3 py-2 text-[10px] font-mono text-slate-600 dark:border-white/10 dark:bg-black/20 dark:text-gray-300">
+        <div className="font-black uppercase">Confidence {row.confidence}%</div>
         <div className="mt-2"><ReasonCodes codes={row.reason_codes} /></div>
       </div>
     </article>

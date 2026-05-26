@@ -440,3 +440,22 @@ Admin CLI:
 - Apply target: `SUPABASE_URL=... SUPABASE_SERVICE_ROLE_KEY=... python backend/scripts/import_target_allocations_excel.py --file target.xlsx --apply`
 - Dry-run actual snapshot: `python backend/scripts/import_broker_positions.py --broker fortuneo|linxea|ibkr|manual --account-id ... --portfolio-id ... --positions-file positions.csv --dry-run`
 - Apply actual snapshot: `SUPABASE_URL=... SUPABASE_SERVICE_ROLE_KEY=... python backend/scripts/import_broker_positions.py --broker ibkr --account-id ... --portfolio-id ... --positions-file positions.csv --as-of-date 2026-05-25 --apply`
+
+## 2026-05-26 - Supports Catalogue And Two-Level Target Models
+
+Status: IMPLEMENTED IN CODE, SCHEMA DEPLOY PENDING
+
+Scope delivered:
+- Additive SQL migration `backend/sql/20260526_supports_targets_advice.sql` adds support catalogue tables, target model tables, audit holdings, and `allocation_advice_items_latest`.
+- Backend CLI `import_support_universe.py` parses the Lucya/Cardif support PDF, keeps all support types, stores optional Morningstar/Quantalys fields as nullable, and marks computed metrics as `METRICS_UNAVAILABLE` until reliable price history exists.
+- Backend CLI `import_target_model.py` imports the PERSO workbook as strategic buckets + envelope execution lines and imports the PRO workbook using `Calcul_allocation_cible` as authority.
+- `/supports` added as a read-only catalogue screen with filters for type, envelope, metrics state, score, fees, SRI and performance.
+- `/targets` enriched with Target Studio for PERSO/PRO strategic buckets and envelope-level execution targets.
+- `/arbitrage` enriched with bucket-level allocation advice using the default flux-first policy.
+
+Deployment note:
+- Apply `backend/sql/20260526_supports_targets_advice.sql` after the previously pending broker/decision migrations.
+- Dry-run supports: `python backend/scripts/import_support_universe.py --source lucya-cardif --file Liste_Supports_Lucya_Cardif_collectif_precontractuel_2026_03_16_VF_REDUIT_NB.pdf --source-date 2026-02-01 --dry-run`
+- Apply supports: `SUPABASE_URL=... SUPABASE_SERVICE_ROLE_KEY=... python backend/scripts/import_support_universe.py --source lucya-cardif --file Liste_Supports_Lucya_Cardif_collectif_precontractuel_2026_03_16_VF_REDUIT_NB.pdf --source-date 2026-02-01 --apply`
+- Dry-run targets: `python backend/scripts/import_target_model.py --kind perso --file Portefeuille_Perso_MultiEnveloppes_v4.xlsx --dry-run` and `python backend/scripts/import_target_model.py --kind pro --file Portefeuille_PRO_v3.xlsx --dry-run`
+- Apply targets: same commands with `SUPABASE_URL=... SUPABASE_SERVICE_ROLE_KEY=... --apply`.
