@@ -125,6 +125,17 @@ def build_trident_steps(
             ),
             required_env=("SUPABASE_URL", "SUPABASE_KEY"),
         ),
+        RefreshStep(
+            key="trident_stock_insights_sync",
+            label="Trident stock insights",
+            command=(
+                PYTHON,
+                "scripts/sync_trident_stock_insights.py",
+                "--top-n",
+                env.get("TRIDENT_STOCK_INSIGHTS_TOP_N", "200"),
+            ),
+            required_env=("SUPABASE_URL", "SUPABASE_KEY"),
+        ),
     ]
 
 

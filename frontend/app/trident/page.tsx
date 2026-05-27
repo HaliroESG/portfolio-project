@@ -18,6 +18,7 @@ import {
 } from 'lucide-react'
 import { AppShell } from '../../components/AppShell'
 import { EmptyState } from '../../components/EmptyState'
+import { TridentCompanyInsight } from '../../components/TridentCompanyInsight'
 import { supabase } from '../../lib/supabase'
 import { loadTridentBundle, loadTridentCriteria } from '../../lib/tridentData'
 import { swrOptions, SWR_REFRESH } from '../../lib/swrConfig'
@@ -777,6 +778,12 @@ export default function TridentPage() {
                           Eliminator: {selectedRow.failed_eliminators.join(', ')}
                         </div>
                       )}
+
+                      <TridentCompanyInsight
+                        instrumentKey={selectedRow.instrument_key}
+                        ticker={selectedRow.ticker}
+                        providerSymbol={selectedRow.provider_symbol}
+                      />
 
                       <TridentRegressionChart
                         ticker={selectedRow.ticker}

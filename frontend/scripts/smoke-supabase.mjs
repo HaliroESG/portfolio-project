@@ -260,6 +260,11 @@ const checks = await Promise.all([
   q('backtest_kpis', () => supabase.from('backtest_kpis').select('run_id,portfolio_key,cagr,vol,sharpe,sortino,max_drawdown,calmar,worst_year,best_year', { count: 'exact' }).limit(5)),
   tridentPriceCoverageCheck(),
   optionalReadModelCheck(
+    'trident_stock_insights',
+    () => supabase.from('trident_stock_insights').select('instrument_key,ticker,provider_symbol,business_summary,recommendation_key,target_mean_price,latest_price,regression_slope_pct,regression_z_score,ma200_state,news_items,ai_trend_summary,ai_summary_state,data_state,updated_at', { count: 'exact' }).limit(5),
+    'Apply backend/sql/20260527_trident_stock_insights.sql and run sync_trident_stock_insights.py.'
+  ),
+  optionalReadModelCheck(
     'support_sources',
     () => supabase.from('support_sources').select('id,source_name,source_kind,provider,source_quality,source_file,source_url,source_date,updated_at', { count: 'exact' }).limit(5),
     'Apply backend/sql/20260526_supports_targets_advice.sql and run import_support_universe.py.'

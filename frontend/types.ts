@@ -252,6 +252,52 @@ export interface TridentCriterionRow {
   updated_at: string | null
 }
 
+export interface TridentInsightNewsItem {
+  title: string
+  url: string
+  source: string | null
+  published_at: string | null
+  impact_level: string | null
+  impact_score: number | null
+  ticker: string | null
+}
+
+export interface TridentStockInsightRow {
+  instrument_key: string
+  ticker: string
+  provider_symbol: string | null
+  name: string | null
+  business_summary: string | null
+  website: string | null
+  market_cap: number | null
+  trailing_pe: number | null
+  forward_pe: number | null
+  recommendation_key: string | null
+  recommendation_mean: number | null
+  target_mean_price: number | null
+  target_high_price: number | null
+  target_low_price: number | null
+  number_of_analyst_opinions: number | null
+  latest_price: number | null
+  price_currency: string | null
+  regression_slope_pct: number | null
+  regression_z_score: number | null
+  ma200_state: string | null
+  momentum_3m_pct: number | null
+  momentum_12m_pct: number | null
+  trend_state: string | null
+  trend_reason_codes: string[]
+  price_history_state: string | null
+  news_items: TridentInsightNewsItem[]
+  ai_trend_summary: string | null
+  ai_summary_state: string
+  ai_model: string | null
+  source_provider: string
+  source_url: string | null
+  data_state: string[]
+  updated_at: string | null
+}
+
 // Supabase row contracts (frontend read models)
 export interface NewsFeedRow {
   id: string

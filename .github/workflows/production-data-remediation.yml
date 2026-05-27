@@ -160,7 +160,8 @@ jobs:
             -f backend/sql/20260525_broker_position_snapshots.sql \
             -f backend/sql/20260524_trident_screener.sql \
             -f backend/sql/20260525_portfolio_decision_items.sql \
-            -f backend/sql/20260526_supports_targets_advice.sql
+            -f backend/sql/20260526_supports_targets_advice.sql \
+            -f backend/sql/20260527_trident_stock_insights.sql
 
       - name: Report skipped schema migration
         if: ${{ env.APPLY_SCHEMA != 'true' }}
@@ -183,6 +184,18 @@ jobs:
             --top-n "$TOP_N" \
             --start-date "$START_DATE" \
             --output top-trident-price-backfill.json
+
+      - name: Sync top Trident stock insights
+        working-directory: ./backend
+        env:
+          SUPABASE_KEY: ${{ secrets.SUPABASE_SERVICE_KEY }}
+          OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
+          OPENAI_MODEL: ${{ vars.OPENAI_MODEL || 'gpt-4.1-mini' }}
+        run: |
+          python scripts/sync_trident_stock_insights.py \
+            --top-n "$TOP_N" \
+            --force \
+            --output top-trident-stock-insights.json
 
       - name: Full Trident data sync
         if: ${{ env.RUN_FULL_AFTER_TOP == 'true' }}
@@ -214,6 +227,7 @@ jobs:
             backend/schema-check-before-remediation.json
             backend/schema-check-after-remediation.json
             backend/top-trident-price-backfill.json
+            backend/top-trident-stock-insights.json
             backend/refresh-report-trident-full.json
             backend/freshness-trident-remediation.json
           if-no-files-found: warn

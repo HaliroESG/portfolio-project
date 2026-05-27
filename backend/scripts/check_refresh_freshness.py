@@ -35,6 +35,7 @@ FRESHNESS_RULES: dict[str, tuple[FreshnessRule, ...]] = {
     "trident": (
         FreshnessRule("trident_screener_sync", "Trident screener", 8.0 * 24.0),
         FreshnessRule("historical_prices_trident_sync", "Trident historical prices", 8.0 * 24.0),
+        FreshnessRule("trident_stock_insights_sync", "Trident stock insights", 8.0 * 24.0),
     ),
     "backtest": (
         FreshnessRule("backtest_run", "production reference backtest", 36.0),

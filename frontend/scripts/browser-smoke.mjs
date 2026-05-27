@@ -21,6 +21,7 @@ function isIgnoredConsoleError(entry) {
       entry.text.includes('Failed to load resource: the server responded with a status of 404') &&
       (
         entry.url.includes('portfolio_decision_items_latest') ||
+        entry.url.includes('trident_stock_insights') ||
         entry.url.includes('broker_position_snapshot_runs') ||
         entry.url.includes('support_sources') ||
         entry.url.includes('support_source_rows') ||

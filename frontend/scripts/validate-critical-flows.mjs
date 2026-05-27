@@ -128,6 +128,28 @@ try {
     ]),
     'Trident selected-row panel should render the regression price chart.'
   )
+  const tridentCompanyInsight = read('frontend/components/TridentCompanyInsight.tsx')
+  const tridentInsights = read('frontend/lib/tridentInsights.ts')
+  addCheck(
+    'frontend.trident_company_insight_present',
+    hasAll(tridentPage, [
+      "import { TridentCompanyInsight } from '../../components/TridentCompanyInsight'",
+      '<TridentCompanyInsight',
+      'instrumentKey={selectedRow.instrument_key}',
+      'providerSymbol={selectedRow.provider_symbol}',
+    ]) && hasAll(tridentCompanyInsight, [
+      'Company Insight',
+      'AI trend brief',
+      'Business summary',
+      'News inputs',
+      'https://finance.yahoo.com/quote/',
+      'AI summary unavailable',
+    ]) && hasAll(tridentInsights, [
+      "from('trident_stock_insights')",
+      'SCHEMA_PENDING',
+    ]),
+    'Trident detail panel should expose backend-generated company insights with explicit unavailable states and Yahoo links.'
+  )
   addCheck(
     'frontend.trident_pagination_dom_budget',
     hasAll(tridentPage, [

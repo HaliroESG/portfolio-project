@@ -92,6 +92,7 @@ def test_refresh_plan_runs_full_trident_without_daily_caps():
     assert [step.key for step in steps] == [
         "trident_screener_sync",
         "historical_prices_trident_sync",
+        "trident_stock_insights_sync",
     ]
     assert steps[0].env_overrides == {
         "TRIDENT_LIMIT": None,
@@ -120,6 +121,7 @@ def test_refresh_plan_all_orders_core_history_trident_backtest():
         "historical_prices_sync",
         "trident_screener_sync",
         "historical_prices_trident_sync",
+        "trident_stock_insights_sync",
         "backtest_run",
     ]
 

@@ -1,0 +1,117 @@
+name: Trident Stock Insights Sync
+
+on:
+  workflow_dispatch:
+    inputs:
+      top_n:
+        description: "Top Trident scored rows to refresh when ticker is empty"
+        required: true
+        type: string
+        default: "200"
+      ticker:
+        description: "Optional ticker/provider_symbol to refresh on demand"
+        required: false
+        type: string
+      force:
+        description: "Refresh even when the current insight is fresh"
+        required: true
+        type: boolean
+        default: false
+      dry_run:
+        description: "Build insight payloads without writing rows"
+        required: true
+        type: boolean
+        default: false
+
+permissions:
+  contents: read
+
+concurrency:
+  group: trident-stock-insights-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  sync-insights:
+    runs-on: ubuntu-latest
+    timeout-minutes: 120
+
+    env:
+      SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+      SUPABASE_SERVICE_KEY: ${{ secrets.SUPABASE_SERVICE_KEY }}
+      OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
+      OPENAI_MODEL: ${{ vars.OPENAI_MODEL || 'gpt-4.1-mini' }}
+      TOP_N: ${{ inputs.top_n }}
+      TICKER: ${{ inputs.ticker }}
+      FORCE: ${{ inputs.force }}
+      DRY_RUN: ${{ inputs.dry_run }}
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Verify required configuration
+        run: |
+          missing=()
+          for name in SUPABASE_URL SUPABASE_SERVICE_KEY TOP_N; do
+            if [ -z "${!name}" ]; then
+              missing+=("$name")
+            fi
+          done
+          if [ "${#missing[@]}" -gt 0 ]; then
+            printf '::error::Missing required configuration: %s\n' "${missing[*]}"
+            exit 2
+          fi
+          if ! [[ "$TOP_N" =~ ^[0-9]+$ ]] || [ "$TOP_N" -lt 1 ]; then
+            echo "::error::top_n must be a positive integer."
+            exit 2
+          fi
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Install backend dependencies
+        working-directory: ./backend
+        run: |
+          python -m pip install --upgrade pip
+          pip install wheel
+          pip install scipy==1.15.1 statsmodels==0.14.4
+          pip install -r requirements.txt
+
+      - name: Preflight schema check
+        working-directory: ./backend
+        env:
+          SUPABASE_KEY: ${{ secrets.SUPABASE_SERVICE_KEY }}
+        run: python tools/schema_check.py --pretty --output schema-check-before-insights.json
+
+      - name: Sync Trident stock insights
+        working-directory: ./backend
+        env:
+          SUPABASE_KEY: ${{ secrets.SUPABASE_SERVICE_KEY }}
+        run: |
+          cmd=(
+            python scripts/sync_trident_stock_insights.py
+            --top-n "$TOP_N"
+            --output trident-stock-insights-sync.json
+          )
+          if [ -n "$TICKER" ]; then
+            cmd+=(--ticker "$TICKER")
+          fi
+          if [ "$FORCE" = "true" ]; then
+            cmd+=(--force)
+          fi
+          if [ "$DRY_RUN" = "true" ]; then
+            cmd+=(--dry-run)
+          fi
+          "${cmd[@]}"
+
+      - name: Upload insight reports
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: trident-stock-insights-reports
+          path: |
+            backend/schema-check-before-insights.json
+            backend/trident-stock-insights-sync.json
+          if-no-files-found: warn

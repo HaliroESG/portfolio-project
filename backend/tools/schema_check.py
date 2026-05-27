@@ -85,6 +85,18 @@ CRITICAL_SCHEMA: dict[str, list[str]] = {
         "latest_net_debt_to_ebitda", "horizons", "summary",
         "criteria_pass_count", "criteria_fail_count", "criteria_missing_count",
     ],
+    "trident_stock_insights": [
+        "instrument_key", "ticker", "provider_symbol", "business_summary",
+        "website", "market_cap", "trailing_pe", "forward_pe",
+        "recommendation_key", "recommendation_mean", "target_mean_price",
+        "target_high_price", "target_low_price", "number_of_analyst_opinions",
+        "latest_price", "price_currency", "regression_slope_pct",
+        "regression_z_score", "ma200_state", "momentum_3m_pct",
+        "momentum_12m_pct", "trend_state", "trend_reason_codes",
+        "price_history_state", "news_items", "ai_trend_summary",
+        "ai_summary_state", "source_provider", "source_url", "data_state",
+        "updated_at",
+    ],
     "broker_transactions": [
         "id", "broker", "account_id", "external_txn_id", "idempotency_key",
         "trade_date", "settlement_date", "symbol", "isin", "side", "quantity",
