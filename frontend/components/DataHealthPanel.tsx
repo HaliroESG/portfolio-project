@@ -122,6 +122,17 @@ function readString(value: unknown): string | null {
   return null
 }
 
+function errorMessage(error: unknown): string {
+  if (error instanceof Error) return error.message
+  if (error && typeof error === 'object' && 'message' in error) return String(error.message)
+  return String(error ?? '')
+}
+
+function isMissingSchemaError(error: unknown): boolean {
+  const message = errorMessage(error)
+  return /could not find the table|schema cache|relation .* does not exist|PGRST205/i.test(message)
+}
+
 function formatPercent(value: number | null): string {
   if (value === null || Number.isNaN(value)) return 'n/a'
   return `${value.toFixed(1)}%`
@@ -390,7 +401,9 @@ async function fetchFreshnessItems(): Promise<HealthItem[]> {
           ageMinutes,
         }
       } catch (error) {
-        console.error('Data health fetch error', source.id, error)
+        if (!(source.id === 'trident-insights' && isMissingSchemaError(error))) {
+          console.error('Data health fetch error', source.id, error)
+        }
         const fallbackItem: HealthItem = {
           id: source.id,
           label: source.label,
