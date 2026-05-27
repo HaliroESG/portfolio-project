@@ -110,10 +110,9 @@ jobs:
             db_url="$DATABASE_URL_VAR"
           fi
           if [ "$APPLY_SCHEMA" = "true" ] && [ -z "$db_url" ]; then
-            echo "::warning::SUPABASE_DB_URL or DATABASE_URL is not configured; SQL migrations will be skipped, but service-role data backfills will continue."
-            echo "APPLY_SCHEMA=false" >> "$GITHUB_ENV"
-            echo "SCHEMA_SKIP_REASON=Missing SUPABASE_DB_URL or DATABASE_URL" >> "$GITHUB_ENV"
-            exit 0
+            echo "::error::SUPABASE_DB_URL or DATABASE_URL is required to apply SQL migrations before Trident stock insights sync."
+            echo "::error::Without it, provider_symbol and trident_stock_insights remain unavailable, so the data sync cannot succeed."
+            exit 2
           fi
           if [ -n "$db_url" ]; then
             echo "::add-mask::$db_url"
