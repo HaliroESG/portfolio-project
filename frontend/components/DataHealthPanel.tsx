@@ -72,6 +72,7 @@ const FRESHNESS_SOURCES = [
   { id: 'valuations', label: 'Valuation Snapshots', table: 'valuation_snapshots', field: 'created_at', staleAfterMinutes: 7 * 24 * 60, marketAware: false },
   { id: 'news', label: 'News Feed', table: 'news_feed', field: 'published_at', staleAfterMinutes: 48 * 60, marketAware: false },
   { id: 'macro', label: 'Macro Indicators', table: 'macro_indicators', field: 'last_update', staleAfterMinutes: 36 * 60, marketAware: true },
+  { id: 'trident-insights', label: 'Trident Insights', table: 'trident_stock_insights', field: 'updated_at', staleAfterMinutes: 24 * 60, marketAware: false },
 ] as const
 
 const ETL_HISTORY_LIMIT = 120
@@ -506,7 +507,7 @@ async function fetchQualityMetrics(): Promise<QualityMetric[]> {
     valuationCoveragePct = null
   }
 
-  return [
+  const metrics: QualityMetric[] = [
     {
       id: 'priced-assets',
       label: 'Priced Assets',
@@ -541,6 +542,49 @@ async function fetchQualityMetrics(): Promise<QualityMetric[]> {
       tone: toneForHighIsGood(valuationCoveragePct, 95, 85),
     },
   ]
+
+  try {
+    const freshCutoffIso = new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString()
+    const [totalResult, freshResult, aiResult] = await Promise.all([
+      supabase.from('trident_stock_insights').select('instrument_key', { count: 'exact', head: true }),
+      supabase
+        .from('trident_stock_insights')
+        .select('instrument_key', { count: 'exact', head: true })
+        .gte('updated_at', freshCutoffIso),
+      supabase
+        .from('trident_stock_insights')
+        .select('instrument_key', { count: 'exact', head: true })
+        .not('ai_trend_summary', 'is', null),
+    ])
+
+    const insightError = totalResult.error ?? freshResult.error ?? aiResult.error
+    if (insightError) throw insightError
+
+    const totalInsights = totalResult.count ?? 0
+    const freshInsights = freshResult.count ?? 0
+    const aiReadyInsights = aiResult.count ?? 0
+    const freshPct = totalInsights > 0 ? (freshInsights / totalInsights) * 100 : null
+    metrics.push({
+      id: 'trident-insights',
+      label: 'Trident Insights',
+      value:
+        totalInsights > 0
+          ? `${freshInsights}/${totalInsights} fresh · ${aiReadyInsights} AI`
+          : 'sync pending',
+      hint: 'Generated company profile, analyst consensus, trend facts, and AI trend brief rows.',
+      tone: totalInsights > 0 ? toneForHighIsGood(freshPct, 80, 50) : 'WARN',
+    })
+  } catch {
+    metrics.push({
+      id: 'trident-insights',
+      label: 'Trident Insights',
+      value: 'schema pending',
+      hint: 'trident_stock_insights is not available to the frontend yet.',
+      tone: 'BAD',
+    })
+  }
+
+  return metrics
 }
 
 function shortError(error: string | null | undefined): string {
@@ -552,6 +596,9 @@ function operationActionForRun(run: EtlRun): string {
   const jobName = run.job_name.toLowerCase()
   if (jobName.includes('historical_prices_trident')) {
     return 'Run Financial Data Sync with scope=trident, trident_mode=full, and a backend service_role key.'
+  }
+  if (jobName.includes('trident_stock_insights')) {
+    return 'Run Trident Stock Insights Sync with top_n=200 after the Supabase schema is applied.'
   }
   if (jobName.includes('macro')) {
     return 'Run the macro refresh and verify macro_indicators freshness after completion.'
@@ -641,7 +688,7 @@ export function DataHealthPanel() {
         <div className="flex flex-wrap items-center gap-2">
           <span className="inline-flex items-center gap-1 rounded border border-slate-200 px-2 py-1 text-[10px] font-black uppercase tracking-wider text-slate-600 dark:border-white/10 dark:text-gray-300">
             <Activity className="w-3 h-3" />
-            {liveCount}/{items.length || 4} live
+            {liveCount}/{items.length || FRESHNESS_SOURCES.length} live
           </span>
           {staleCount > 0 && (
             <span className="rounded border border-amber-300 bg-amber-50 px-2 py-1 text-[10px] font-black uppercase tracking-wider text-amber-700 dark:border-amber-800 dark:bg-amber-950/20 dark:text-amber-300">
@@ -686,7 +733,7 @@ export function DataHealthPanel() {
                 <div className="min-w-0">
                   <div className="text-[11px] font-black uppercase tracking-[0.18em] text-slate-700 dark:text-gray-300">Data Operations Details</div>
                   <div className="truncate text-[10px] font-mono text-slate-500 dark:text-gray-500">
-                    {liveCount}/{items.length || 4} live · {criticalEtlCount} ETL critical
+                    {liveCount}/{items.length || FRESHNESS_SOURCES.length} live · {criticalEtlCount} ETL critical
                   </div>
                 </div>
               </div>

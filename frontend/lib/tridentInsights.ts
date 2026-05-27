@@ -3,11 +3,19 @@ import type { TridentInsightNewsItem, TridentStockInsightRow } from '../types'
 
 type JsonRecord = Record<string, unknown>
 
-export type TridentInsightLoadStatus = 'READY' | 'EMPTY' | 'SCHEMA_PENDING'
+export type TridentInsightLoadStatus = 'READY' | 'SYNC_PENDING' | 'SCHEMA_PENDING'
 
 export interface TridentInsightLoadResult {
   status: TridentInsightLoadStatus
   insight: TridentStockInsightRow | null
+  message?: string
+}
+
+export interface TridentInsightCoverageResult {
+  status: 'READY' | 'SCHEMA_PENDING'
+  generatedCount: number
+  freshCount: number
+  aiReadyCount: number
   message?: string
 }
 
@@ -158,7 +166,7 @@ export async function loadTridentStockInsight(
       return {
         status: 'SCHEMA_PENDING',
         insight: null,
-        message: 'Apply backend/sql/20260527_trident_stock_insights.sql and run the Trident stock insights sync.',
+        message: 'Insights schema pending. Apply the Supabase deploy gate before running the stock insight sync.',
       }
     }
     throw error
@@ -166,14 +174,57 @@ export async function loadTridentStockInsight(
 
   if (!data) {
     return {
-      status: 'EMPTY',
+      status: 'SYNC_PENDING',
       insight: null,
-      message: 'No company insight has been generated for this instrument yet.',
+      message: 'Insights sync pending for this instrument. Run the Trident Stock Insights workflow to generate profile, consensus, trend facts, and news context.',
     }
   }
 
   return {
     status: 'READY',
     insight: parseInsightRow(data as unknown as JsonRecord),
+  }
+}
+
+function isSchemaPending(error: { message?: string } | null): boolean {
+  return Boolean(error?.message && isMissingRelationOrColumn(error.message))
+}
+
+export async function loadTridentInsightCoverage(
+  supabase: SupabaseClient,
+): Promise<TridentInsightCoverageResult> {
+  const freshCutoffIso = new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString()
+
+  const [generated, fresh, aiReady] = await Promise.all([
+    supabase.from('trident_stock_insights').select('instrument_key', { count: 'exact', head: true }),
+    supabase
+      .from('trident_stock_insights')
+      .select('instrument_key', { count: 'exact', head: true })
+      .gte('updated_at', freshCutoffIso),
+    supabase
+      .from('trident_stock_insights')
+      .select('instrument_key', { count: 'exact', head: true })
+      .not('ai_trend_summary', 'is', null),
+  ])
+
+  const schemaPending = [generated.error, fresh.error, aiReady.error].some(isSchemaPending)
+  if (schemaPending) {
+    return {
+      status: 'SCHEMA_PENDING',
+      generatedCount: 0,
+      freshCount: 0,
+      aiReadyCount: 0,
+      message: 'Insights schema pending.',
+    }
+  }
+
+  const error = generated.error ?? fresh.error ?? aiReady.error
+  if (error) throw error
+
+  return {
+    status: 'READY',
+    generatedCount: generated.count ?? 0,
+    freshCount: fresh.count ?? 0,
+    aiReadyCount: aiReady.count ?? 0,
   }
 }

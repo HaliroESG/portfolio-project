@@ -20,6 +20,7 @@ import { AppShell } from '../../components/AppShell'
 import { EmptyState } from '../../components/EmptyState'
 import { TridentCompanyInsight } from '../../components/TridentCompanyInsight'
 import { supabase } from '../../lib/supabase'
+import { loadTridentInsightCoverage } from '../../lib/tridentInsights'
 import { loadTridentBundle, loadTridentCriteria } from '../../lib/tridentData'
 import { swrOptions, SWR_REFRESH } from '../../lib/swrConfig'
 import { cn } from '../../lib/utils'
@@ -339,6 +340,11 @@ export default function TridentPage() {
     () => loadTridentBundle(supabase),
     swrOptions(SWR_REFRESH.SLOW)
   )
+  const { data: insightCoverage } = useSWR(
+    'trident-stock-insight-coverage-v1',
+    () => loadTridentInsightCoverage(supabase),
+    swrOptions(SWR_REFRESH.SLOW)
+  )
 
   const rows = data?.rows ?? EMPTY_ROWS
   const filteredRows = useMemo(() => {
@@ -397,6 +403,21 @@ export default function TridentPage() {
   const lastRunStats = data?.lastBackendRun?.stats ?? {}
   const coveragePct = typeof lastRunStats.coverage_pct === 'number' ? lastRunStats.coverage_pct : null
   const staleRun = isStaleRun(data?.lastBackendRun?.finished_at ?? data?.lastUpdateIso)
+  const insightCoverageLabel = useMemo(() => {
+    if (!insightCoverage) return 'Insights checking'
+    if (insightCoverage.status === 'SCHEMA_PENDING') return 'Insights schema pending'
+    const total = rows.length || 0
+    const generated = insightCoverage.generatedCount
+    const denominator = total > 0 ? total.toString() : '--'
+    const aiLabel = insightCoverage.aiReadyCount > 0 ? ` · ${insightCoverage.aiReadyCount} AI` : ''
+    return `Insights ${generated}/${denominator} generated · ${insightCoverage.freshCount} fresh${aiLabel}`
+  }, [insightCoverage, rows.length])
+  const insightCoverageTone =
+    !insightCoverage || insightCoverage.status === 'SCHEMA_PENDING'
+      ? 'border-amber-300 bg-amber-50 text-amber-700 dark:border-amber-800 dark:bg-amber-950/30 dark:text-amber-300'
+      : insightCoverage.generatedCount > 0
+      ? 'border-emerald-300 bg-emerald-50 text-emerald-700 dark:border-emerald-900/60 dark:bg-emerald-950/20 dark:text-emerald-300'
+      : 'border-slate-300 bg-slate-50 text-slate-600 dark:border-white/10 dark:bg-white/5 dark:text-gray-300'
 
   const handleSort = (nextSortKey: SortKey) => {
     if (selectedRow && selectedRow.instrument_key !== selectedKey) {
@@ -478,6 +499,9 @@ export default function TridentPage() {
               </span>
               <span className="rounded border border-amber-300 bg-amber-50 px-3 py-1.5 text-amber-700 dark:border-amber-800 dark:bg-amber-950/30 dark:text-amber-300">
                 Missing != Fail
+              </span>
+              <span className={cn('rounded border px-3 py-1.5', insightCoverageTone)}>
+                {insightCoverageLabel}
               </span>
               {hasUniverseOnlyRows && (
                 <span className="rounded border border-slate-300 bg-slate-50 px-3 py-1.5 text-slate-600 dark:border-white/10 dark:bg-white/5 dark:text-gray-300">

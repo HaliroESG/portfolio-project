@@ -78,6 +78,18 @@ function InsightMetric({ label, value }: { label: string; value: string }) {
   )
 }
 
+function pendingInsightTone(status: string | undefined): string {
+  if (status === 'SCHEMA_PENDING') {
+    return 'border-amber-300 bg-amber-50 text-amber-700 dark:border-amber-900/60 dark:bg-amber-950/20 dark:text-amber-300'
+  }
+  return 'border-slate-300 bg-slate-50 text-slate-600 dark:border-white/10 dark:bg-white/5 dark:text-gray-300'
+}
+
+function pendingInsightLabel(status: string | undefined): string {
+  if (status === 'SCHEMA_PENDING') return 'Insights schema pending'
+  return 'Insights sync pending'
+}
+
 export function TridentCompanyInsight({
   instrumentKey,
   ticker,
@@ -115,6 +127,8 @@ export function TridentCompanyInsight({
   }
 
   if (!insight) {
+    const pendingStatus = data?.status
+
     return (
       <section className="mt-3 rounded-lg border border-slate-200 bg-slate-50 p-3 dark:border-white/10 dark:bg-black/20">
         <div className="flex items-start justify-between gap-3">
@@ -123,8 +137,11 @@ export function TridentCompanyInsight({
               <Building2 className="h-4 w-4 text-blue-600 dark:text-[#00FF88]" />
               Company Insight
             </div>
+            <span className={cn('mt-2 inline-flex rounded border px-2 py-0.5 text-[9px] font-black uppercase tracking-wider', pendingInsightTone(pendingStatus))}>
+              {pendingInsightLabel(pendingStatus)}
+            </span>
             <div className="mt-2 text-xs font-semibold text-slate-600 dark:text-gray-300">
-              {data?.message ?? 'No company insight has been generated for this instrument yet.'}
+              {data?.message ?? 'Insights sync pending for this instrument.'}
             </div>
           </div>
           <a

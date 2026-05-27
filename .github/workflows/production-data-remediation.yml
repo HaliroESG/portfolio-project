@@ -18,7 +18,7 @@ on:
         description: "Top Trident scored rows to backfill first"
         required: true
         type: string
-        default: "50"
+        default: "200"
       start_date:
         description: "Historical price start date"
         required: true
@@ -58,7 +58,7 @@ jobs:
       TRIDENT_UNIVERSE_CSV: ${{ vars.TRIDENT_UNIVERSE_CSV }}
       TRIDENT_FINANCIALS_CSV: ${{ vars.TRIDENT_FINANCIALS_CSV }}
       TRIDENT_SOURCE_LICENSE_NOTE: ${{ vars.TRIDENT_SOURCE_LICENSE_NOTE }}
-      TOP_N: ${{ github.event_name == 'workflow_dispatch' && inputs.top_n || '50' }}
+      TOP_N: ${{ github.event_name == 'workflow_dispatch' && inputs.top_n || '200' }}
       START_DATE: ${{ github.event_name == 'workflow_dispatch' && inputs.start_date || '1999-01-01' }}
       APPLY_SCHEMA: ${{ github.event_name == 'push' || inputs.apply_schema }}
       RUN_FULL_AFTER_TOP: ${{ github.event_name == 'push' || inputs.run_full_after_top }}
@@ -197,6 +197,20 @@ jobs:
             --force \
             --output top-trident-stock-insights.json
 
+      - name: Sync visible Trident stock insight checks
+        working-directory: ./backend
+        env:
+          SUPABASE_KEY: ${{ secrets.SUPABASE_SERVICE_KEY }}
+          OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
+          OPENAI_MODEL: ${{ vars.OPENAI_MODEL || 'gpt-4.1-mini' }}
+        run: |
+          for ticker in GOOGL MSFT INTU NVDA; do
+            python scripts/sync_trident_stock_insights.py \
+              --ticker "$ticker" \
+              --force \
+              --output "trident-stock-insights-${ticker}.json"
+          done
+
       - name: Full Trident data sync
         if: ${{ env.RUN_FULL_AFTER_TOP == 'true' }}
         working-directory: ./backend
@@ -228,6 +242,7 @@ jobs:
             backend/schema-check-after-remediation.json
             backend/top-trident-price-backfill.json
             backend/top-trident-stock-insights.json
+            backend/trident-stock-insights-*.json
             backend/refresh-report-trident-full.json
             backend/freshness-trident-remediation.json
           if-no-files-found: warn
