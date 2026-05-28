@@ -260,7 +260,7 @@ position_values as (
     end as current_value_eur
   from public.portfolio_positions p
   left join public.portfolios po
-    on po.id = p.portfolio_id
+    on po.id::text = p.portfolio_id
   left join public.market_watch m
     on upper(m.ticker) = upper(p.ticker)
   left join public.currencies c
