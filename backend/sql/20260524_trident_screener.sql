@@ -162,6 +162,7 @@ grant select on table
   public.trident_criterion_results
 to anon, authenticated;
 
+drop view if exists public.portfolio_decision_items_latest;
 drop view if exists public.trident_screener_latest;
 
 create or replace view public.trident_screener_latest
