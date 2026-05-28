@@ -133,6 +133,8 @@ def build_trident_steps(
                 "scripts/sync_trident_stock_insights.py",
                 "--top-n",
                 env.get("TRIDENT_STOCK_INSIGHTS_TOP_N", "200"),
+                "--batch-size",
+                env.get("TRIDENT_STOCK_INSIGHTS_BATCH_SIZE", "25"),
             ),
             required_env=("SUPABASE_URL", "SUPABASE_KEY"),
         ),

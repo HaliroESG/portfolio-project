@@ -40,6 +40,8 @@ jobs:
       SUPABASE_SERVICE_KEY: ${{ secrets.SUPABASE_SERVICE_KEY }}
       OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
       OPENAI_MODEL: ${{ vars.OPENAI_MODEL || 'gpt-4.1-mini' }}
+      YFINANCE_PROFILE_TIMEOUT_SEC: ${{ vars.YFINANCE_PROFILE_TIMEOUT_SEC || '30' }}
+      TRIDENT_STOCK_INSIGHTS_BATCH_SIZE: ${{ vars.TRIDENT_STOCK_INSIGHTS_BATCH_SIZE || '25' }}
       TOP_N: ${{ inputs.top_n }}
       TICKER: ${{ inputs.ticker }}
       FORCE: ${{ inputs.force }}
@@ -93,6 +95,7 @@ jobs:
           cmd=(
             python scripts/sync_trident_stock_insights.py
             --top-n "$TOP_N"
+            --batch-size "$TRIDENT_STOCK_INSIGHTS_BATCH_SIZE"
             --output trident-stock-insights-sync.json
           )
           if [ -n "$TICKER" ]; then

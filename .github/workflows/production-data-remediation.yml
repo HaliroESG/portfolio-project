@@ -60,6 +60,8 @@ jobs:
       TRIDENT_FINANCIALS_CSV: ${{ vars.TRIDENT_FINANCIALS_CSV }}
       TRIDENT_SOURCE_LICENSE_NOTE: ${{ vars.TRIDENT_SOURCE_LICENSE_NOTE }}
       YFINANCE_DOWNLOAD_TIMEOUT_SEC: ${{ vars.YFINANCE_DOWNLOAD_TIMEOUT_SEC || '30' }}
+      YFINANCE_PROFILE_TIMEOUT_SEC: ${{ vars.YFINANCE_PROFILE_TIMEOUT_SEC || '30' }}
+      TRIDENT_STOCK_INSIGHTS_BATCH_SIZE: ${{ vars.TRIDENT_STOCK_INSIGHTS_BATCH_SIZE || '25' }}
       TOP_N: ${{ github.event_name == 'workflow_dispatch' && inputs.top_n || '200' }}
       START_DATE: ${{ github.event_name == 'workflow_dispatch' && inputs.start_date || '1999-01-01' }}
       APPLY_SCHEMA: ${{ github.event_name == 'push' || inputs.apply_schema }}
@@ -195,6 +197,7 @@ jobs:
         run: |
           python scripts/sync_trident_stock_insights.py \
             --top-n "$TOP_N" \
+            --batch-size "$TRIDENT_STOCK_INSIGHTS_BATCH_SIZE" \
             --force \
             --output top-trident-stock-insights.json
 
@@ -208,6 +211,7 @@ jobs:
           for ticker in GOOGL MSFT INTU NVDA; do
             python scripts/sync_trident_stock_insights.py \
               --ticker "$ticker" \
+              --batch-size "$TRIDENT_STOCK_INSIGHTS_BATCH_SIZE" \
               --force \
               --output "trident-stock-insights-${ticker}.json"
           done

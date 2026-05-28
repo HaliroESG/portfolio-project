@@ -5,6 +5,7 @@ import argparse
 import json
 import math
 import os
+import signal
 import sys
 import time
 from dataclasses import dataclass
@@ -31,6 +32,8 @@ PRICE_ROW_PAGE_SIZE = 1000
 MIN_REGRESSION_POINTS = 30
 MA200_WINDOW = 200
 NEWS_LIMIT = 5
+DEFAULT_PROFILE_TIMEOUT_SEC = 30.0
+DEFAULT_UPSERT_BATCH_SIZE = 25
 
 TRIDENT_SELECTOR = ",".join([
     "instrument_key",
@@ -232,9 +235,32 @@ def fetch_existing_updates(supabase: Any, instrument_keys: list[str]) -> dict[st
     }
 
 
-def fetch_yfinance_info(symbol: str) -> tuple[dict[str, Any], str | None]:
+def _yfinance_timeout_handler(_signum: int, _frame: Any) -> None:
+    raise TimeoutError("yfinance profile request timed out")
+
+
+def yfinance_profile_timeout_sec() -> float:
+    raw_value = os.environ.get("YFINANCE_PROFILE_TIMEOUT_SEC", str(DEFAULT_PROFILE_TIMEOUT_SEC))
     try:
-        info = yf.Ticker(symbol).info
+        return float(raw_value)
+    except (TypeError, ValueError):
+        return DEFAULT_PROFILE_TIMEOUT_SEC
+
+
+def fetch_yfinance_info(symbol: str) -> tuple[dict[str, Any], str | None]:
+    timeout_sec = yfinance_profile_timeout_sec()
+    try:
+        if timeout_sec > 0 and hasattr(signal, "SIGALRM"):
+            previous_handler = signal.getsignal(signal.SIGALRM)
+            try:
+                signal.signal(signal.SIGALRM, _yfinance_timeout_handler)
+                signal.setitimer(signal.ITIMER_REAL, timeout_sec)
+                info = yf.Ticker(symbol).info
+            finally:
+                signal.setitimer(signal.ITIMER_REAL, 0)
+                signal.signal(signal.SIGALRM, previous_handler)
+        else:
+            info = yf.Ticker(symbol).info
     except Exception as exc:
         return {}, str(exc)
     return dict(info or {}), None
@@ -639,6 +665,7 @@ def run_sync(
     force: bool = False,
     dry_run: bool = False,
     ai_enabled: bool = True,
+    batch_size: int = DEFAULT_UPSERT_BATCH_SIZE,
 ) -> dict[str, Any]:
     existing = {} if force else fetch_existing_updates(supabase, [target.instrument_key for target in targets])
     stats: dict[str, Any] = {
@@ -650,9 +677,17 @@ def run_sync(
         "ai_ready": 0,
         "states": {},
         "dry_run": dry_run,
+        "batch_size": batch_size,
     }
-    payloads: list[dict[str, Any]] = []
+    pending_payloads: list[dict[str, Any]] = []
+    sample_payloads: list[dict[str, Any]] = []
     errors: list[dict[str, str]] = []
+
+    def flush_pending() -> None:
+        if not pending_payloads:
+            return
+        stats["upserted"] += upsert_rows(supabase, pending_payloads, dry_run=dry_run)
+        pending_payloads.clear()
 
     for target in targets:
         if not force and is_fresh(existing.get(target.instrument_key), stale_hours=stale_hours):
@@ -660,8 +695,13 @@ def run_sync(
             continue
         try:
             payload = build_insight_payload(supabase, target, ai_enabled=ai_enabled)
-            payloads.append(payload)
             stats["processed"] += 1
+            if dry_run and len(sample_payloads) < 5:
+                sample_payloads.append(payload)
+            if not dry_run:
+                pending_payloads.append(payload)
+                if len(pending_payloads) >= batch_size:
+                    flush_pending()
             if payload.get("ai_summary_state") == "READY":
                 stats["ai_ready"] += 1
             for state in payload.get("data_state") or ["READY"]:
@@ -672,11 +712,11 @@ def run_sync(
             errors.append({"ticker": target.ticker, "error": str(exc)})
             print(f"Failed insight sync for {target.ticker}: {exc}", flush=True)
 
-    stats["upserted"] = upsert_rows(supabase, payloads, dry_run=dry_run)
+    flush_pending()
     if errors:
         stats["errors"] = errors[:25]
     if dry_run:
-        stats["sample_payloads"] = payloads[:5]
+        stats["sample_payloads"] = sample_payloads
     return stats
 
 
@@ -697,6 +737,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--force", action="store_true")
     parser.add_argument("--dry-run", action="store_true")
     parser.add_argument("--no-ai", action="store_true")
+    parser.add_argument("--batch-size", type=int, default=DEFAULT_UPSERT_BATCH_SIZE)
     parser.add_argument("--output", default=None)
     return parser.parse_args()
 
@@ -707,6 +748,8 @@ def main() -> None:
         raise RuntimeError("--top-n must be greater than zero")
     if args.stale_hours <= 0:
         raise RuntimeError("--stale-hours must be greater than zero")
+    if args.batch_size <= 0:
+        raise RuntimeError("--batch-size must be greater than zero")
 
     supabase = get_supabase_client()
     targets = resolve_targets(args, supabase)
@@ -723,6 +766,7 @@ def main() -> None:
             force=args.force,
             dry_run=args.dry_run,
             ai_enabled=not args.no_ai,
+            batch_size=args.batch_size,
         )
         status = "SUCCESS" if stats.get("failed", 0) == 0 else "FAILED"
         normalized_stats = build_etl_stats(

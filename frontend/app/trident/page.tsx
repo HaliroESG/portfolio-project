@@ -409,8 +409,8 @@ export default function TridentPage() {
     const total = rows.length || 0
     const generated = insightCoverage.generatedCount
     const denominator = total > 0 ? total.toString() : '--'
-    const aiLabel = insightCoverage.aiReadyCount > 0 ? ` · ${insightCoverage.aiReadyCount} AI` : ''
-    return `Insights ${generated}/${denominator} generated · ${insightCoverage.freshCount} fresh${aiLabel}`
+    const generatedDenominator = generated > 0 ? generated.toString() : '--'
+    return `Insights ${insightCoverage.freshCount}/${denominator} fresh · AI summaries ${insightCoverage.aiReadyCount}/${generatedDenominator} · News ${insightCoverage.newsReadyCount}/${generatedDenominator}`
   }, [insightCoverage, rows.length])
   const insightCoverageTone =
     !insightCoverage || insightCoverage.status === 'SCHEMA_PENDING'

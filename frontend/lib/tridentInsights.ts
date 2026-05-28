@@ -16,6 +16,7 @@ export interface TridentInsightCoverageResult {
   generatedCount: number
   freshCount: number
   aiReadyCount: number
+  newsReadyCount: number
   message?: string
 }
 
@@ -195,7 +196,7 @@ export async function loadTridentInsightCoverage(
 ): Promise<TridentInsightCoverageResult> {
   const freshCutoffIso = new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString()
 
-  const [generated, fresh, aiReady] = await Promise.all([
+  const [generated, fresh, aiReady, newsRows] = await Promise.all([
     supabase.from('trident_stock_insights').select('instrument_key', { count: 'exact', head: true }),
     supabase
       .from('trident_stock_insights')
@@ -205,26 +206,37 @@ export async function loadTridentInsightCoverage(
       .from('trident_stock_insights')
       .select('instrument_key', { count: 'exact', head: true })
       .not('ai_trend_summary', 'is', null),
+    supabase
+      .from('trident_stock_insights')
+      .select('instrument_key,news_items')
+      .limit(2000),
   ])
 
-  const schemaPending = [generated.error, fresh.error, aiReady.error].some(isSchemaPending)
+  const schemaPending = [generated.error, fresh.error, aiReady.error, newsRows.error].some(isSchemaPending)
   if (schemaPending) {
     return {
       status: 'SCHEMA_PENDING',
       generatedCount: 0,
       freshCount: 0,
       aiReadyCount: 0,
+      newsReadyCount: 0,
       message: 'Insights schema pending.',
     }
   }
 
-  const error = generated.error ?? fresh.error ?? aiReady.error
+  const error = generated.error ?? fresh.error ?? aiReady.error ?? newsRows.error
   if (error) throw error
+
+  const newsReadyCount = (newsRows.data ?? []).filter((row) => {
+    const record = row as { news_items?: unknown }
+    return Array.isArray(record.news_items) && record.news_items.length > 0
+  }).length
 
   return {
     status: 'READY',
     generatedCount: generated.count ?? 0,
     freshCount: fresh.count ?? 0,
     aiReadyCount: aiReady.count ?? 0,
+    newsReadyCount,
   }
 }

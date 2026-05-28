@@ -140,10 +140,10 @@ try {
     ]) && hasAll(tridentCompanyInsight, [
       'Company Insight',
       'AI trend brief',
-      'Business summary',
-      'News inputs',
+      'Full business summary',
+      'Recent drivers',
       'https://finance.yahoo.com/quote/',
-      'AI summary unavailable',
+      'AI brief not configured',
     ]) && hasAll(tridentInsights, [
       "from('trident_stock_insights')",
       'SCHEMA_PENDING',
