@@ -140,12 +140,14 @@ def normalize_index(series: pd.Series) -> pd.Series:
 def download_price_series(ticker: str, start: date, end: date) -> pd.Series | None:
     try:
         end_inclusive = end + timedelta(days=1)
+        timeout_sec = float(os.environ.get("YFINANCE_DOWNLOAD_TIMEOUT_SEC", "30"))
         data = yf.download(
             ticker,
             start=start.isoformat(),
             end=end_inclusive.isoformat(),
             progress=False,
             auto_adjust=False,
+            timeout=timeout_sec,
         )
         if data is None or data.empty:
             return None

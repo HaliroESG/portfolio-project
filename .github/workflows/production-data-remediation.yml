@@ -36,7 +36,7 @@ permissions:
 
 concurrency:
   group: production-data-remediation-${{ github.ref }}
-  cancel-in-progress: false
+  cancel-in-progress: true
 
 jobs:
   remediate-data:
@@ -59,6 +59,7 @@ jobs:
       TRIDENT_UNIVERSE_CSV: ${{ vars.TRIDENT_UNIVERSE_CSV }}
       TRIDENT_FINANCIALS_CSV: ${{ vars.TRIDENT_FINANCIALS_CSV }}
       TRIDENT_SOURCE_LICENSE_NOTE: ${{ vars.TRIDENT_SOURCE_LICENSE_NOTE }}
+      YFINANCE_DOWNLOAD_TIMEOUT_SEC: ${{ vars.YFINANCE_DOWNLOAD_TIMEOUT_SEC || '30' }}
       TOP_N: ${{ github.event_name == 'workflow_dispatch' && inputs.top_n || '200' }}
       START_DATE: ${{ github.event_name == 'workflow_dispatch' && inputs.start_date || '1999-01-01' }}
       APPLY_SCHEMA: ${{ github.event_name == 'push' || inputs.apply_schema }}
