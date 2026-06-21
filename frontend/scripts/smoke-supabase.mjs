@@ -233,7 +233,7 @@ async function equityScreenerCheck() {
   const check = await q('equity_screener_latest', () =>
     supabase
       .from('equity_screener_latest')
-      .select('instrument_key,ticker,country,sector,themes,market_cap,revenue,free_cash_flow,fcf_yield,revenue_cagr_3y,forecast_revenue_growth,trailing_pe,forward_pe,quality_value_score,valuation_tag,data_state,updated_at', { count: 'exact' })
+      .select('instrument_key,ticker,country,sector,themes,market_cap,revenue,free_cash_flow,fcf_yield,revenue_cagr_3y,forecast_revenue_growth,trailing_pe,forward_pe,regression_slope_pct,regression_z_score,ma200_state,momentum_3m_pct,momentum_12m_pct,price_coverage_pct,quality_value_score,valuation_tag,data_state,updated_at', { count: 'exact' })
       .order('quality_value_score', { ascending: false })
       .limit(10)
   )

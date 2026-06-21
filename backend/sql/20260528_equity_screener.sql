@@ -35,6 +35,12 @@ create table if not exists public.equity_screener_results (
   analyst_count integer,
   trident_score numeric,
   trident_state text,
+  regression_slope_pct numeric,
+  regression_z_score numeric,
+  ma200_state text,
+  momentum_3m_pct numeric,
+  momentum_12m_pct numeric,
+  price_coverage_pct numeric,
   quality_value_score numeric not null default 0,
   valuation_tag text not null default 'INSUFFICIENT_DATA'
     check (valuation_tag in ('POTENTIAL_VALUE', 'FAIR', 'EXPENSIVE', 'INSUFFICIENT_DATA')),
@@ -46,6 +52,14 @@ create table if not exists public.equity_screener_results (
   check (valuation_currency is null or char_length(valuation_currency) = 3),
   check (quality_value_score >= 0 and quality_value_score <= 100)
 );
+
+alter table public.equity_screener_results
+  add column if not exists regression_slope_pct numeric,
+  add column if not exists regression_z_score numeric,
+  add column if not exists ma200_state text,
+  add column if not exists momentum_3m_pct numeric,
+  add column if not exists momentum_12m_pct numeric,
+  add column if not exists price_coverage_pct numeric;
 
 create index if not exists equity_screener_results_score_idx
   on public.equity_screener_results (quality_value_score desc, market_cap desc nulls last);
@@ -106,6 +120,12 @@ select
   analyst_count,
   trident_score,
   trident_state,
+  regression_slope_pct,
+  regression_z_score,
+  ma200_state,
+  momentum_3m_pct,
+  momentum_12m_pct,
+  price_coverage_pct,
   quality_value_score,
   valuation_tag,
   score_details,

@@ -5,7 +5,10 @@ from historical_prices_sync import (
     PriceTarget,
     build_price_payloads,
     build_ticker_currency_map,
+    fetch_price_targets,
+    fetch_theme_price_targets,
     fetch_trident_price_targets,
+    filter_missing_price_targets,
     run_sync,
 )
 
@@ -128,6 +131,119 @@ def test_fetch_trident_price_targets_uses_provider_symbol_and_currency():
     assert targets["AIR.PA"].provider_symbol == "AI.PA"
     assert targets["AIR.PA"].currency == "EUR"
     assert targets["AIR.PA"].source_index == "CAC 40"
+
+
+def test_fetch_trident_price_targets_can_filter_source_index():
+    supabase = _FakeSupabase({
+        "trident_equity_universe": [
+            {
+                "ticker": "wave.pa",
+                "provider_symbol": "WAVE.PA",
+                "currency": "eur",
+                "source_index": "Curated IT Services",
+                "provider": "global_yahoo",
+                "is_active": True,
+            },
+            {
+                "ticker": "msft",
+                "provider_symbol": "MSFT",
+                "currency": "USD",
+                "source_index": "S&P 500",
+                "provider": "global_yahoo",
+                "is_active": True,
+            },
+        ],
+    })
+
+    targets = fetch_trident_price_targets(
+        supabase,
+        source_indexes={"Curated IT Services"},
+    )
+
+    assert set(targets) == {"WAVE.PA"}
+    assert targets["WAVE.PA"].source_index == "Curated IT Services"
+
+
+def test_fetch_theme_price_targets_uses_open_screener_themes_and_provider_symbol():
+    supabase = _FakeSupabase({
+        "equity_screener_latest": [
+            {
+                "ticker": "cap.pa",
+                "provider_symbol": "CAP.PA",
+                "currency": "eur",
+                "source_index": "Curated IT Services",
+                "provider": "global_yahoo",
+                "themes": ["IT_SERVICES"],
+            },
+            {
+                "ticker": "nvda",
+                "provider_symbol": "NVDA",
+                "currency": "USD",
+                "source_index": "S&P 500",
+                "provider": "global_yahoo",
+                "themes": ["SEMICONDUCTOR"],
+            },
+        ],
+    })
+
+    targets = fetch_theme_price_targets(supabase, {"IT_SERVICES"})
+
+    assert set(targets) == {"CAP.PA"}
+    assert targets["CAP.PA"].provider_symbol == "CAP.PA"
+    assert targets["CAP.PA"].currency == "EUR"
+
+
+def test_only_missing_filters_targets_with_successful_coverage():
+    supabase = _FakeSupabase({
+        "historical_price_coverage": [
+            {"ticker": "ACN", "earliest_date": "2001-07-19", "coverage_pct": 87.4},
+            {"ticker": "WAVE.PA", "earliest_date": None, "coverage_pct": None},
+        ],
+    })
+    targets = {
+        "ACN": PriceTarget("ACN", "ACN", currency="USD"),
+        "WAVE.PA": PriceTarget("WAVE.PA", "WAVE.PA", currency="EUR"),
+        "SOP.PA": PriceTarget("SOP.PA", "SOP.PA", currency="EUR"),
+    }
+
+    filtered = filter_missing_price_targets(supabase, targets)
+
+    assert set(filtered) == {"WAVE.PA", "SOP.PA"}
+
+
+def test_fetch_price_targets_can_combine_source_index_and_only_missing():
+    supabase = _FakeSupabase({
+        "trident_equity_universe": [
+            {
+                "ticker": "wave.pa",
+                "provider_symbol": "WAVE.PA",
+                "currency": "eur",
+                "source_index": "Curated IT Services",
+                "provider": "global_yahoo",
+                "is_active": True,
+            },
+            {
+                "ticker": "acn",
+                "provider_symbol": "ACN",
+                "currency": "USD",
+                "source_index": "Curated IT Services",
+                "provider": "global_yahoo",
+                "is_active": True,
+            },
+        ],
+        "historical_price_coverage": [
+            {"ticker": "ACN", "earliest_date": "2001-07-19", "coverage_pct": 87.4},
+        ],
+    })
+
+    targets = fetch_price_targets(
+        supabase,
+        trident_only=True,
+        source_indexes={"Curated IT Services"},
+        only_missing=True,
+    )
+
+    assert set(targets) == {"WAVE.PA"}
 
 
 def test_build_ticker_currency_map_trusts_trident_currency(monkeypatch):

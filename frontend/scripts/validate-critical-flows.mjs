@@ -122,13 +122,18 @@ try {
     hasAll(tridentPage, [
       "const TridentRegressionChart = dynamic",
       "import('../../components/TridentRegressionChart')",
+      'data-trident-regression-detail="true"',
       '<TridentRegressionChart',
       'ticker={selectedRow.ticker}',
       'instrumentKey={selectedRow.instrument_key}',
       'providerSymbol={selectedRow.provider_symbol}',
       'assetCurrency={selectedRow.currency}',
+    ]) && hasAll(tridentRegressionChart, [
+      'Regression',
+      'MM200',
+      'Z-score',
     ]),
-    'Trident selected-row panel should render the regression price chart.'
+    'Trident selected-row panel should render the regression price chart prominently with MM200 and Z-score.'
   )
   const tridentCompanyInsight = read('frontend/components/TridentCompanyInsight.tsx')
   const tridentInsights = read('frontend/lib/tridentInsights.ts')
@@ -168,6 +173,8 @@ try {
       'Open Screener',
       "value=\"ESN_UNIVERSE\"",
       "value=\"IT_SERVICES_VALUE\"",
+      "value=\"MOMENTUM_TREND\"",
+      "value=\"SECTOR_BOOMS\"",
       'data-equity-screener-row="true"',
       'FORECAST_UNAVAILABLE',
       'FCF yield',
@@ -177,8 +184,10 @@ try {
       'SCHEMA_PENDING',
       'quality_value_score',
       'valuation_tag',
+      'regression_slope_pct',
+      'price_coverage_pct',
     ]),
-    'Open screener should expose ESN/value presets, explicit missing forecast state, paged rows, and typed Supabase reads.'
+    'Open screener should expose ESN/value/momentum/sector presets, explicit missing states, paged rows, and typed Supabase reads.'
   )
   addCheck(
     'frontend.trident_detail_resizable_width',

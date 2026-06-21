@@ -803,48 +803,51 @@ export default function TridentPage() {
                         </div>
                       )}
 
+                    </div>
+
+                    <div className="min-h-0 flex-1 overflow-auto p-4">
+                      <div data-trident-regression-detail="true">
+                        <TridentRegressionChart
+                          ticker={selectedRow.ticker}
+                          instrumentKey={selectedRow.instrument_key}
+                          providerSymbol={selectedRow.provider_symbol}
+                          assetCurrency={selectedRow.currency}
+                        />
+                      </div>
+
                       <TridentCompanyInsight
                         instrumentKey={selectedRow.instrument_key}
                         ticker={selectedRow.ticker}
                         providerSymbol={selectedRow.provider_symbol}
                       />
 
-                      <TridentRegressionChart
-                        ticker={selectedRow.ticker}
-                        instrumentKey={selectedRow.instrument_key}
-                        providerSymbol={selectedRow.provider_symbol}
-                        assetCurrency={selectedRow.currency}
-                      />
-                    </div>
-
-                    <div className="border-b border-slate-200 p-3 dark:border-white/10">
-                      <div className="flex items-center justify-between gap-2">
-                        <div className="flex items-center gap-1">
-                          {HORIZONS.map((value) => (
-                            <button
-                              key={value}
-                              onClick={() => setHorizon(value)}
-                              className={cn(
-                                'h-8 min-w-10 rounded-md border px-2 text-[10px] font-black uppercase tracking-wider transition-colors',
-                                horizon === value
-                                  ? 'border-slate-950 bg-slate-950 text-white dark:border-[#00FF88] dark:bg-[#00FF88] dark:text-black'
-                                  : 'border-slate-200 bg-slate-50 text-slate-600 hover:bg-slate-100 dark:border-white/10 dark:bg-black/20 dark:text-gray-300 dark:hover:bg-white/5'
-                              )}
-                            >
-                              {value}Y
-                            </button>
-                          ))}
-                        </div>
-                        <div className="text-right text-[10px] font-mono text-slate-500">
-                          <div>{horizonSummary?.status ?? 'missing'}</div>
-                          <div>
-                            {horizonSummary?.start_year ?? '--'}-{horizonSummary?.end_year ?? '--'}
+                      <div className="my-4 rounded-md border border-slate-200 bg-slate-50 p-3 dark:border-white/10 dark:bg-black/20">
+                        <div className="flex items-center justify-between gap-2">
+                          <div className="flex items-center gap-1">
+                            {HORIZONS.map((value) => (
+                              <button
+                                key={value}
+                                onClick={() => setHorizon(value)}
+                                className={cn(
+                                  'h-8 min-w-10 rounded-md border px-2 text-[10px] font-black uppercase tracking-wider transition-colors',
+                                  horizon === value
+                                    ? 'border-slate-950 bg-slate-950 text-white dark:border-[#00FF88] dark:bg-[#00FF88] dark:text-black'
+                                    : 'border-slate-200 bg-white text-slate-600 hover:bg-slate-100 dark:border-white/10 dark:bg-black/20 dark:text-gray-300 dark:hover:bg-white/5'
+                                )}
+                              >
+                                {value}Y
+                              </button>
+                            ))}
+                          </div>
+                          <div className="text-right text-[10px] font-mono text-slate-500">
+                            <div>{horizonSummary?.status ?? 'missing'}</div>
+                            <div>
+                              {horizonSummary?.start_year ?? '--'}-{horizonSummary?.end_year ?? '--'}
+                            </div>
                           </div>
                         </div>
                       </div>
-                    </div>
 
-                    <div className="min-h-0 flex-1 overflow-auto p-4">
                       {criteriaError ? (
                         <div className="rounded-md border border-red-200 bg-red-50 p-3 text-xs font-bold text-red-700 dark:border-red-900/60 dark:bg-red-950/20 dark:text-red-300">
                           Criteria unavailable for {selectedRow.ticker}.

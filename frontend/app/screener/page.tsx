@@ -33,7 +33,14 @@ type SortKey =
   | 'trident'
 type SortDirection = 'asc' | 'desc'
 type SortConfig = { key: SortKey; direction: SortDirection }
-type Preset = 'ALL' | 'ESN_UNIVERSE' | 'IT_SERVICES_VALUE' | 'FCF_COMPOUNDERS' | 'QUALITY_VALUE'
+type Preset =
+  | 'ALL'
+  | 'ESN_UNIVERSE'
+  | 'IT_SERVICES_VALUE'
+  | 'FCF_COMPOUNDERS'
+  | 'QUALITY_VALUE'
+  | 'MOMENTUM_TREND'
+  | 'SECTOR_BOOMS'
 
 const EMPTY_ROWS: EquityScreenerRow[] = []
 const PAGE_SIZE = 100
@@ -120,6 +127,47 @@ function compareNumber(left: number | null | undefined, right: number | null | u
 function bestPe(row: EquityScreenerRow): number | null {
   const values = [row.forward_pe, row.trailing_pe].filter((value): value is number => value !== null && value !== undefined && value > 0)
   return values.length ? Math.min(...values) : null
+}
+
+function strategyScore(row: EquityScreenerRow, key: string): number | null {
+  const scores = row.score_details.strategy_scores
+  if (!scores || typeof scores !== 'object' || Array.isArray(scores)) return null
+  const value = (scores as Record<string, unknown>)[key]
+  return typeof value === 'number' && Number.isFinite(value) ? value : null
+}
+
+function hasStrategyTag(row: EquityScreenerRow, key: string): boolean {
+  const tags = row.score_details.strategy_tags
+  return Array.isArray(tags) && tags.includes(key)
+}
+
+function matchesMomentumTrend(row: EquityScreenerRow): boolean {
+  if (hasStrategyTag(row, 'MOMENTUM_TREND') || (strategyScore(row, 'MOMENTUM_TREND') ?? 0) >= 60) return true
+  return (
+    row.ma200_state === 'ABOVE' &&
+    (row.regression_slope_pct ?? Number.NEGATIVE_INFINITY) > 0 &&
+    (row.momentum_3m_pct ?? Number.NEGATIVE_INFINITY) > 0 &&
+    (row.momentum_12m_pct ?? Number.NEGATIVE_INFINITY) > 0 &&
+    (row.regression_z_score ?? 0) < 3.5
+  )
+}
+
+function matchesFcfCompounder(row: EquityScreenerRow): boolean {
+  if (hasStrategyTag(row, 'FCF_COMPOUNDER') || (strategyScore(row, 'FCF_COMPOUNDER') ?? 0) >= 60) return true
+  return (row.fcf_yield ?? 0) >= 0.03 && (row.revenue_cagr_3y ?? 0) >= 0.03
+}
+
+function matchesQualityValue(row: EquityScreenerRow): boolean {
+  if (hasStrategyTag(row, 'QUALITY_VALUE') || (strategyScore(row, 'QUALITY_VALUE') ?? 0) >= 55) {
+    return row.valuation_tag !== 'EXPENSIVE'
+  }
+  return row.quality_value_score >= 55 && row.valuation_tag !== 'EXPENSIVE'
+}
+
+function matchesSectorBoom(row: EquityScreenerRow): boolean {
+  if (hasStrategyTag(row, 'SECTOR_BOOM') || (strategyScore(row, 'SECTOR_BOOM') ?? 0) >= 60) return true
+  const thematic = row.themes.some((theme) => theme === 'SOFTWARE' || theme === 'SEMICONDUCTOR')
+  return thematic && (row.revenue_cagr_3y ?? 0) >= 0.08 && matchesMomentumTrend(row)
 }
 
 function compareRows(left: EquityScreenerRow, right: EquityScreenerRow, sort: SortConfig): number {
@@ -272,8 +320,10 @@ export default function ScreenerPage() {
         }
         if (preset === 'ESN_UNIVERSE' && !row.themes.includes('IT_SERVICES')) return false
         if (preset === 'IT_SERVICES_VALUE' && (!row.themes.includes('IT_SERVICES') || row.valuation_tag !== 'POTENTIAL_VALUE')) return false
-        if (preset === 'FCF_COMPOUNDERS' && ((row.fcf_yield ?? 0) < 0.03 || (row.revenue_cagr_3y ?? 0) < 0.03)) return false
-        if (preset === 'QUALITY_VALUE' && (row.quality_value_score < 55 || row.valuation_tag === 'EXPENSIVE')) return false
+        if (preset === 'FCF_COMPOUNDERS' && !matchesFcfCompounder(row)) return false
+        if (preset === 'QUALITY_VALUE' && !matchesQualityValue(row)) return false
+        if (preset === 'MOMENTUM_TREND' && !matchesMomentumTrend(row)) return false
+        if (preset === 'SECTOR_BOOMS' && !matchesSectorBoom(row)) return false
         if (country !== 'ALL' && row.country !== country) return false
         if (sector !== 'ALL' && row.sector !== sector) return false
         if (theme !== 'ALL' && !row.themes.includes(theme)) return false
@@ -365,6 +415,8 @@ export default function ScreenerPage() {
             <option value="IT_SERVICES_VALUE">ESN value</option>
             <option value="QUALITY_VALUE">Quality value</option>
             <option value="FCF_COMPOUNDERS">FCF compounders</option>
+            <option value="MOMENTUM_TREND">Momentum trend</option>
+            <option value="SECTOR_BOOMS">Sector booms</option>
             <option value="ALL">All equities</option>
           </select>
           <SelectFilter label="Country" value={country} options={data?.countries ?? []} onChange={resetPage(setCountry)} />

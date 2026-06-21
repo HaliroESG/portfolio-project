@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from equity_screener import build_screener_rows, run_equity_screener_sync
+from equity_screener import build_screener_rows, deduplicate_screener_rows, run_equity_screener_sync
 
 
 class _FakeResponse:
@@ -169,6 +169,11 @@ def _insights():
             "price_currency": "USD",
             "recommendation_key": "buy",
             "number_of_analyst_opinions": 22,
+            "regression_slope_pct": 12,
+            "regression_z_score": 1.2,
+            "ma200_state": "ABOVE",
+            "momentum_3m_pct": 8,
+            "momentum_12m_pct": 22,
         },
         {
             "instrument_key": "global_yahoo:cap.pa",
@@ -180,6 +185,11 @@ def _insights():
             "price_currency": "EUR",
             "recommendation_key": "buy",
             "number_of_analyst_opinions": 15,
+            "regression_slope_pct": 9,
+            "regression_z_score": 0.4,
+            "ma200_state": "ABOVE",
+            "momentum_3m_pct": 5,
+            "momentum_12m_pct": 18,
         },
         {
             "instrument_key": "global_yahoo:infy.ns",
@@ -191,6 +201,11 @@ def _insights():
             "price_currency": "INR",
             "recommendation_key": "hold",
             "number_of_analyst_opinions": 36,
+            "regression_slope_pct": 6,
+            "regression_z_score": 0.9,
+            "ma200_state": "ABOVE",
+            "momentum_3m_pct": 4,
+            "momentum_12m_pct": 12,
         },
         {
             "instrument_key": "global_yahoo:tm",
@@ -202,12 +217,26 @@ def _insights():
             "price_currency": "JPY",
             "recommendation_key": "hold",
             "number_of_analyst_opinions": 18,
+            "regression_slope_pct": -2,
+            "regression_z_score": -1.1,
+            "ma200_state": "BELOW",
+            "momentum_3m_pct": -4,
+            "momentum_12m_pct": -8,
         },
     ]
 
 
+def _coverage():
+    return [
+        {"ticker": "ACN", "earliest_date": "2001-07-19", "coverage_pct": 87.4},
+        {"ticker": "CAP.PA", "earliest_date": "2000-01-03", "coverage_pct": 94.9},
+        {"ticker": "INFY.NS", "earliest_date": "2000-01-03", "coverage_pct": 94.9},
+        {"ticker": "TM", "earliest_date": None, "coverage_pct": None},
+    ]
+
+
 def test_world_sample_screener_classifies_it_services_and_value_candidates():
-    rows = build_screener_rows(_world_universe(), _financials(), _trident_results(), _insights())
+    rows = build_screener_rows(_world_universe(), _financials(), _trident_results(), _insights(), _coverage())
     by_key = {row["instrument_key"]: row for row in rows}
 
     assert "IT_SERVICES" in by_key["global_yahoo:acn"]["themes"]
@@ -217,6 +246,9 @@ def test_world_sample_screener_classifies_it_services_and_value_candidates():
     assert by_key["global_yahoo:cap.pa"]["valuation_tag"] == "POTENTIAL_VALUE"
     assert by_key["global_yahoo:tm"]["valuation_tag"] == "EXPENSIVE"
     assert round(by_key["global_yahoo:acn"]["target_upside"], 6) == 0.2
+    assert by_key["global_yahoo:acn"]["regression_slope_pct"] == 12
+    assert by_key["global_yahoo:acn"]["price_coverage_pct"] == 87.4
+    assert "MOMENTUM_TREND" in by_key["global_yahoo:acn"]["score_details"]["strategy_tags"]
 
 
 def test_it_services_universe_keeps_insufficient_rows_visible():
@@ -226,6 +258,7 @@ def test_it_services_universe_keeps_insufficient_rows_visible():
         _financials(),
         _trident_results(),
         insights,
+        _coverage(),
     )
     it_services = [row for row in rows if "IT_SERVICES" in row["themes"]]
     by_key = {row["instrument_key"]: row for row in it_services}
@@ -238,7 +271,7 @@ def test_it_services_universe_keeps_insufficient_rows_visible():
 
 def test_missing_forecast_and_forward_metrics_stay_explicit():
     insights = [row for row in _insights() if row["instrument_key"] != "global_yahoo:acn"]
-    rows = build_screener_rows([_world_universe()[0]], _financials(), _trident_results(), insights)
+    rows = build_screener_rows([_world_universe()[0]], _financials(), _trident_results(), insights, _coverage())
 
     assert rows[0]["forecast_revenue_growth"] is None
     assert "FORECAST_UNAVAILABLE" in rows[0]["data_state"]
@@ -262,18 +295,63 @@ def test_currency_mismatch_blocks_fcf_yield_instead_of_guessing_fx():
     assert "FCF_YIELD_UNAVAILABLE" in rows[0]["data_state"]
 
 
+def test_missing_price_history_stays_explicit_without_changing_score():
+    rows = build_screener_rows([_world_universe()[0]], _financials(), _trident_results(), _insights())
+
+    assert rows[0]["quality_value_score"] > 0
+    assert rows[0]["price_coverage_pct"] is None
+    assert "PRICE_HISTORY_UNAVAILABLE" in rows[0]["data_state"]
+
+
+def test_deduplicate_screener_rows_prefers_complete_global_provider():
+    rows = [
+        {
+            "instrument_key": "portfolio_seed:rey.mi",
+            "ticker": "REY.MI",
+            "provider": "portfolio_seed",
+            "source_index": "portfolio",
+            "quality_value_score": 20,
+            "market_cap": 3_000_000_000,
+            "data_state": [
+                "FINANCIALS_UNAVAILABLE",
+                "FCF_YIELD_UNAVAILABLE",
+                "INSIGHTS_UNAVAILABLE",
+            ],
+        },
+        {
+            "instrument_key": "global_yahoo:rey.mi",
+            "ticker": "REY.MI",
+            "provider": "global_yahoo",
+            "source_index": "Curated IT Services",
+            "quality_value_score": 94,
+            "market_cap": 3_400_000_000,
+            "data_state": ["FORECAST_UNAVAILABLE"],
+        },
+    ]
+
+    canonical, stats = deduplicate_screener_rows(rows)
+
+    assert len(canonical) == 1
+    assert canonical[0]["instrument_key"] == "global_yahoo:rey.mi"
+    assert stats["duplicates_suppressed"] == 1
+
+
 def test_dry_run_sync_reports_global_theme_and_country_coverage():
     supabase = _FakeSupabase({
         "trident_equity_universe": _world_universe(),
         "trident_financial_annual": _financials(),
         "trident_results": _trident_results(),
         "trident_stock_insights": _insights(),
+        "historical_price_coverage": _coverage(),
+        "equity_screener_results": [],
     })
 
     stats = run_equity_screener_sync(supabase, dry_run=True)
 
     assert stats["screener_rows"] == 4
+    assert stats["raw_screener_rows"] == 4
     assert stats["theme_counts"]["IT_SERVICES"] == 3
+    assert stats["strategy_counts"]["MOMENTUM_TREND"] >= 1
     assert stats["country_counts"]["US"] == 1
     assert stats["country_counts"]["FR"] == 1
     assert stats["country_counts"]["IN"] == 1

@@ -219,6 +219,11 @@ jobs:
             cmd+=(--per-index-limit "$TRIDENT_PER_INDEX_LIMIT")
           fi
           "${cmd[@]}"
+          python historical_prices_sync.py \
+            --trident-only \
+            --source-index "Curated IT Services" \
+            --only-missing \
+            --start-date "1999-01-01"
           python scripts/sync_trident_stock_insights.py \
             --curated-it-services \
             --batch-size "$TRIDENT_STOCK_INSIGHTS_BATCH_SIZE" \

@@ -34,6 +34,16 @@ def normalize_ticker(value: str | None) -> str | None:
     return normalized or None
 
 
+def parse_csv_values(value: str | None) -> set[str]:
+    if not value:
+        return set()
+    return {
+        item.strip()
+        for item in value.split(",")
+        if item.strip()
+    }
+
+
 def make_price_target(
     ticker: str | None,
     provider_symbol: str | None = None,
@@ -427,7 +437,11 @@ def fetch_base_price_targets(supabase) -> dict[str, PriceTarget]:
     return targets
 
 
-def fetch_trident_price_targets(supabase) -> dict[str, PriceTarget]:
+def fetch_trident_price_targets(
+    supabase,
+    *,
+    source_indexes: set[str] | None = None,
+) -> dict[str, PriceTarget]:
     targets: dict[str, PriceTarget] = {}
 
     try:
@@ -443,11 +457,14 @@ def fetch_trident_price_targets(supabase) -> dict[str, PriceTarget]:
             )
             rows = response.data or []
             for row in rows:
+                source_index = str(row.get("source_index") or "").strip()
+                if source_indexes and source_index not in source_indexes:
+                    continue
                 target = make_price_target(
                     row.get("ticker"),
                     provider_symbol=row.get("provider_symbol"),
                     currency=row.get("currency"),
-                    source_index=row.get("source_index"),
+                    source_index=source_index,
                     source_provider=row.get("provider"),
                 )
                 merge_price_target(targets, target)
@@ -459,19 +476,124 @@ def fetch_trident_price_targets(supabase) -> dict[str, PriceTarget]:
     return targets
 
 
+def fetch_theme_price_targets(
+    supabase,
+    themes: set[str],
+    *,
+    source_indexes: set[str] | None = None,
+) -> dict[str, PriceTarget]:
+    targets: dict[str, PriceTarget] = {}
+    normalized_themes = {theme.strip().upper() for theme in themes if theme.strip()}
+    if not normalized_themes:
+        return targets
+
+    try:
+        for offset in range(0, 100_000, PRICE_TARGET_PAGE_SIZE):
+            response = (
+                supabase
+                .table("equity_screener_latest")
+                .select("ticker,provider_symbol,currency,source_index,provider,themes")
+                .order("ticker")
+                .range(offset, offset + PRICE_TARGET_PAGE_SIZE - 1)
+                .execute()
+            )
+            rows = response.data or []
+            for row in rows:
+                row_themes = {
+                    str(theme).strip().upper()
+                    for theme in (row.get("themes") or [])
+                    if str(theme).strip()
+                }
+                if not row_themes.intersection(normalized_themes):
+                    continue
+                source_index = str(row.get("source_index") or "").strip()
+                if source_indexes and source_index not in source_indexes:
+                    continue
+                target = make_price_target(
+                    row.get("ticker"),
+                    provider_symbol=row.get("provider_symbol"),
+                    currency=row.get("currency"),
+                    source_index=source_index,
+                    source_provider=row.get("provider"),
+                )
+                merge_price_target(targets, target)
+            if len(rows) < PRICE_TARGET_PAGE_SIZE:
+                break
+    except Exception as exc:
+        print(f"⚠️ equity_screener_latest theme targets indisponibles: {exc}", flush=True)
+
+    return targets
+
+
+def fetch_price_coverage(supabase) -> dict[str, dict]:
+    coverage: dict[str, dict] = {}
+    try:
+        for offset in range(0, 100_000, PRICE_TARGET_PAGE_SIZE):
+            response = (
+                supabase
+                .table("historical_price_coverage")
+                .select("ticker,earliest_date,coverage_pct")
+                .order("ticker")
+                .range(offset, offset + PRICE_TARGET_PAGE_SIZE - 1)
+                .execute()
+            )
+            rows = response.data or []
+            for row in rows:
+                ticker = normalize_ticker(row.get("ticker"))
+                if ticker:
+                    coverage[ticker] = row
+            if len(rows) < PRICE_TARGET_PAGE_SIZE:
+                break
+    except Exception as exc:
+        print(f"⚠️ historical_price_coverage indisponible: {exc}", flush=True)
+    return coverage
+
+
+def filter_missing_price_targets(
+    supabase,
+    targets: dict[str, PriceTarget],
+) -> dict[str, PriceTarget]:
+    coverage = fetch_price_coverage(supabase)
+    filtered: dict[str, PriceTarget] = {}
+    for ticker, target in targets.items():
+        row = coverage.get(ticker)
+        if not row or not row.get("earliest_date") or not safe_float(row.get("coverage_pct")):
+            filtered[ticker] = target
+    return filtered
+
+
 def fetch_price_targets(
     supabase,
     include_trident: bool = True,
     trident_only: bool = False,
+    source_indexes: set[str] | None = None,
+    themes: set[str] | None = None,
+    only_missing: bool = False,
 ) -> dict[str, PriceTarget]:
     targets: dict[str, PriceTarget] = {}
 
-    if not trident_only:
+    scoped = bool(source_indexes or themes)
+
+    if not trident_only and not scoped:
         targets.update(fetch_base_price_targets(supabase))
-    if include_trident or trident_only:
-        trident_targets = fetch_trident_price_targets(supabase)
+    if themes:
+        trident_targets = fetch_theme_price_targets(
+            supabase,
+            themes,
+            source_indexes=source_indexes,
+        )
         for target in trident_targets.values():
             merge_price_target(targets, target)
+    elif include_trident or trident_only or source_indexes:
+        trident_targets = fetch_trident_price_targets(
+            supabase,
+            source_indexes=source_indexes,
+        )
+        for target in trident_targets.values():
+            merge_price_target(targets, target)
+
+    if only_missing:
+        targets = filter_missing_price_targets(supabase, targets)
 
     return targets
 
@@ -692,11 +814,16 @@ def main():
     parser.add_argument("--tickers", default=None, help="Comma-separated tickers override")
     parser.add_argument("--no-trident", action="store_true", help="Exclude Trident universe tickers")
     parser.add_argument("--trident-only", action="store_true", help="Sync only active Trident universe tickers")
+    parser.add_argument("--source-index", default=None, help="Comma-separated Trident source_index filter")
+    parser.add_argument("--theme", default=None, help="Comma-separated equity_screener_latest theme filter")
+    parser.add_argument("--only-missing", action="store_true", help="Sync only targets without successful historical_price_coverage")
     parser.add_argument("--dry-run", action="store_true")
     args = parser.parse_args()
 
     if args.no_trident and args.trident_only:
         raise RuntimeError("--no-trident and --trident-only are mutually exclusive")
+    if args.no_trident and (args.source_index or args.theme):
+        raise RuntimeError("--no-trident cannot be combined with --source-index or --theme")
 
     end_date = args.end_date or datetime.utcnow().date().isoformat()
     start = parse_date(args.start_date)
@@ -714,11 +841,16 @@ def main():
             )
             if target is not None
         }
+        if args.only_missing:
+            targets = filter_missing_price_targets(supabase, targets)
     else:
         targets = fetch_price_targets(
             supabase,
             include_trident=not args.no_trident,
             trident_only=args.trident_only,
+            source_indexes=parse_csv_values(args.source_index) or None,
+            themes=parse_csv_values(args.theme) or None,
+            only_missing=args.only_missing,
         )
 
     if not targets:

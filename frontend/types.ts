@@ -287,6 +287,12 @@ export interface EquityScreenerRow {
   analyst_count: number | null
   trident_score: number | null
   trident_state: TridentOverallState | null
+  regression_slope_pct: number | null
+  regression_z_score: number | null
+  ma200_state: string | null
+  momentum_3m_pct: number | null
+  momentum_12m_pct: number | null
+  price_coverage_pct: number | null
   quality_value_score: number
   valuation_tag: EquityScreenerValuationTag
   score_details: Record<string, unknown>

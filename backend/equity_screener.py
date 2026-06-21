@@ -57,6 +57,20 @@ THEME_RULES: tuple[tuple[str, tuple[str, ...]], ...] = (
     ),
 )
 
+BOOMING_SECTOR_NEEDLES = (
+    "ai",
+    "artificial intelligence",
+    "cloud",
+    "cybersecurity",
+    "data center",
+    "semiconductor",
+    "software",
+    "automation",
+    "electrification",
+    "renewable",
+    "robotics",
+)
+
 KNOWN_IT_SERVICES_NAMES = (
     "accenture",
     "capgemini",
@@ -256,6 +270,110 @@ def quality_value_score(
     return float(min(max(score, 0), 100)), details
 
 
+def compounder_score(
+    *,
+    fcf_yield: float | None,
+    fcf_margin: float | None,
+    revenue_cagr_3y: float | None,
+    revenue_cagr_5y: float | None,
+    roic: float | None,
+    net_debt_to_ebitda: float | None,
+) -> float:
+    score = (
+        score_band(fcf_margin, ((0.20, 25), (0.15, 20), (0.10, 14), (0.05, 6)))
+        + score_band(fcf_yield, ((0.08, 20), (0.05, 15), (0.03, 9), (0.01, 3)))
+        + score_band(max(revenue_cagr_3y or -1, revenue_cagr_5y or -1), ((0.12, 20), (0.08, 15), (0.05, 10), (0.02, 4)))
+        + score_band(roic, ((0.25, 20), (0.18, 15), (0.12, 9), (0.08, 4)))
+    )
+    if net_debt_to_ebitda is not None:
+        if net_debt_to_ebitda < 1.0:
+            score += 15
+        elif net_debt_to_ebitda < 2.0:
+            score += 10
+        elif net_debt_to_ebitda < 3.0:
+            score += 4
+    return float(min(max(score, 0), 100))
+
+
+def momentum_score(
+    *,
+    regression_slope_pct: float | None,
+    regression_z_score: float | None,
+    ma200_state: str | None,
+    momentum_3m_pct: float | None,
+    momentum_12m_pct: float | None,
+    price_coverage_pct: float | None,
+) -> float:
+    score = (
+        score_band(regression_slope_pct, ((20, 25), (10, 18), (5, 11), (0, 5)))
+        + score_band(momentum_3m_pct, ((20, 15), (10, 12), (0, 6)))
+        + score_band(momentum_12m_pct, ((40, 20), (20, 15), (0, 8)))
+    )
+    if ma200_state == "ABOVE":
+        score += 25
+    elif ma200_state == "BELOW":
+        score -= 10
+    if regression_z_score is not None:
+        if -1.0 <= regression_z_score <= 2.5:
+            score += 15
+        elif 2.5 < regression_z_score <= 3.5:
+            score += 5
+        elif regression_z_score < -2.0:
+            score -= 5
+    if price_coverage_pct is not None and price_coverage_pct < 20:
+        score = min(score, 35)
+    return float(min(max(score, 0), 100))
+
+
+def sector_boom_score(
+    *,
+    themes: list[str],
+    universe_row: Mapping[str, Any],
+    revenue_cagr_3y: float | None,
+    fcf_margin: float | None,
+    momentum: float,
+) -> float:
+    haystack = normalize_text(
+        universe_row.get("name"),
+        universe_row.get("sector"),
+        universe_row.get("industry"),
+    )
+    sector_points = 0
+    if any(theme in {"SOFTWARE", "SEMICONDUCTOR"} for theme in themes):
+        sector_points += 25
+    if any(needle in haystack for needle in BOOMING_SECTOR_NEEDLES):
+        sector_points += 20
+    if "IT_SERVICES" in themes:
+        sector_points += 8
+    score = (
+        min(sector_points, 35)
+        + score_band(revenue_cagr_3y, ((0.20, 25), (0.12, 18), (0.08, 12), (0.04, 6)))
+        + score_band(fcf_margin, ((0.20, 15), (0.12, 10), (0.06, 5)))
+        + min(momentum * 0.25, 25)
+    )
+    return float(min(max(score, 0), 100))
+
+
+def strategy_tags(
+    *,
+    quality_value: float,
+    compounder: float,
+    momentum: float,
+    sector_boom: float,
+    valuation: str,
+) -> list[str]:
+    tags: set[str] = set()
+    if quality_value >= 55 and valuation != "EXPENSIVE":
+        tags.add("QUALITY_VALUE")
+    if compounder >= 60:
+        tags.add("FCF_COMPOUNDER")
+    if momentum >= 60:
+        tags.add("MOMENTUM_TREND")
+    if sector_boom >= 60:
+        tags.add("SECTOR_BOOM")
+    return sorted(tags)
+
+
 def valuation_tag(
     *,
     score: float,
@@ -285,6 +403,7 @@ def build_screener_rows(
     financial_rows: Iterable[Mapping[str, Any]],
     trident_rows: Iterable[Mapping[str, Any]],
     insight_rows: Iterable[Mapping[str, Any]],
+    coverage_rows: Iterable[Mapping[str, Any]] = (),
     *,
     as_of_date: date | None = None,
 ) -> list[dict[str, Any]]:
@@ -304,6 +423,11 @@ def build_screener_rows(
         clean_string(row.get("instrument_key")): row
         for row in insight_rows
         if clean_string(row.get("instrument_key"))
+    }
+    coverage_by_ticker = {
+        str(row.get("ticker")).strip().upper(): row
+        for row in coverage_rows
+        if clean_string(row.get("ticker"))
     }
 
     output: list[dict[str, Any]] = []
@@ -340,6 +464,14 @@ def build_screener_rows(
         forward_pe = safe_float(insight.get("forward_pe"))
         roic = safe_float(trident.get("latest_roic"))
         net_debt_to_ebitda = safe_float(trident.get("latest_net_debt_to_ebitda"))
+        regression_slope_pct = safe_float(insight.get("regression_slope_pct"))
+        regression_z_score = safe_float(insight.get("regression_z_score"))
+        ma200_state = clean_string(insight.get("ma200_state"))
+        momentum_3m_pct = safe_float(insight.get("momentum_3m_pct"))
+        momentum_12m_pct = safe_float(insight.get("momentum_12m_pct"))
+        coverage = coverage_by_ticker.get(ticker.upper())
+        price_coverage_pct = safe_float((coverage or {}).get("coverage_pct"))
+        price_earliest_date = clean_string((coverage or {}).get("earliest_date"))
         target_mean_price = safe_float(insight.get("target_mean_price"))
         latest_price = safe_float(insight.get("latest_price"))
         target_upside = ratio(target_mean_price, latest_price)
@@ -355,7 +487,52 @@ def build_screener_rows(
             roic=roic,
             net_debt_to_ebitda=net_debt_to_ebitda,
         )
+        row_themes = extract_themes(universe)
+        valuation = valuation_tag(
+            score=score,
+            trailing_pe=trailing_pe,
+            forward_pe=forward_pe,
+            fcf_yield=fcf_yield,
+            fcf_margin=fcf_margin,
+            revenue_cagr_3y=revenue_cagr_3y,
+        )
+        compounder = compounder_score(
+            fcf_yield=fcf_yield,
+            fcf_margin=fcf_margin,
+            revenue_cagr_3y=revenue_cagr_3y,
+            revenue_cagr_5y=revenue_cagr_5y,
+            roic=roic,
+            net_debt_to_ebitda=net_debt_to_ebitda,
+        )
+        momentum = momentum_score(
+            regression_slope_pct=regression_slope_pct,
+            regression_z_score=regression_z_score,
+            ma200_state=ma200_state,
+            momentum_3m_pct=momentum_3m_pct,
+            momentum_12m_pct=momentum_12m_pct,
+            price_coverage_pct=price_coverage_pct,
+        )
+        boom = sector_boom_score(
+            themes=row_themes,
+            universe_row=universe,
+            revenue_cagr_3y=revenue_cagr_3y,
+            fcf_margin=fcf_margin,
+            momentum=momentum,
+        )
         details["market_cap_segment"] = market_cap_segment(market_cap)
+        details["strategy_scores"] = {
+            "QUALITY_VALUE": score,
+            "FCF_COMPOUNDER": compounder,
+            "MOMENTUM_TREND": momentum,
+            "SECTOR_BOOM": boom,
+        }
+        details["strategy_tags"] = strategy_tags(
+            quality_value=score,
+            compounder=compounder,
+            momentum=momentum,
+            sector_boom=boom,
+            valuation=valuation,
+        )
 
         data_state: set[str] = set()
         if latest is None:
@@ -375,6 +552,10 @@ def build_screener_rows(
             data_state.add("CURRENCY_MISMATCH")
         if fcf_yield is None:
             data_state.add("FCF_YIELD_UNAVAILABLE")
+        if not coverage or price_earliest_date is None:
+            data_state.add("PRICE_HISTORY_UNAVAILABLE")
+        elif price_coverage_pct is not None and price_coverage_pct < 20:
+            data_state.add("PRICE_HISTORY_SHORT")
         if not data_state:
             data_state.add("READY")
 
@@ -391,7 +572,7 @@ def build_screener_rows(
             "provider": provider,
             "provider_symbol": clean_string(universe.get("provider_symbol")),
             "source_index": clean_string(universe.get("source_index")),
-            "themes": extract_themes(universe),
+            "themes": row_themes,
             "latest_fiscal_year": record_year(latest or {}),
             "financial_currency": financial_currency,
             "valuation_currency": valuation_currency,
@@ -412,15 +593,14 @@ def build_screener_rows(
             "analyst_count": safe_int(insight.get("number_of_analyst_opinions")),
             "trident_score": safe_float(trident.get("score")),
             "trident_state": clean_string(trident.get("overall_state")),
+            "regression_slope_pct": regression_slope_pct,
+            "regression_z_score": regression_z_score,
+            "ma200_state": ma200_state,
+            "momentum_3m_pct": momentum_3m_pct,
+            "momentum_12m_pct": momentum_12m_pct,
+            "price_coverage_pct": price_coverage_pct,
             "quality_value_score": score,
-            "valuation_tag": valuation_tag(
-                score=score,
-                trailing_pe=trailing_pe,
-                forward_pe=forward_pe,
-                fcf_yield=fcf_yield,
-                fcf_margin=fcf_margin,
-                revenue_cagr_3y=revenue_cagr_3y,
-            ),
+            "valuation_tag": valuation,
             "score_details": details,
             "data_state": sorted(data_state),
             "updated_at": datetime.now(timezone.utc).isoformat(),
@@ -461,6 +641,56 @@ def fetch_all_rows(supabase: Any, table: str, selector: str) -> list[dict[str, A
     return rows
 
 
+def row_completeness(row: Mapping[str, Any]) -> tuple[int, int, int, float, int]:
+    data_state = set(row.get("data_state") or [])
+    provider = clean_string(row.get("provider")) or ""
+    source_index = clean_string(row.get("source_index")) or ""
+    has_financials = 0 if "FINANCIALS_UNAVAILABLE" in data_state else 1
+    has_insights = 0 if "INSIGHTS_UNAVAILABLE" in data_state else 1
+    has_market_cap = 1 if safe_float(row.get("market_cap")) is not None else 0
+    quality = safe_float(row.get("quality_value_score")) or 0
+    provider_rank = 2 if provider == "global_yahoo" else 1 if provider != "portfolio_seed" else 0
+    source_rank = 0 if source_index == "portfolio" else 1
+    missing_penalty = -len(data_state)
+    return (
+        has_financials + has_insights + has_market_cap,
+        missing_penalty,
+        source_rank + provider_rank,
+        quality,
+        len(clean_string(row.get("name")) or ""),
+    )
+
+
+def deduplicate_screener_rows(rows: list[dict[str, Any]]) -> tuple[list[dict[str, Any]], dict[str, Any]]:
+    grouped: dict[str, list[dict[str, Any]]] = {}
+    for row in rows:
+        ticker = clean_string(row.get("ticker"))
+        if not ticker:
+            continue
+        grouped.setdefault(ticker.upper(), []).append(row)
+
+    canonical: list[dict[str, Any]] = []
+    suppressed: list[dict[str, Any]] = []
+    for ticker, bucket in grouped.items():
+        ranked = sorted(bucket, key=row_completeness, reverse=True)
+        winner = ranked[0]
+        canonical.append(winner)
+        for loser in ranked[1:]:
+            suppressed.append({
+                "ticker": ticker,
+                "instrument_key": loser.get("instrument_key"),
+                "kept_instrument_key": winner.get("instrument_key"),
+                "provider": loser.get("provider"),
+                "source_index": loser.get("source_index"),
+            })
+
+    return canonical, {
+        "duplicates_suppressed": len(suppressed),
+        "duplicate_groups": sum(1 for bucket in grouped.values() if len(bucket) > 1),
+        "suppressed_rows": suppressed[:50],
+    }
+
+
 def upsert_rows(supabase: Any, rows: list[dict[str, Any]], *, dry_run: bool) -> int:
     if dry_run or not rows:
         return 0
@@ -475,6 +705,23 @@ def upsert_rows(supabase: Any, rows: list[dict[str, Any]], *, dry_run: bool) -> 
         )
         total += len(response.data or batch)
     return total
+
+
+def delete_rows(supabase: Any, instrument_keys: list[str], *, dry_run: bool) -> int:
+    if dry_run or not instrument_keys:
+        return 0
+    deleted = 0
+    for index in range(0, len(instrument_keys), 500):
+        batch = instrument_keys[index:index + 500]
+        response = (
+            supabase
+            .table("equity_screener_results")
+            .delete()
+            .in_("instrument_key", batch)
+            .execute()
+        )
+        deleted += len(response.data or batch)
+    return deleted
 
 
 def run_equity_screener_sync(
@@ -501,27 +748,51 @@ def run_equity_screener_sync(
     insights = fetch_all_rows(
         supabase,
         "trident_stock_insights",
-        "instrument_key,market_cap,trailing_pe,forward_pe,target_mean_price,latest_price,price_currency,recommendation_key,number_of_analyst_opinions",
+        "instrument_key,market_cap,trailing_pe,forward_pe,target_mean_price,latest_price,price_currency,recommendation_key,number_of_analyst_opinions,regression_slope_pct,regression_z_score,ma200_state,momentum_3m_pct,momentum_12m_pct,price_history_state",
+    )
+    coverage = fetch_all_rows(
+        supabase,
+        "historical_price_coverage",
+        "ticker,earliest_date,coverage_pct,updated_at",
+    )
+    existing_results = fetch_all_rows(
+        supabase,
+        "equity_screener_results",
+        "instrument_key",
     )
     active_universe = [row for row in universe if row.get("is_active") is not False]
     if limit is not None:
         active_universe = active_universe[:limit]
 
-    rows = build_screener_rows(active_universe, financials, trident, insights)
+    raw_rows = build_screener_rows(active_universe, financials, trident, insights, coverage)
+    rows, dedupe_stats = deduplicate_screener_rows(raw_rows)
     upserted = upsert_rows(supabase, rows, dry_run=dry_run)
+    current_keys = {str(row["instrument_key"]) for row in rows}
+    existing_keys = {
+        str(row.get("instrument_key"))
+        for row in existing_results
+        if clean_string(row.get("instrument_key"))
+    }
+    stale_keys = sorted(existing_keys - current_keys)
+    deleted_stale_rows = delete_rows(supabase, stale_keys, dry_run=dry_run)
     theme_counts: dict[str, int] = {}
     tag_counts: dict[str, int] = {}
     state_counts: dict[str, int] = {}
     country_counts: dict[str, int] = {}
+    strategy_counts: dict[str, int] = {}
     for row in rows:
         for theme in row["themes"]:
             theme_counts[theme] = theme_counts.get(theme, 0) + 1
+        for strategy in (row.get("score_details") or {}).get("strategy_tags", []):
+            strategy_counts[strategy] = strategy_counts.get(strategy, 0) + 1
         tag = str(row["valuation_tag"])
         tag_counts[tag] = tag_counts.get(tag, 0) + 1
         country = str(row.get("country") or "UNKNOWN")
         country_counts[country] = country_counts.get(country, 0) + 1
         for state in row["data_state"]:
             state_counts[state] = state_counts.get(state, 0) + 1
+    if dedupe_stats["duplicates_suppressed"]:
+        state_counts["DUPLICATE_SUPPRESSED"] = dedupe_stats["duplicates_suppressed"]
 
     stats = {
         "source_universe_rows": len(universe),
@@ -529,15 +800,20 @@ def run_equity_screener_sync(
         "financial_rows": len(financials),
         "trident_rows": len(trident),
         "insight_rows": len(insights),
+        "coverage_rows": len(coverage),
+        "raw_screener_rows": len(raw_rows),
         "screener_rows": len(rows),
         "upserted_rows": upserted,
+        "deleted_stale_rows": deleted_stale_rows,
         "theme_counts": dict(sorted(theme_counts.items())),
+        "strategy_counts": dict(sorted(strategy_counts.items())),
         "valuation_tag_counts": dict(sorted(tag_counts.items())),
         "state_counts": dict(sorted(state_counts.items())),
         "country_counts": dict(sorted(country_counts.items())),
         "items_total": len(active_universe),
         "items_success": len(rows),
         "items_failed": max(len(active_universe) - len(rows), 0),
+        **dedupe_stats,
     }
     if dry_run:
         stats["dry_run"] = True
