@@ -25,6 +25,7 @@ const ciSkipMissing = process.argv.includes('--ci-skip-missing-env')
 const outArg = process.argv.find((a) => a.startsWith('--output='))
 const output = outArg ? outArg.split('=')[1] : 'smoke-supabase-report.json'
 const requireTridentRows = process.env.REQUIRE_TRIDENT_ROWS === 'true'
+const requireEquityScreenerRows = process.env.REQUIRE_EQUITY_SCREENER_ROWS === 'true'
 const MARKET_WATCH_TECHNICAL_SELECTOR =
   'ticker,last_update,macd_line,macd_signal,macd_hist,rsi_14,momentum_20,trend_state,trend_changed'
 const MARKET_WATCH_BASE_SELECTOR = 'ticker,last_update,data_status,last_price,currency'
@@ -228,6 +229,44 @@ async function tridentPriceCoverageCheck() {
   }
 }
 
+async function equityScreenerCheck() {
+  const check = await q('equity_screener_latest', () =>
+    supabase
+      .from('equity_screener_latest')
+      .select('instrument_key,ticker,country,sector,themes,market_cap,revenue,free_cash_flow,fcf_yield,revenue_cagr_3y,forecast_revenue_growth,trailing_pe,forward_pe,quality_value_score,valuation_tag,data_state,updated_at', { count: 'exact' })
+      .order('quality_value_score', { ascending: false })
+      .limit(10)
+  )
+
+  if (!check.ok && (isMissingColumnError(check.error) || isMissingRelationError(check.error))) {
+    return {
+      ...check,
+      ok: !requireEquityScreenerRows,
+      status: requireEquityScreenerRows ? 'FAIL' : 'PASS',
+      feature_state: 'SCHEMA_PENDING',
+      schema_warning: 'Apply backend/sql/20260528_equity_screener.sql and run sync_equity_screener.py.',
+    }
+  }
+
+  if (check.ok && check.row_count === 0) {
+    if (requireEquityScreenerRows) {
+      return {
+        ...check,
+        ok: false,
+        status: 'FAIL',
+        error: 'Open equity screener is required but equity_screener_latest returned zero rows.',
+      }
+    }
+    return {
+      ...check,
+      feature_state: 'UNCONFIGURED_OR_EMPTY',
+      warning: 'Open equity screener schema is readable but no rows were returned.',
+    }
+  }
+
+  return check
+}
+
 async function optionalReadModelCheck(name, queryFactory, schemaWarning) {
   const check = await q(name, queryFactory)
   if (check.ok) return check
@@ -259,6 +298,7 @@ const checks = await Promise.all([
   q('backtest_results', () => supabase.from('backtest_results').select('run_id,portfolio_key,date,nav,drawdown,returns_daily', { count: 'exact' }).limit(5)),
   q('backtest_kpis', () => supabase.from('backtest_kpis').select('run_id,portfolio_key,cagr,vol,sharpe,sortino,max_drawdown,calmar,worst_year,best_year', { count: 'exact' }).limit(5)),
   tridentPriceCoverageCheck(),
+  equityScreenerCheck(),
   optionalReadModelCheck(
     'trident_stock_insights',
     () => supabase.from('trident_stock_insights').select('instrument_key,ticker,provider_symbol,business_summary,recommendation_key,target_mean_price,latest_price,regression_slope_pct,regression_z_score,ma200_state,news_items,ai_trend_summary,ai_summary_state,data_state,updated_at', { count: 'exact' }).limit(5),
@@ -295,7 +335,7 @@ const hasFail = checks.some((c) => c.status === 'FAIL')
 const hasBlocked = checks.some((c) => c.status === 'BLOCKED')
 const status = hasFail ? 'FAIL' : hasBlocked ? 'BLOCKED' : 'PASS'
 const ok = status === 'PASS'
-const report = { ok, status, require_trident_rows: requireTridentRows, checks }
+const report = { ok, status, require_trident_rows: requireTridentRows, require_equity_screener_rows: requireEquityScreenerRows, checks }
 console.log(JSON.stringify(report, null, 2))
 fs.writeFileSync(output, JSON.stringify(report, null, 2))
 if (status === 'PASS') {

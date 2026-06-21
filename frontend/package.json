@@ -15,7 +15,8 @@
     "test:frontend": "npm run test:data-states && npm run test:price-history && npm run test:panel-width && npm run test:smoke",
     "smoke:supabase": "node scripts/smoke-supabase.mjs",
     "perf:budget": "node scripts/runtime-budget-check.mjs",
-    "smoke:browser": "node scripts/browser-smoke.mjs"
+    "smoke:browser": "node scripts/browser-smoke.mjs",
+    "smoke:production": "node scripts/smoke-production.mjs"
   },
   "dependencies": {
     "@supabase/supabase-js": "^2.90.1",

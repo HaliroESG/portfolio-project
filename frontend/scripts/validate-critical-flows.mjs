@@ -111,6 +111,8 @@ try {
   )
 
   const tridentPage = read('frontend/app/trident/page.tsx')
+  const screenerPage = read('frontend/app/screener/page.tsx')
+  const equityScreenerData = read('frontend/lib/equityScreenerData.ts')
   const tridentRegressionChart = read('frontend/components/TridentRegressionChart.tsx')
   const regressionChart = read('frontend/lib/regressionChart.ts')
   const fullscreenChart = read('frontend/components/FullscreenChart.tsx')
@@ -159,6 +161,22 @@ try {
       '<PaginationBar',
     ]),
     'Trident should page large result sets and expose a DOM marker for browser budget checks.'
+  )
+  addCheck(
+    'frontend.open_screener_present',
+    hasAll(screenerPage, [
+      'Open Screener',
+      "value=\"IT_SERVICES_VALUE\"",
+      'data-equity-screener-row="true"',
+      'FORECAST_UNAVAILABLE',
+      'FCF yield',
+    ]) && hasAll(equityScreenerData, [
+      "from('equity_screener_latest')",
+      'SCHEMA_PENDING',
+      'quality_value_score',
+      'valuation_tag',
+    ]),
+    'Open screener should expose ESN/value presets, explicit missing forecast state, paged rows, and typed Supabase reads.'
   )
   addCheck(
     'frontend.trident_detail_resizable_width',

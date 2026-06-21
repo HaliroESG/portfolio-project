@@ -164,7 +164,8 @@ jobs:
             -f backend/sql/20260524_trident_screener.sql \
             -f backend/sql/20260525_portfolio_decision_items.sql \
             -f backend/sql/20260526_supports_targets_advice.sql \
-            -f backend/sql/20260527_trident_stock_insights.sql
+            -f backend/sql/20260527_trident_stock_insights.sql \
+            -f backend/sql/20260528_equity_screener.sql
 
       - name: Report skipped schema migration
         if: ${{ env.APPLY_SCHEMA != 'true' }}
@@ -216,6 +217,12 @@ jobs:
               --output "trident-stock-insights-${ticker}.json"
           done
 
+      - name: Sync open equity screener read model
+        working-directory: ./backend
+        env:
+          SUPABASE_KEY: ${{ secrets.SUPABASE_SERVICE_KEY }}
+        run: python scripts/sync_equity_screener.py --output equity-screener-sync.json
+
       - name: Full Trident data sync
         if: ${{ env.RUN_FULL_AFTER_TOP == 'true' }}
         working-directory: ./backend
@@ -248,6 +255,7 @@ jobs:
             backend/top-trident-price-backfill.json
             backend/top-trident-stock-insights.json
             backend/trident-stock-insights-*.json
+            backend/equity-screener-sync.json
             backend/refresh-report-trident-full.json
             backend/freshness-trident-remediation.json
           if-no-files-found: warn

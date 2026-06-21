@@ -320,12 +320,12 @@ export default function FXPage() {
         <main className="p-4 sm:p-6 lg:p-8">
           <div className="max-w-7xl mx-auto grid grid-cols-1 lg:grid-cols-12 gap-6">
             <div className="lg:col-span-8 space-y-6">
-              <div className="flex items-center justify-between gap-4">
-                <div className="flex items-center gap-3">
-                  <ArrowRightLeft className="text-[#00FF88]" />
-                  <h1 className="text-3xl font-black uppercase tracking-tighter text-slate-950 dark:text-white">FX Intelligence</h1>
+              <div className="flex min-w-0 flex-col gap-3 sm:flex-row sm:items-center sm:justify-between sm:gap-4">
+                <div className="flex min-w-0 items-center gap-3">
+                  <ArrowRightLeft className="shrink-0 text-[#00FF88]" />
+                  <h1 className="min-w-0 text-2xl font-black uppercase tracking-tighter text-slate-950 dark:text-white sm:text-3xl">FX Intelligence</h1>
                 </div>
-                <div className="inline-flex items-center gap-2 px-3 py-1 rounded-lg bg-slate-200 dark:bg-white/10 border border-slate-300 dark:border-white/10">
+                <div className="inline-flex w-fit max-w-full items-center gap-2 rounded-lg border border-slate-300 bg-slate-200 px-3 py-1 dark:border-white/10 dark:bg-white/10">
                   <span className={`h-2 w-2 rounded-full ${stateLabel.dot}`} />
                   <span className={`text-[10px] font-black uppercase tracking-wider ${stateLabel.color}`}>{stateLabel.text}</span>
                   <span className="text-[10px] text-slate-500 dark:text-gray-400">· {dataStateLabel(unifiedState)}</span>
@@ -340,7 +340,7 @@ export default function FXPage() {
                 ].map(([label, value]) => (
                   <div key={label} className="rounded-xl border border-slate-200 dark:border-white/10 bg-white/80 dark:bg-white/[0.03] px-4 py-3">
                     <div className="text-[9px] font-black uppercase tracking-wider text-slate-500 dark:text-gray-500">{label}</div>
-                    <div className="mt-1 text-xs font-mono font-black text-slate-950 dark:text-white">{value}</div>
+                    <div className="mt-1 min-w-0 break-words text-xs font-mono font-black text-slate-950 dark:text-white">{value}</div>
                   </div>
                 ))}
               </div>

@@ -8,6 +8,7 @@ export type AssetType = 'Stock' | 'STOCK' | 'ETF' | 'Crypto' | 'CRYPTO' | 'Cash'
 export type TridentCriterionStatus = 'pass' | 'fail' | 'missing' | 'not_applicable';
 export type TridentCategory = 'growth' | 'profitability' | 'capital' | 'health';
 export type TridentOverallState = 'QUALIFIED' | 'WATCHLIST' | 'REJECTED' | 'NO_DATA';
+export type EquityScreenerValuationTag = 'POTENTIAL_VALUE' | 'FAIR' | 'EXPENSIVE' | 'INSUFFICIENT_DATA';
 export type PriceHistoryHorizon = 'YTD' | '5Y' | '10Y' | 'MAX';
 export type PriceHistoryCurrencyMode = 'EUR' | 'LOCAL';
 export type RegressionScaleMode = 'LOG' | 'LINEAR';
@@ -249,6 +250,47 @@ export interface TridentCriterionRow {
   comparator: string | null
   is_eliminating: boolean
   reason: string | null
+  updated_at: string | null
+}
+
+export interface EquityScreenerRow {
+  instrument_key: string
+  as_of_date: string | null
+  ticker: string
+  name: string | null
+  exchange: string | null
+  country: string | null
+  sector: string | null
+  industry: string | null
+  currency: string | null
+  provider: string
+  provider_symbol: string | null
+  source_index: string | null
+  themes: string[]
+  latest_fiscal_year: number | null
+  financial_currency: string | null
+  valuation_currency: string | null
+  market_cap: number | null
+  revenue: number | null
+  free_cash_flow: number | null
+  fcf_margin: number | null
+  fcf_yield: number | null
+  revenue_cagr_3y: number | null
+  revenue_cagr_5y: number | null
+  forecast_revenue_growth: number | null
+  trailing_pe: number | null
+  forward_pe: number | null
+  latest_roic: number | null
+  latest_net_debt_to_ebitda: number | null
+  target_upside: number | null
+  recommendation_key: string | null
+  analyst_count: number | null
+  trident_score: number | null
+  trident_state: TridentOverallState | null
+  quality_value_score: number
+  valuation_tag: EquityScreenerValuationTag
+  score_details: Record<string, unknown>
+  data_state: string[]
   updated_at: string | null
 }
 

@@ -17,6 +17,7 @@ function assertCheck(name, ok, detail) {
 }
 
 const trident = read('frontend/app/trident/page.tsx')
+const screener = read('frontend/app/screener/page.tsx')
 const targets = read('frontend/app/targets/page.tsx')
 const supports = read('frontend/app/supports/page.tsx')
 const dashboard = read('frontend/app/page.tsx')
@@ -32,6 +33,13 @@ const checks = [
     'trident.runtime_dom_marker',
     trident.includes('data-trident-row="true"'),
     'Browser smoke needs a stable row marker to enforce DOM budgets.'
+  ),
+  assertCheck(
+    'open_screener.pagination_dom_marker',
+    screener.includes('const PAGE_SIZE = 100') &&
+      screener.includes('pageRows.map') &&
+      screener.includes('data-equity-screener-row="true"'),
+    'Open screener should page large result sets and expose a DOM marker.'
   ),
   assertCheck(
     'targets.mobile_cards',

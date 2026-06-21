@@ -296,6 +296,28 @@ Acceptance criteria
 	•	CI catches overlay, blank page, horizontal overflow, and Trident row DOM budget failures when Supabase runtime secrets are available
 	•	Static budgets run even when browser smoke is skipped
 
+BL-014 — Open Equity Screener
+
+Priority: P1
+Status: IMPLEMENTED IN CODE (schema deploy + production smoke required)
+
+Problem
+
+Need an open, Zonebourse-style screener to explore global equities by sector/theme/country and valuation metrics, especially ESN / IT providers that may be good businesses but discounted.
+
+Implemented
+	•	Additive Supabase read model `equity_screener_results` and `equity_screener_latest`.
+	•	Idempotent backend sync `scripts/sync_equity_screener.py` derived from Trident universe, annual financials, Trident scores, and stock insights.
+	•	Explicit data states for unavailable forecast, valuation, FCF, currency mismatch, and missing insights.
+	•	New `/screener` frontend route with ESN/value, FCF compounder, and quality-value presets.
+	•	Global sample backend tests covering US, France, India, and Japan rows.
+	•	Production smoke workflow for Supabase anon contract plus Vercel browser runtime.
+
+Acceptance criteria
+	•	Backend tests validate IT-services classification, value tagging, missing forecast state, and currency mismatch handling.
+	•	Supabase smoke validates `equity_screener_latest`; production smoke can require non-empty rows.
+	•	Frontend lint, TypeScript, build, browser smoke, and production smoke pass.
+
 ## Notes
 
 - Current technical signal stack:

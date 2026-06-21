@@ -21,6 +21,7 @@ on:
       - "backend/sql/**"
       - "backend/trident_screener.py"
       - "backend/historical_prices_sync.py"
+      - "backend/equity_screener.py"
       - "backend/supabase_key_guard.py"
       - "backend/scripts/run_data_refresh.py"
       - "backend/scripts/update_target_allocations.py"
@@ -32,8 +33,10 @@ on:
       - "backend/scripts/backfill_top_trident_prices.py"
       - "backend/scripts/sync_trident_stock_insights.py"
       - "backend/scripts/sync_trident_screener.py"
+      - "backend/scripts/sync_equity_screener.py"
       - "backend/tests/test_trident_stock_insights.py"
       - "backend/tests/test_trident_screener.py"
+      - "backend/tests/test_equity_screener.py"
       - "backend/tests/test_refresh_ops.py"
       - "backend/tests/test_target_excel_import.py"
       - "backend/tests/test_support_universe_import.py"
@@ -42,10 +45,12 @@ on:
       - "backend/tests/broker_ingest/**"
       - "backend/tools/schema_check.py"
       - "frontend/app/trident/**"
+      - "frontend/app/screener/**"
       - "frontend/app/arbitrage/**"
       - "frontend/app/supports/**"
       - "frontend/app/targets/**"
       - "frontend/lib/tridentData.ts"
+      - "frontend/lib/equityScreenerData.ts"
       - "frontend/types.ts"
       - "frontend/scripts/smoke-supabase.mjs"
       - ".github/workflows/trident-supabase.yml"
@@ -79,7 +84,7 @@ jobs:
 
       - name: Backend compile check
         working-directory: ./backend
-        run: python3.11 -m py_compile bridge.py technical_state.py etl_stats.py historical_prices_sync.py trident_screener.py scripts/run_data_refresh.py scripts/update_target_allocations.py scripts/import_target_allocations_excel.py scripts/import_broker_transactions.py scripts/import_broker_positions.py scripts/import_support_universe.py scripts/import_target_model.py scripts/backfill_top_trident_prices.py scripts/sync_trident_stock_insights.py scripts/sync_trident_screener.py tools/schema_check.py
+        run: python3.11 -m py_compile bridge.py technical_state.py etl_stats.py historical_prices_sync.py trident_screener.py equity_screener.py scripts/run_data_refresh.py scripts/update_target_allocations.py scripts/import_target_allocations_excel.py scripts/import_broker_transactions.py scripts/import_broker_positions.py scripts/import_support_universe.py scripts/import_target_model.py scripts/backfill_top_trident_prices.py scripts/sync_trident_stock_insights.py scripts/sync_trident_screener.py scripts/sync_equity_screener.py tools/schema_check.py
 
       - name: Setup Node
         uses: actions/setup-node@v4
@@ -186,7 +191,8 @@ jobs:
             -f backend/sql/20260524_trident_screener.sql \
             -f backend/sql/20260525_portfolio_decision_items.sql \
             -f backend/sql/20260526_supports_targets_advice.sql \
-            -f backend/sql/20260527_trident_stock_insights.sql
+            -f backend/sql/20260527_trident_stock_insights.sql \
+            -f backend/sql/20260528_equity_screener.sql
 
       - name: Post-migration schema check
         working-directory: ./backend
@@ -211,6 +217,7 @@ jobs:
             cmd+=(--per-index-limit "$TRIDENT_PER_INDEX_LIMIT")
           fi
           "${cmd[@]}"
+          python scripts/sync_equity_screener.py
 
       - name: Setup Node for Supabase smoke
         uses: actions/setup-node@v4
@@ -228,6 +235,8 @@ jobs:
         env:
           NEXT_PUBLIC_SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
           NEXT_PUBLIC_SUPABASE_ANON_KEY: ${{ secrets.SUPABASE_ANON_KEY }}
+          REQUIRE_TRIDENT_ROWS: ${{ github.event_name == 'workflow_dispatch' && inputs.run_trident_etl || false }}
+          REQUIRE_EQUITY_SCREENER_ROWS: ${{ github.event_name == 'workflow_dispatch' && inputs.run_trident_etl || false }}
         run: |
           if [ -z "$NEXT_PUBLIC_SUPABASE_URL" ] || [ -z "$NEXT_PUBLIC_SUPABASE_ANON_KEY" ]; then
             echo "::error::Supabase smoke requires SUPABASE_URL and SUPABASE_ANON_KEY."

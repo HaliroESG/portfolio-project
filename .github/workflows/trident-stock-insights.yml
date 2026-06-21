@@ -109,6 +109,13 @@ jobs:
           fi
           "${cmd[@]}"
 
+      - name: Sync open equity screener read model
+        if: ${{ env.DRY_RUN != 'true' }}
+        working-directory: ./backend
+        env:
+          SUPABASE_KEY: ${{ secrets.SUPABASE_SERVICE_KEY }}
+        run: python scripts/sync_equity_screener.py --output equity-screener-sync.json
+
       - name: Upload insight reports
         if: always()
         uses: actions/upload-artifact@v4
@@ -117,4 +124,5 @@ jobs:
           path: |
             backend/schema-check-before-insights.json
             backend/trident-stock-insights-sync.json
+            backend/equity-screener-sync.json
           if-no-files-found: warn

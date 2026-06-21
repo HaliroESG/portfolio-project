@@ -15,6 +15,7 @@ The product provides:
 - Macro and MDSS monitoring views
 - Backtest and portfolio comparison flows
 - Trident equity screener (backend-computed criteria, Supabase read model, frontend display)
+- Open equity screener for country/sector/theme valuation screening, including ESN / IT provider presets
 
 ## Monorepo Structure
 
@@ -61,6 +62,7 @@ Required:
 Used by:
 - app runtime (`frontend/lib/supabase.ts`)
 - smoke check (`frontend/scripts/smoke-supabase.mjs`)
+- production smoke (`frontend/scripts/smoke-production.mjs`, with `PRODUCTION_APP_URL`)
 
 ### Backend (shell/CI environment)
 Common required for most scripts:
@@ -123,6 +125,7 @@ python3.11 macro_sync.py
 python3.11 news_sync.py
 python3.11 historical_prices_sync.py
 python3.11 scripts/sync_trident_screener.py --dry-run --limit 25
+python3.11 scripts/sync_equity_screener.py --dry-run --limit 25
 ```
 
 Production refresh orchestrator:
@@ -152,6 +155,7 @@ Examples:
 - `etl_runs` observability table
 - historical price storage tables
 - Trident screener tables/view: `backend/sql/20260524_trident_screener.sql`
+- Open equity screener tables/view: `backend/sql/20260528_equity_screener.sql`
 
 Current repo does not include an automated migration runner. Apply migrations through Supabase SQL tooling/process.
 The workflow `.github/workflows/trident-supabase.yml` can run validations with `SUPABASE_URL` + `SUPABASE_SERVICE_KEY`.
@@ -195,6 +199,7 @@ python3.11 -m py_compile bridge.py technical_state.py etl_stats.py
   - Weekly full Trident run (`17 7 * * 0`, UTC)
   - Manual `workflow_dispatch` supports `all`, `core`, `history`, `trident`, `backtest`, and `validate`
   - Post-refresh gates run schema parity, `etl_runs` freshness, and anon Supabase smoke with Trident rows required
+- Production app smoke: `.github/workflows/production-app-smoke.yml` validates Supabase anon reads and the deployed Vercel app, including `/screener`, when `PRODUCTION_APP_URL` is configured. If Vercel Deployment Protection is enabled, also set `VERCEL_PROTECTION_BYPASS` so Playwright can set the bypass cookie before loading routes.
 - Codex long-running task guidance: `docs/codex_goal_best_practices.md`
 
 ## Known Limitations / Current Roadmap Highlights
@@ -204,5 +209,6 @@ From current backlog state (`BACKLOG.md`):
 - Data health observability and technical signal completeness have recent upgrades; continue validating on live data quality and load.
 - If Supabase migrations are not applied in target environments, runtime fallbacks may still degrade UX (for example missing `market_watch` technical columns or governance target column naming drift such as `target_percent` vs `target_weight_pct`).
 - Trident now includes an explicit `global_yahoo` provider. It seeds a broad market universe from public index constituent tables and computes criteria from annual statements fetched through `yfinance`; unavailable fields remain `missing` instead of being invented. CSV ingestion remains available for licensed/user-supplied sources.
+- The open screener is derived from Trident and stock insights. Forward revenue growth remains `FORECAST_UNAVAILABLE` until a licensed consensus/fundamentals provider writes that field.
 
 For active implementation priorities, use `BACKLOG.md` as source of truth.
