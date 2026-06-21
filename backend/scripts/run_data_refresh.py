@@ -141,7 +141,7 @@ def build_trident_steps(
         RefreshStep(
             key="equity_screener_sync",
             label="Open equity screener",
-            command=(PYTHON, "scripts/sync_equity_screener.py"),
+            command=(PYTHON, "scripts/sync_equity_screener.py", "--enforce-quality-gate"),
             required_env=("SUPABASE_URL", "SUPABASE_KEY"),
         ),
     ]

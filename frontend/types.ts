@@ -271,6 +271,9 @@ export interface EquityScreenerRow {
   financial_currency: string | null
   valuation_currency: string | null
   market_cap: number | null
+  market_cap_usd: number | null
+  market_cap_fx_rate: number | null
+  market_cap_fx_as_of: string | null
   revenue: number | null
   free_cash_flow: number | null
   fcf_margin: number | null

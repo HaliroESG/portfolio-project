@@ -97,8 +97,13 @@ try {
       'Local unavailable',
       'Short history',
       'loadAssetPriceHistory(supabase, ticker, horizon)',
+      'computeRegressionChartModel(displayPoints,',
+      'REGRESSION_MIN_POINTS',
+      'MM200',
+      'Z-score',
+      '±1/±2σ',
     ]),
-    'Asset price chart should expose horizon/currency controls and explicit data states.'
+    'Asset price chart should expose horizon/currency controls, explicit data states, and regression/MM200 overlays.'
   )
   addCheck(
     'frontend.asset_price_chart_fullscreen',
@@ -113,6 +118,7 @@ try {
   const tridentPage = read('frontend/app/trident/page.tsx')
   const screenerPage = read('frontend/app/screener/page.tsx')
   const equityScreenerData = read('frontend/lib/equityScreenerData.ts')
+  const equityScreenerDefinitions = read('frontend/lib/equityScreenerDefinitions.ts')
   const tridentRegressionChart = read('frontend/components/TridentRegressionChart.tsx')
   const regressionChart = read('frontend/lib/regressionChart.ts')
   const fullscreenChart = read('frontend/components/FullscreenChart.tsx')
@@ -178,16 +184,30 @@ try {
       'data-equity-screener-row="true"',
       'FORECAST_UNAVAILABLE',
       'FCF yield',
+      'Definitions / Calculations',
+      'SCREENER_DEFINITIONS',
+      'DefinitionTooltip',
+      'market_cap_usd',
       '<TridentRegressionChart',
     ]) && hasAll(equityScreenerData, [
       "from('equity_screener_latest')",
       'SCHEMA_PENDING',
+      'SELECTOR_V2',
+      'SELECTOR_V1',
+      'market_cap_usd',
+      'market_cap_fx_rate',
       'quality_value_score',
       'valuation_tag',
       'regression_slope_pct',
       'price_coverage_pct',
+    ]) && hasAll(equityScreenerDefinitions, [
+      'Score = valuation 20 pts, FCF 25 pts, quality 20 pts, growth 15 pts, health 20 pts',
+      'market_cap_usd',
+      'currencies.rate_to_eur',
+      'lower positive value between forward PE and trailing PE',
+      'CAGR from the latest fiscal year',
     ]),
-    'Open screener should expose ESN/value/momentum/sector presets, explicit missing states, paged rows, and typed Supabase reads.'
+    'Open screener should expose presets, definitions, USD market cap, explicit missing states, paged rows, and typed Supabase reads.'
   )
   addCheck(
     'frontend.trident_detail_resizable_width',

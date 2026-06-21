@@ -19,6 +19,23 @@ if str(BACKEND_DIR) not in sys.path:
 
 JOB_NAME = "equity_screener_sync"
 PAGE_SIZE = 1000
+BASE_FX_CURRENCY = "EUR"
+USD_FX_CURRENCY = "USD"
+FX_MAX_AGE_DAYS = 4
+MARKET_QUALITY_THRESHOLDS = {
+    "duplicate_groups": 0,
+    "fx_coverage_pct": 95.0,
+    "price_history_coverage_pct": 95.0,
+    "financials_coverage_pct": 90.0,
+    "insights_coverage_pct": 90.0,
+}
+
+
+class EquityScreenerQualityGateError(RuntimeError):
+    def __init__(self, message: str, stats: Mapping[str, Any]):
+        super().__init__(message)
+        self.stats = dict(stats)
+
 
 THEME_RULES: tuple[tuple[str, tuple[str, ...]], ...] = (
     (
@@ -131,6 +148,20 @@ def normalize_currency(value: Any) -> str | None:
     return normalized if len(normalized) == 3 else None
 
 
+def parse_datetime(value: Any) -> datetime | None:
+    text = clean_string(value)
+    if not text:
+        return None
+    try:
+        normalized = text.replace("Z", "+00:00")
+        parsed = datetime.fromisoformat(normalized)
+    except ValueError:
+        return None
+    if parsed.tzinfo is None:
+        return parsed.replace(tzinfo=timezone.utc)
+    return parsed.astimezone(timezone.utc)
+
+
 def normalize_text(*values: Any) -> str:
     joined = " ".join(str(value) for value in values if value is not None)
     stripped = unicodedata.normalize("NFKD", joined).encode("ascii", "ignore").decode("ascii")
@@ -141,6 +172,78 @@ def ratio(numerator: float | None, denominator: float | None) -> float | None:
     if numerator is None or denominator is None or denominator == 0:
         return None
     return numerator / denominator
+
+
+def build_fx_context(currency_rows: Iterable[Mapping[str, Any]]) -> tuple[dict[str, float], dict[str, str]]:
+    rates: dict[str, float] = {BASE_FX_CURRENCY: 1.0}
+    updated_at: dict[str, str] = {}
+    for row in currency_rows:
+        currency = normalize_currency(row.get("id"))
+        rate = safe_float(row.get("rate_to_eur"))
+        if not currency or rate is None or rate <= 0:
+            continue
+        rates[currency] = rate
+        update_time = clean_string(row.get("last_update"))
+        if update_time:
+            updated_at[currency] = update_time
+    return rates, updated_at
+
+
+def fx_timestamp_for_conversion(
+    source_currency: str,
+    fx_updated_at: Mapping[str, str],
+) -> str | None:
+    candidates: list[datetime] = []
+    for currency in {source_currency, USD_FX_CURRENCY}:
+        if currency == BASE_FX_CURRENCY:
+            continue
+        parsed = parse_datetime(fx_updated_at.get(currency))
+        if parsed is not None:
+            candidates.append(parsed)
+    if not candidates:
+        return None
+    return min(candidates).isoformat()
+
+
+def fx_is_stale(value: str | None, now: datetime | None = None) -> bool:
+    parsed = parse_datetime(value)
+    if parsed is None:
+        return False
+    reference = now or datetime.now(timezone.utc)
+    return (reference - parsed).total_seconds() > FX_MAX_AGE_DAYS * 86_400
+
+
+def convert_market_cap_to_usd(
+    market_cap: float | None,
+    valuation_currency: str | None,
+    fx_rates_to_eur: Mapping[str, float],
+    fx_updated_at: Mapping[str, str],
+) -> tuple[float | None, float | None, str | None, set[str]]:
+    states: set[str] = set()
+    if market_cap is None:
+        states.add("MARKET_CAP_USD_UNAVAILABLE")
+        return None, None, None, states
+    if not valuation_currency:
+        states.add("FX_RATE_UNAVAILABLE")
+        states.add("MARKET_CAP_USD_UNAVAILABLE")
+        return None, None, None, states
+
+    currency = valuation_currency.upper()
+    if currency == USD_FX_CURRENCY:
+        return market_cap, 1.0, fx_updated_at.get(USD_FX_CURRENCY), states
+
+    usd_rate_to_eur = fx_rates_to_eur.get(USD_FX_CURRENCY)
+    source_rate_to_eur = 1.0 if currency == BASE_FX_CURRENCY else fx_rates_to_eur.get(currency)
+    if usd_rate_to_eur is None or usd_rate_to_eur <= 0 or source_rate_to_eur is None or source_rate_to_eur <= 0:
+        states.add("FX_RATE_UNAVAILABLE")
+        states.add("MARKET_CAP_USD_UNAVAILABLE")
+        return None, None, None, states
+
+    fx_rate = source_rate_to_eur / usd_rate_to_eur
+    as_of = fx_timestamp_for_conversion(currency, fx_updated_at)
+    if fx_is_stale(as_of):
+        states.add("FX_RATE_STALE")
+    return market_cap * fx_rate, fx_rate, as_of, states
 
 
 def annualized_growth(start_value: float | None, end_value: float | None, years: int) -> float | None:
@@ -404,10 +507,12 @@ def build_screener_rows(
     trident_rows: Iterable[Mapping[str, Any]],
     insight_rows: Iterable[Mapping[str, Any]],
     coverage_rows: Iterable[Mapping[str, Any]] = (),
+    currency_rows: Iterable[Mapping[str, Any]] = (),
     *,
     as_of_date: date | None = None,
 ) -> list[dict[str, Any]]:
     as_of = as_of_date or datetime.now(timezone.utc).date()
+    fx_rates_to_eur, fx_updated_at = build_fx_context(currency_rows)
     financials_by_key: dict[str, list[Mapping[str, Any]]] = {}
     for row in financial_rows:
         key = clean_string(row.get("instrument_key"))
@@ -449,6 +554,12 @@ def build_screener_rows(
         valuation_currency = normalize_currency(insight.get("price_currency")) or normalize_currency(universe.get("currency"))
         currency = normalize_currency(universe.get("currency"))
         market_cap = safe_float(insight.get("market_cap"))
+        market_cap_usd, market_cap_fx_rate, market_cap_fx_as_of, market_cap_fx_states = convert_market_cap_to_usd(
+            market_cap,
+            valuation_currency,
+            fx_rates_to_eur,
+            fx_updated_at,
+        )
         revenue = safe_float((latest or {}).get("revenue"))
         free_cash_flow = safe_float((latest or {}).get("free_cash_flow"))
         fcf_margin = ratio(free_cash_flow, revenue)
@@ -541,6 +652,7 @@ def build_screener_rows(
             data_state.add("INSIGHTS_UNAVAILABLE")
         if market_cap is None:
             data_state.add("MARKET_CAP_UNAVAILABLE")
+        data_state.update(market_cap_fx_states)
         if free_cash_flow is None:
             data_state.add("FCF_UNAVAILABLE")
         if revenue_cagr_3y is None:
@@ -577,6 +689,9 @@ def build_screener_rows(
             "financial_currency": financial_currency,
             "valuation_currency": valuation_currency,
             "market_cap": market_cap,
+            "market_cap_usd": market_cap_usd,
+            "market_cap_fx_rate": market_cap_fx_rate,
+            "market_cap_fx_as_of": market_cap_fx_as_of,
             "revenue": revenue,
             "free_cash_flow": free_cash_flow,
             "fcf_margin": fcf_margin,
@@ -729,6 +844,7 @@ def run_equity_screener_sync(
     *,
     dry_run: bool = False,
     limit: int | None = None,
+    enforce_quality_gate: bool = False,
 ) -> dict[str, Any]:
     universe = fetch_all_rows(
         supabase,
@@ -755,6 +871,11 @@ def run_equity_screener_sync(
         "historical_price_coverage",
         "ticker,earliest_date,coverage_pct,updated_at",
     )
+    currencies = fetch_all_rows(
+        supabase,
+        "currencies",
+        "id,rate_to_eur,last_update",
+    )
     existing_results = fetch_all_rows(
         supabase,
         "equity_screener_results",
@@ -764,7 +885,7 @@ def run_equity_screener_sync(
     if limit is not None:
         active_universe = active_universe[:limit]
 
-    raw_rows = build_screener_rows(active_universe, financials, trident, insights, coverage)
+    raw_rows = build_screener_rows(active_universe, financials, trident, insights, coverage, currencies)
     rows, dedupe_stats = deduplicate_screener_rows(raw_rows)
     upserted = upsert_rows(supabase, rows, dry_run=dry_run)
     current_keys = {str(row["instrument_key"]) for row in rows}
@@ -780,6 +901,12 @@ def run_equity_screener_sync(
     state_counts: dict[str, int] = {}
     country_counts: dict[str, int] = {}
     strategy_counts: dict[str, int] = {}
+    total_rows = len(rows)
+    financials_ready = 0
+    insights_ready = 0
+    price_history_ready = 0
+    fx_ready = 0
+    stale_rows = 0
     for row in rows:
         for theme in row["themes"]:
             theme_counts[theme] = theme_counts.get(theme, 0) + 1
@@ -791,8 +918,56 @@ def run_equity_screener_sync(
         country_counts[country] = country_counts.get(country, 0) + 1
         for state in row["data_state"]:
             state_counts[state] = state_counts.get(state, 0) + 1
+        data_state = set(row["data_state"])
+        if "FINANCIALS_UNAVAILABLE" not in data_state:
+            financials_ready += 1
+        if "INSIGHTS_UNAVAILABLE" not in data_state:
+            insights_ready += 1
+        if "PRICE_HISTORY_UNAVAILABLE" not in data_state and "PRICE_HISTORY_SHORT" not in data_state:
+            price_history_ready += 1
+        if (
+            "FX_RATE_UNAVAILABLE" not in data_state
+            and "FX_RATE_STALE" not in data_state
+            and "MARKET_CAP_USD_UNAVAILABLE" not in data_state
+        ):
+            fx_ready += 1
+        updated_at = parse_datetime(row.get("updated_at"))
+        if updated_at and (datetime.now(timezone.utc) - updated_at).total_seconds() > 8 * 86_400:
+            stale_rows += 1
     if dedupe_stats["duplicates_suppressed"]:
         state_counts["DUPLICATE_SUPPRESSED"] = dedupe_stats["duplicates_suppressed"]
+
+    def coverage_pct(count: int) -> float | None:
+        return round((count / total_rows) * 100, 2) if total_rows > 0 else None
+
+    financials_coverage_pct = coverage_pct(financials_ready)
+    insights_coverage_pct = coverage_pct(insights_ready)
+    price_history_coverage_pct = coverage_pct(price_history_ready)
+    fx_coverage_pct = coverage_pct(fx_ready)
+    coverage_values = [
+        value
+        for value in (
+            financials_coverage_pct,
+            insights_coverage_pct,
+            price_history_coverage_pct,
+            fx_coverage_pct,
+        )
+        if value is not None
+    ]
+    quality_gate_failures: list[str] = []
+    if dedupe_stats["duplicate_groups"] > MARKET_QUALITY_THRESHOLDS["duplicate_groups"]:
+        quality_gate_failures.append(
+            f"duplicate_groups={dedupe_stats['duplicate_groups']} > {MARKET_QUALITY_THRESHOLDS['duplicate_groups']}"
+        )
+    for key, value in [
+        ("financials_coverage_pct", financials_coverage_pct),
+        ("insights_coverage_pct", insights_coverage_pct),
+        ("price_history_coverage_pct", price_history_coverage_pct),
+        ("fx_coverage_pct", fx_coverage_pct),
+    ]:
+        threshold = MARKET_QUALITY_THRESHOLDS[key]
+        if value is not None and value < threshold:
+            quality_gate_failures.append(f"{key}={value:.2f}% < {threshold:.2f}%")
 
     stats = {
         "source_universe_rows": len(universe),
@@ -801,10 +976,22 @@ def run_equity_screener_sync(
         "trident_rows": len(trident),
         "insight_rows": len(insights),
         "coverage_rows": len(coverage),
+        "currency_rows": len(currencies),
         "raw_screener_rows": len(raw_rows),
         "screener_rows": len(rows),
         "upserted_rows": upserted,
         "deleted_stale_rows": deleted_stale_rows,
+        "coverage_pct": round(min(coverage_values), 2) if coverage_values else None,
+        "financials_coverage_pct": financials_coverage_pct,
+        "insights_coverage_pct": insights_coverage_pct,
+        "price_history_coverage_pct": price_history_coverage_pct,
+        "fx_coverage_pct": fx_coverage_pct,
+        "financials_ready": financials_ready,
+        "insights_ready": insights_ready,
+        "price_history_ready": price_history_ready,
+        "fx_ready": fx_ready,
+        "stale_row_count": stale_rows,
+        "quality_gate_failures": quality_gate_failures,
         "theme_counts": dict(sorted(theme_counts.items())),
         "strategy_counts": dict(sorted(strategy_counts.items())),
         "valuation_tag_counts": dict(sorted(tag_counts.items())),
@@ -818,6 +1005,11 @@ def run_equity_screener_sync(
     if dry_run:
         stats["dry_run"] = True
         stats["sample_rows"] = rows[:5]
+    if enforce_quality_gate and quality_gate_failures:
+        raise EquityScreenerQualityGateError(
+            "Equity screener quality gate failed: " + "; ".join(quality_gate_failures),
+            stats,
+        )
     return stats
 
 
@@ -872,6 +1064,7 @@ def main() -> None:
     parser = argparse.ArgumentParser(description="Sync open equity screener read model")
     parser.add_argument("--limit", type=int, default=None)
     parser.add_argument("--dry-run", action="store_true")
+    parser.add_argument("--enforce-quality-gate", action="store_true")
     parser.add_argument("--output", default=None)
     args = parser.parse_args()
 
@@ -879,7 +1072,12 @@ def main() -> None:
     run_id = None if args.dry_run else start_etl_run(supabase)
     started = time.time()
     try:
-        stats = run_equity_screener_sync(supabase, dry_run=args.dry_run, limit=args.limit)
+        stats = run_equity_screener_sync(
+            supabase,
+            dry_run=args.dry_run,
+            limit=args.limit,
+            enforce_quality_gate=args.enforce_quality_gate,
+        )
         normalized = build_etl_stats(
             JOB_NAME,
             stats,
@@ -894,8 +1092,23 @@ def main() -> None:
         if args.output:
             Path(args.output).write_text(text, encoding="utf-8")
     except Exception as exc:
+        raw_stats = getattr(exc, "stats", None)
+        normalized_stats = None
+        if isinstance(raw_stats, Mapping):
+            normalized_stats = build_etl_stats(
+                JOB_NAME,
+                raw_stats,
+                items_total=raw_stats.get("items_total"),
+                items_success=raw_stats.get("items_success"),
+                items_failed=raw_stats.get("items_failed"),
+            )
         if not args.dry_run:
-            finish_etl_run(supabase, run_id, "FAILED", time.time() - started, error=str(exc))
+            finish_etl_run(supabase, run_id, "FAILED", time.time() - started, stats=normalized_stats, error=str(exc))
+        if normalized_stats is not None:
+            text = json.dumps(normalized_stats, indent=2, sort_keys=True)
+            print(text)
+            if args.output:
+                Path(args.output).write_text(text, encoding="utf-8")
         raise
 
 

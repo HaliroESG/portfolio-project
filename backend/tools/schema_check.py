@@ -102,6 +102,7 @@ CRITICAL_SCHEMA: dict[str, list[str]] = {
         "sector", "industry", "currency", "provider", "provider_symbol",
         "source_index", "themes", "latest_fiscal_year", "financial_currency",
         "valuation_currency", "market_cap", "revenue", "free_cash_flow",
+        "market_cap_usd", "market_cap_fx_rate", "market_cap_fx_as_of",
         "fcf_margin", "fcf_yield", "revenue_cagr_3y", "revenue_cagr_5y",
         "forecast_revenue_growth", "trailing_pe", "forward_pe", "latest_roic",
         "latest_net_debt_to_ebitda", "target_upside", "recommendation_key",
@@ -114,6 +115,7 @@ CRITICAL_SCHEMA: dict[str, list[str]] = {
     "equity_screener_latest": [
         "instrument_key", "ticker", "name", "country", "sector", "industry",
         "themes", "market_cap", "revenue", "free_cash_flow", "fcf_margin",
+        "market_cap_usd", "market_cap_fx_rate", "market_cap_fx_as_of",
         "fcf_yield", "revenue_cagr_3y", "forecast_revenue_growth",
         "trailing_pe", "forward_pe", "target_upside",
         "regression_slope_pct", "regression_z_score", "ma200_state",

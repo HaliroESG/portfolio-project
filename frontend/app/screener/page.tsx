@@ -10,11 +10,14 @@ import {
   Clock3,
   DatabaseZap,
   Filter,
+  HelpCircle,
   Search,
   SlidersHorizontal,
 } from 'lucide-react'
 import { AppShell } from '../../components/AppShell'
 import { EmptyState } from '../../components/EmptyState'
+import { Tooltip } from '../../components/Tooltip'
+import { SCREENER_DEFINITIONS, SCREENER_DEFINITION_ORDER } from '../../lib/equityScreenerDefinitions'
 import { loadEquityScreenerBundle } from '../../lib/equityScreenerData'
 import { supabase } from '../../lib/supabase'
 import { swrOptions, SWR_REFRESH } from '../../lib/swrConfig'
@@ -33,6 +36,7 @@ type SortKey =
   | 'trident'
 type SortDirection = 'asc' | 'desc'
 type SortConfig = { key: SortKey; direction: SortDirection }
+type ScreenerDefinitionKey = keyof typeof SCREENER_DEFINITIONS
 type Preset =
   | 'ALL'
   | 'ESN_UNIVERSE'
@@ -90,6 +94,23 @@ function formatMoney(value: number | null | undefined, currency: string | null |
   const divisor = unit === 'T' ? 1_000_000_000_000 : unit === 'B' ? 1_000_000_000 : unit === 'M' ? 1_000_000 : 1
   const prefix = currency ? `${currency} ` : ''
   return `${prefix}${(value / divisor).toFixed(unit ? 1 : 0)}${unit}`
+}
+
+function formatMarketCapSource(row: EquityScreenerRow): string {
+  return formatMoney(row.market_cap, row.valuation_currency)
+}
+
+function formatMarketCapUsd(row: EquityScreenerRow): string {
+  return formatMoney(row.market_cap_usd, 'USD')
+}
+
+function marketCapTitle(row: EquityScreenerRow): string {
+  if (row.market_cap_usd !== null && row.market_cap_usd !== undefined) {
+    const fx = row.market_cap_fx_rate ? `fx ${row.market_cap_fx_rate.toFixed(4)}` : 'fx n/a'
+    const asOf = row.market_cap_fx_as_of ? new Date(row.market_cap_fx_as_of).toLocaleDateString('fr-FR') : 'date n/a'
+    return `${formatMarketCapUsd(row)} converted from ${formatMarketCapSource(row)} (${fx}, ${asOf})`
+  }
+  return `USD conversion unavailable. Source market cap: ${formatMarketCapSource(row)}`
 }
 
 function tagLabel(tag: EquityScreenerValuationTag): string {
@@ -175,7 +196,7 @@ function compareRows(left: EquityScreenerRow, right: EquityScreenerRow, sort: So
   let result = 0
   if (sort.key === 'company') result = compareText(left.name ?? left.ticker, right.name ?? right.ticker, direction)
   if (sort.key === 'score') result = compareNumber(left.quality_value_score, right.quality_value_score, direction)
-  if (sort.key === 'marketCap') result = compareNumber(left.market_cap, right.market_cap, direction)
+  if (sort.key === 'marketCap') result = compareNumber(left.market_cap_usd, right.market_cap_usd, direction)
   if (sort.key === 'pe') result = compareNumber(bestPe(left), bestPe(right), direction)
   if (sort.key === 'fcfYield') result = compareNumber(left.fcf_yield, right.fcf_yield, direction)
   if (sort.key === 'fcfMargin') result = compareNumber(left.fcf_margin, right.fcf_margin, direction)
@@ -190,16 +211,73 @@ function sortIcon(active: boolean, direction: SortDirection) {
   return direction === 'asc' ? <ArrowUp className="h-3 w-3" /> : <ArrowDown className="h-3 w-3" />
 }
 
+function DefinitionTooltip({ definitionKey }: { definitionKey: ScreenerDefinitionKey }) {
+  const definition = SCREENER_DEFINITIONS[definitionKey]
+  return (
+    <Tooltip
+      side="bottom"
+      content={
+        <div className="max-w-[280px] space-y-1">
+          <div className="text-[11px] font-black uppercase tracking-wider text-white">{definition.label}</div>
+          <div className="text-[11px] leading-snug text-slate-200">{definition.short}</div>
+          <div className="text-[10px] leading-snug text-slate-300">{definition.detail}</div>
+          <div className="text-[9px] font-mono uppercase tracking-wider text-slate-400">Source: {definition.source}</div>
+        </div>
+      }
+    >
+      <span
+        aria-label={`Definition for ${definition.label}`}
+        className="inline-flex h-4 w-4 items-center justify-center rounded-full text-slate-400 hover:text-slate-900 dark:hover:text-white"
+      >
+        <HelpCircle className="h-3 w-3" />
+      </span>
+    </Tooltip>
+  )
+}
+
+function PlainHeader({
+  label,
+  definitionKey,
+  align = 'left',
+}: {
+  label: string
+  definitionKey?: ScreenerDefinitionKey
+  align?: 'left' | 'right' | 'center'
+}) {
+  return (
+    <th
+      className={cn(
+        'px-3 py-3',
+        align === 'right' && 'text-right',
+        align === 'center' && 'text-center'
+      )}
+    >
+      <span
+        className={cn(
+          'inline-flex items-center gap-1.5',
+          align === 'right' && 'justify-end',
+          align === 'center' && 'justify-center'
+        )}
+      >
+        <span>{label}</span>
+        {definitionKey && <DefinitionTooltip definitionKey={definitionKey} />}
+      </span>
+    </th>
+  )
+}
+
 function SortableHeader({
   label,
   sortKey,
   sortConfig,
+  definitionKey,
   align = 'left',
   onSort,
 }: {
   label: string
   sortKey: SortKey
   sortConfig: SortConfig
+  definitionKey?: ScreenerDefinitionKey
   align?: 'left' | 'right' | 'center'
   onSort: (sortKey: SortKey) => void
 }) {
@@ -217,9 +295,28 @@ function SortableHeader({
         )}
       >
         <span>{label}</span>
+        {definitionKey && <DefinitionTooltip definitionKey={definitionKey} />}
         {sortIcon(active, sortConfig.direction)}
       </button>
     </th>
+  )
+}
+
+function MarketCapCell({ row, compact = false }: { row: EquityScreenerRow; compact?: boolean }) {
+  const sourceValue = formatMarketCapSource(row)
+  const usdValue = formatMarketCapUsd(row)
+  const hasSource = sourceValue !== '--'
+  const hasUsd = usdValue !== '--'
+  const sourceDiffers = hasSource && row.valuation_currency !== 'USD'
+  return (
+    <div title={marketCapTitle(row)} className={cn('tabular-nums', compact ? 'text-center' : 'text-right')}>
+      <div className="text-xs font-mono font-black">{hasUsd ? usdValue : sourceValue}</div>
+      {(sourceDiffers || (!hasUsd && hasSource)) && (
+        <div className="mt-0.5 text-[9px] font-mono font-semibold uppercase tracking-wide text-slate-500 dark:text-gray-500">
+          {hasUsd ? sourceValue : 'USD n/a'}
+        </div>
+      )}
+    </div>
   )
 }
 
@@ -503,7 +600,7 @@ export default function ScreenerPage() {
                         </div>
                         <div className="mt-3 grid grid-cols-4 gap-2 text-center">
                           <Metric label="Score" value={formatScore(row.quality_value_score)} />
-                          <Metric label="PE" value={formatMultiple(bestPe(row))} />
+                          <Metric label="Mkt cap" value={formatMarketCapUsd(row) !== '--' ? formatMarketCapUsd(row) : formatMarketCapSource(row)} subValue={formatMarketCapUsd(row) !== '--' && row.valuation_currency !== 'USD' ? formatMarketCapSource(row) : undefined} />
                           <Metric label="FCF Y" value={formatPct(row.fcf_yield)} />
                           <Metric label="CAGR" value={formatPct(row.revenue_cagr_3y)} />
                         </div>
@@ -516,17 +613,17 @@ export default function ScreenerPage() {
                   <table className="min-w-[1260px] w-full border-collapse text-left">
                     <thead className="sticky top-0 z-10 bg-slate-100 text-[10px] font-black uppercase tracking-widest text-slate-600 dark:bg-[#101722] dark:text-gray-400">
                       <tr>
-                        <SortableHeader label="Company" sortKey="company" sortConfig={sortConfig} onSort={handleSort} />
-                        <th className="px-3 py-3">Theme</th>
-                        <SortableHeader label="Score" sortKey="score" sortConfig={sortConfig} align="right" onSort={handleSort} />
-                        <SortableHeader label="Mkt Cap" sortKey="marketCap" sortConfig={sortConfig} align="right" onSort={handleSort} />
-                        <SortableHeader label="PE" sortKey="pe" sortConfig={sortConfig} align="right" onSort={handleSort} />
-                        <SortableHeader label="FCF Yield" sortKey="fcfYield" sortConfig={sortConfig} align="right" onSort={handleSort} />
-                        <SortableHeader label="FCF Margin" sortKey="fcfMargin" sortConfig={sortConfig} align="right" onSort={handleSort} />
-                        <SortableHeader label="Rev 3Y" sortKey="growth" sortConfig={sortConfig} align="right" onSort={handleSort} />
-                        <SortableHeader label="Target" sortKey="target" sortConfig={sortConfig} align="right" onSort={handleSort} />
-                        <SortableHeader label="Trident" sortKey="trident" sortConfig={sortConfig} align="right" onSort={handleSort} />
-                        <th className="px-3 py-3 text-center">Tag</th>
+                        <SortableHeader label="Company" sortKey="company" sortConfig={sortConfig} definitionKey="company" onSort={handleSort} />
+                        <PlainHeader label="Theme" definitionKey="theme" />
+                        <SortableHeader label="Score" sortKey="score" sortConfig={sortConfig} definitionKey="score" align="right" onSort={handleSort} />
+                        <SortableHeader label="Mkt Cap" sortKey="marketCap" sortConfig={sortConfig} definitionKey="marketCap" align="right" onSort={handleSort} />
+                        <SortableHeader label="PE" sortKey="pe" sortConfig={sortConfig} definitionKey="pe" align="right" onSort={handleSort} />
+                        <SortableHeader label="FCF Yield" sortKey="fcfYield" sortConfig={sortConfig} definitionKey="fcfYield" align="right" onSort={handleSort} />
+                        <SortableHeader label="FCF Margin" sortKey="fcfMargin" sortConfig={sortConfig} definitionKey="fcfMargin" align="right" onSort={handleSort} />
+                        <SortableHeader label="Rev 3Y" sortKey="growth" sortConfig={sortConfig} definitionKey="growth" align="right" onSort={handleSort} />
+                        <SortableHeader label="Target" sortKey="target" sortConfig={sortConfig} definitionKey="target" align="right" onSort={handleSort} />
+                        <SortableHeader label="Trident" sortKey="trident" sortConfig={sortConfig} definitionKey="trident" align="right" onSort={handleSort} />
+                        <PlainHeader label="Tag" definitionKey="tag" align="center" />
                       </tr>
                     </thead>
                     <tbody className="divide-y divide-slate-100 dark:divide-white/5">
@@ -550,7 +647,9 @@ export default function ScreenerPage() {
                             <div className="max-w-[170px] truncate text-[10px] font-mono text-slate-500">{row.industry ?? row.sector ?? '--'}</div>
                           </td>
                           <td className="px-3 py-3 text-right text-sm font-black tabular-nums">{formatScore(row.quality_value_score)}</td>
-                          <td className="px-3 py-3 text-right text-xs font-mono font-black">{formatMoney(row.market_cap, row.valuation_currency)}</td>
+                          <td className="px-3 py-3">
+                            <MarketCapCell row={row} />
+                          </td>
                           <td className="px-3 py-3 text-right text-xs font-mono font-black">{formatMultiple(bestPe(row))}</td>
                           <td className="px-3 py-3 text-right text-xs font-mono font-black">{formatPct(row.fcf_yield)}</td>
                           <td className="px-3 py-3 text-right text-xs font-mono font-black">{formatPct(row.fcf_margin)}</td>
@@ -585,7 +684,7 @@ export default function ScreenerPage() {
                   </div>
                   <ScoreBreakdown row={selectedRow} />
                   <div className="grid grid-cols-2 gap-2">
-                    <Metric label="Market cap" value={formatMoney(selectedRow.market_cap, selectedRow.valuation_currency)} />
+                    <Metric label="Market cap" value={formatMarketCapUsd(selectedRow)} subValue={formatMarketCapSource(selectedRow)} />
                     <Metric label="Revenue" value={formatMoney(selectedRow.revenue, selectedRow.financial_currency)} />
                     <Metric label="Free cash flow" value={formatMoney(selectedRow.free_cash_flow, selectedRow.financial_currency)} />
                     <Metric label="FCF yield" value={formatPct(selectedRow.fcf_yield)} />
@@ -610,6 +709,7 @@ export default function ScreenerPage() {
                       Forward revenue forecast unavailable. Current row uses historical financials, stock insights, and Trident facts from Supabase.
                     </div>
                   )}
+                  <DefinitionsPanel />
                   <TridentRegressionChart
                     ticker={selectedRow.ticker}
                     instrumentKey={selectedRow.instrument_key}
@@ -626,11 +726,47 @@ export default function ScreenerPage() {
   )
 }
 
-function Metric({ label, value }: { label: string; value: string }) {
+function DefinitionsPanel() {
+  return (
+    <div className="rounded-lg border border-slate-200 bg-slate-50 p-3 dark:border-white/10 dark:bg-black/20">
+      <div className="mb-2 flex items-center gap-2 text-[10px] font-black uppercase tracking-widest text-slate-500">
+        <HelpCircle className="h-3 w-3" />
+        Definitions / Calculations
+      </div>
+      <div className="space-y-2">
+        {SCREENER_DEFINITION_ORDER.map((key) => {
+          const definition = SCREENER_DEFINITIONS[key]
+          return (
+            <div key={key} className="rounded-md border border-slate-200 bg-white p-2 dark:border-white/10 dark:bg-white/[0.03]">
+              <div className="flex items-start justify-between gap-2">
+                <div className="text-[10px] font-black uppercase tracking-wider text-slate-700 dark:text-gray-200">
+                  {definition.label}
+                </div>
+                <div className="shrink-0 text-[8px] font-mono uppercase tracking-wider text-slate-400">
+                  {definition.source}
+                </div>
+              </div>
+              <div className="mt-1 text-[11px] leading-snug text-slate-600 dark:text-gray-300">
+                {definition.detail}
+              </div>
+            </div>
+          )
+        })}
+      </div>
+    </div>
+  )
+}
+
+function Metric({ label, value, subValue }: { label: string; value: string; subValue?: string }) {
   return (
     <div className="rounded-md border border-slate-200 bg-slate-50 p-2 text-center dark:border-white/10 dark:bg-black/20">
       <div className="text-[9px] font-black uppercase tracking-wider text-slate-500">{label}</div>
       <div className="mt-1 text-sm font-black text-slate-950 dark:text-white">{value}</div>
+      {subValue && subValue !== value && (
+        <div className="mt-0.5 text-[9px] font-mono font-semibold uppercase tracking-wide text-slate-500 dark:text-gray-500">
+          {subValue}
+        </div>
+      )}
     </div>
   )
 }

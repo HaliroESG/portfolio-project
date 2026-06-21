@@ -19,6 +19,9 @@ create table if not exists public.equity_screener_results (
   financial_currency text,
   valuation_currency text,
   market_cap numeric,
+  market_cap_usd numeric,
+  market_cap_fx_rate numeric,
+  market_cap_fx_as_of timestamptz,
   revenue numeric,
   free_cash_flow numeric,
   fcf_margin numeric,
@@ -59,10 +62,17 @@ alter table public.equity_screener_results
   add column if not exists ma200_state text,
   add column if not exists momentum_3m_pct numeric,
   add column if not exists momentum_12m_pct numeric,
-  add column if not exists price_coverage_pct numeric;
+  add column if not exists price_coverage_pct numeric,
+  add column if not exists market_cap_usd numeric,
+  add column if not exists market_cap_fx_rate numeric,
+  add column if not exists market_cap_fx_as_of timestamptz;
 
+drop index if exists public.equity_screener_results_score_idx;
 create index if not exists equity_screener_results_score_idx
-  on public.equity_screener_results (quality_value_score desc, market_cap desc nulls last);
+  on public.equity_screener_results (quality_value_score desc, market_cap_usd desc nulls last);
+
+create index if not exists equity_screener_results_market_cap_usd_idx
+  on public.equity_screener_results (market_cap_usd desc nulls last);
 
 create index if not exists equity_screener_results_filters_idx
   on public.equity_screener_results (country, sector, valuation_tag);
@@ -104,6 +114,9 @@ select
   financial_currency,
   valuation_currency,
   market_cap,
+  market_cap_usd,
+  market_cap_fx_rate,
+  market_cap_fx_as_of,
   revenue,
   free_cash_flow,
   fcf_margin,

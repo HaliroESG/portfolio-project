@@ -221,7 +221,7 @@ jobs:
         working-directory: ./backend
         env:
           SUPABASE_KEY: ${{ secrets.SUPABASE_SERVICE_KEY }}
-        run: python scripts/sync_equity_screener.py --output equity-screener-sync.json
+        run: python scripts/sync_equity_screener.py --enforce-quality-gate --output equity-screener-sync.json
 
       - name: Full Trident data sync
         if: ${{ env.RUN_FULL_AFTER_TOP == 'true' }}

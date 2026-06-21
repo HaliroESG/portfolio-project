@@ -235,6 +235,16 @@ def _coverage():
     ]
 
 
+def _currencies():
+    return [
+        {"id": "USD", "rate_to_eur": 0.92, "last_update": "2026-06-19T18:00:00+00:00"},
+        {"id": "GBP", "rate_to_eur": 1.18, "last_update": "2026-06-19T18:00:00+00:00"},
+        {"id": "JPY", "rate_to_eur": 0.0062, "last_update": "2026-06-19T18:00:00+00:00"},
+        {"id": "KRW", "rate_to_eur": 0.00062, "last_update": "2026-06-19T18:00:00+00:00"},
+        {"id": "INR", "rate_to_eur": 0.0099, "last_update": "2026-06-19T18:00:00+00:00"},
+    ]
+
+
 def test_world_sample_screener_classifies_it_services_and_value_candidates():
     rows = build_screener_rows(_world_universe(), _financials(), _trident_results(), _insights(), _coverage())
     by_key = {row["instrument_key"]: row for row in rows}
@@ -249,6 +259,60 @@ def test_world_sample_screener_classifies_it_services_and_value_candidates():
     assert by_key["global_yahoo:acn"]["regression_slope_pct"] == 12
     assert by_key["global_yahoo:acn"]["price_coverage_pct"] == 87.4
     assert "MOMENTUM_TREND" in by_key["global_yahoo:acn"]["score_details"]["strategy_tags"]
+
+
+def test_market_cap_usd_conversion_keeps_source_currency_visible():
+    rows = build_screener_rows(
+        _world_universe(),
+        _financials(),
+        _trident_results(),
+        _insights(),
+        _coverage(),
+        _currencies(),
+    )
+    by_key = {row["instrument_key"]: row for row in rows}
+
+    assert by_key["global_yahoo:acn"]["market_cap_usd"] == 120_000_000_000
+    assert by_key["global_yahoo:acn"]["market_cap_fx_rate"] == 1
+    assert round(by_key["global_yahoo:cap.pa"]["market_cap_usd"], 2) == round(25_000_000_000 / 0.92, 2)
+    assert round(by_key["global_yahoo:infy.ns"]["market_cap_usd"], 2) == round(6_500_000_000_000 * 0.0099 / 0.92, 2)
+    assert by_key["global_yahoo:tm"]["market_cap_fx_as_of"] == "2026-06-19T18:00:00+00:00"
+    assert "MARKET_CAP_USD_UNAVAILABLE" not in by_key["global_yahoo:cap.pa"]["data_state"]
+
+
+def test_market_cap_usd_missing_fx_stays_explicit():
+    rows = build_screener_rows(
+        [_world_universe()[2]],
+        _financials(),
+        _trident_results(),
+        [_insights()[2]],
+        _coverage(),
+        [{"id": "USD", "rate_to_eur": 0.92, "last_update": "2026-06-19T18:00:00+00:00"}],
+    )
+
+    assert rows[0]["market_cap_usd"] is None
+    assert rows[0]["market_cap_fx_rate"] is None
+    assert "FX_RATE_UNAVAILABLE" in rows[0]["data_state"]
+    assert "MARKET_CAP_USD_UNAVAILABLE" in rows[0]["data_state"]
+
+
+def test_market_cap_usd_stale_fx_stays_explicit():
+    stale_currencies = [
+        {"id": "USD", "rate_to_eur": 0.92, "last_update": "2026-01-02T18:00:00+00:00"},
+        {"id": "INR", "rate_to_eur": 0.0099, "last_update": "2026-01-02T18:00:00+00:00"},
+    ]
+    rows = build_screener_rows(
+        [_world_universe()[2]],
+        _financials(),
+        _trident_results(),
+        [_insights()[2]],
+        _coverage(),
+        stale_currencies,
+    )
+
+    assert rows[0]["market_cap_usd"] is not None
+    assert "FX_RATE_STALE" in rows[0]["data_state"]
+    assert "MARKET_CAP_USD_UNAVAILABLE" not in rows[0]["data_state"]
 
 
 def test_it_services_universe_keeps_insufficient_rows_visible():
@@ -343,6 +407,7 @@ def test_dry_run_sync_reports_global_theme_and_country_coverage():
         "trident_results": _trident_results(),
         "trident_stock_insights": _insights(),
         "historical_price_coverage": _coverage(),
+        "currencies": _currencies(),
         "equity_screener_results": [],
     })
 
@@ -356,3 +421,7 @@ def test_dry_run_sync_reports_global_theme_and_country_coverage():
     assert stats["country_counts"]["FR"] == 1
     assert stats["country_counts"]["IN"] == 1
     assert stats["valuation_tag_counts"]["POTENTIAL_VALUE"] >= 1
+    assert stats["financials_coverage_pct"] == 100.0
+    assert stats["insights_coverage_pct"] == 100.0
+    assert stats["fx_coverage_pct"] == 100.0
+    assert stats["quality_gate_failures"]

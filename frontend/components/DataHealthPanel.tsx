@@ -597,6 +597,89 @@ async function fetchQualityMetrics(): Promise<QualityMetric[]> {
     })
   }
 
+  try {
+    const { data, error } = await supabase
+      .from('etl_runs')
+      .select('status,finished_at,stats')
+      .eq('job_name', 'equity_screener_sync')
+      .order('started_at', { ascending: false })
+      .limit(1)
+      .maybeSingle()
+
+    if (error) throw error
+    const row = (data ?? null) as Pick<EtlRun, 'status' | 'finished_at' | 'stats'> | null
+    const stats = row?.stats ?? null
+    const totalRows = readNumber(stats?.items_total)
+    const financialsCoveragePct = readNumber(stats?.financials_coverage_pct)
+    const insightsCoveragePct = readNumber(stats?.insights_coverage_pct)
+    const priceHistoryCoveragePct = readNumber(stats?.price_history_coverage_pct)
+    const fxCoveragePct = readNumber(stats?.fx_coverage_pct)
+    const duplicateGroups = readNumber(stats?.duplicate_groups)
+    const staleRows = readNumber(stats?.stale_row_count)
+    const qualityGateFailureValue = stats?.quality_gate_failures
+    const qualityGateFailures = Array.isArray(qualityGateFailureValue)
+      ? qualityGateFailureValue.length
+      : readNumber(qualityGateFailureValue)
+
+    metrics.push(
+      {
+        id: 'screener-financials',
+        label: 'Screener Financials',
+        value: totalRows !== null ? `${formatPercent(financialsCoveragePct)} of ${Math.round(totalRows)}` : formatPercent(financialsCoveragePct),
+        hint: 'Open screener rows with usable financial statement metrics. Threshold v1: >= 90%.',
+        tone: toneForHighIsGood(financialsCoveragePct, 90, 80),
+      },
+      {
+        id: 'screener-insights',
+        label: 'Screener Insights',
+        value: formatPercent(insightsCoveragePct),
+        hint: 'Open screener rows enriched by trident_stock_insights. Threshold v1: >= 90%.',
+        tone: toneForHighIsGood(insightsCoveragePct, 90, 80),
+      },
+      {
+        id: 'screener-price-history',
+        label: 'Price History',
+        value: formatPercent(priceHistoryCoveragePct),
+        hint: 'Active universe rows with price history available for regression. Threshold v1: >= 95%.',
+        tone: toneForHighIsGood(priceHistoryCoveragePct, 95, 85),
+      },
+      {
+        id: 'screener-fx',
+        label: 'FX Coverage',
+        value: formatPercent(fxCoveragePct),
+        hint: 'Rows with market cap USD conversion available through currencies.rate_to_eur. Threshold v1: >= 95%.',
+        tone: toneForHighIsGood(fxCoveragePct, 95, 85),
+      },
+      {
+        id: 'screener-duplicates',
+        label: 'Canonical Duplicates',
+        value: duplicateGroups !== null ? `${Math.round(duplicateGroups)} groups` : 'n/a',
+        hint: `Duplicate ticker groups suppressed in the read model. Stale rows: ${staleRows !== null ? Math.round(staleRows) : 'n/a'}.`,
+        tone: toneForLowIsGood(duplicateGroups, 0, 2),
+      },
+      {
+        id: 'screener-quality-gate',
+        label: 'Screener Gate',
+        value: row?.status ? `${row.status}${qualityGateFailures ? ` · ${qualityGateFailures} failures` : ''}` : 'sync pending',
+        hint: 'Critical gate checks: zero duplicate groups, FX fresh, price history >= 95%, financials/insights >= 90%.',
+        tone:
+          row?.status === 'FAILED' || (qualityGateFailures !== null && qualityGateFailures > 0)
+            ? 'BAD'
+            : row?.status === 'SUCCESS'
+            ? 'GOOD'
+            : 'WARN',
+      },
+    )
+  } catch {
+    metrics.push({
+      id: 'screener-quality-gate',
+      label: 'Screener Gate',
+      value: 'schema pending',
+      hint: 'Latest equity_screener_sync stats are not available to the frontend yet.',
+      tone: 'BAD',
+    })
+  }
+
   return metrics
 }
 

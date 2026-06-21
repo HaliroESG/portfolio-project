@@ -51,8 +51,12 @@ on:
       - "frontend/app/targets/**"
       - "frontend/lib/tridentData.ts"
       - "frontend/lib/equityScreenerData.ts"
+      - "frontend/lib/equityScreenerDefinitions.ts"
+      - "frontend/components/AssetPriceChart.tsx"
+      - "frontend/components/DataHealthPanel.tsx"
       - "frontend/types.ts"
       - "frontend/scripts/smoke-supabase.mjs"
+      - "frontend/scripts/validate-critical-flows.mjs"
       - ".github/workflows/trident-supabase.yml"
       - ".github/workflows/trident-price-backfill.yml"
       - ".github/workflows/trident-stock-insights.yml"
@@ -230,7 +234,7 @@ jobs:
             --force \
             --no-ai \
             --output curated-it-services-insights.json
-          python scripts/sync_equity_screener.py
+          python scripts/sync_equity_screener.py --enforce-quality-gate
 
       - name: Setup Node for Supabase smoke
         uses: actions/setup-node@v4

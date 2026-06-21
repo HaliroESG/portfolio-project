@@ -11,6 +11,11 @@ import {
   getPriceHistoryStartDate,
   loadAssetPriceHistory,
 } from '../lib/priceHistory'
+import {
+  computeRegressionChartModel,
+  REGRESSION_MIN_POINTS,
+  type RegressionChartPoint,
+} from '../lib/regressionChart'
 import { cn } from '../lib/utils'
 import { FullscreenChartButton } from './FullscreenChart'
 
@@ -35,6 +40,11 @@ function formatPrice(value: number, currency: string): string {
 
 function formatPct(value: number): string {
   return `${value >= 0 ? '+' : ''}${value.toFixed(2)}%`
+}
+
+function formatSignedOneDecimal(value: number | null | undefined, suffix = ''): string {
+  if (value === null || value === undefined || Number.isNaN(value)) return '--'
+  return `${value >= 0 ? '+' : ''}${value.toFixed(1)}${suffix}`
 }
 
 function daysSince(value: string): number | null {
@@ -75,6 +85,11 @@ export function AssetPriceChart({
     [data?.points, effectiveMode],
   )
 
+  const regressionModel = useMemo(
+    () => computeRegressionChartModel(displayPoints, 'LOG'),
+    [displayPoints],
+  )
+
   const stats = useMemo(() => {
     if (displayPoints.length < 2) return null
     const values = displayPoints.map((point) => point.price)
@@ -105,7 +120,17 @@ export function AssetPriceChart({
     const paddingX = 18
     const top = 20
     const bottom = 174
-    const values = displayPoints.map((point) => point.price)
+    const overlayValues = regressionModel
+      ? regressionModel.points.flatMap((point) => [
+          point.regression,
+          point.plus1,
+          point.plus2,
+          point.minus1,
+          point.minus2,
+          point.ma200,
+        ]).filter((value): value is number => typeof value === 'number' && Number.isFinite(value) && value > 0)
+      : []
+    const values = [...displayPoints.map((point) => point.price), ...overlayValues]
     const min = Math.min(...values)
     const max = Math.max(...values)
     const safeRange = Math.max(1, max - min)
@@ -124,8 +149,39 @@ export function AssetPriceChart({
       .join(' ')
     const areaPath = `${linePath} L ${getX(displayPoints.length - 1)} ${bottom} L ${getX(0)} ${bottom} Z`
 
-    return { width, height, getX, getY, linePath, areaPath, min, max }
-  }, [displayPoints])
+    const pathForRegression = (key: keyof RegressionChartPoint) => {
+      if (!regressionModel) return null
+      let started = false
+      const path = regressionModel.points
+        .map((point, index) => {
+          const value = point[key]
+          if (typeof value !== 'number' || !Number.isFinite(value) || value <= 0) return null
+          const command = started ? 'L' : 'M'
+          started = true
+          return `${command} ${getX(index)} ${getY(value)}`
+        })
+        .filter((part): part is string => Boolean(part))
+        .join(' ')
+      return path.length > 0 ? path : null
+    }
+
+    return {
+      width,
+      height,
+      getX,
+      getY,
+      linePath,
+      areaPath,
+      min,
+      max,
+      regressionPath: pathForRegression('regression'),
+      plus1Path: pathForRegression('plus1'),
+      plus2Path: pathForRegression('plus2'),
+      minus1Path: pathForRegression('minus1'),
+      minus2Path: pathForRegression('minus2'),
+      ma200Path: pathForRegression('ma200'),
+    }
+  }, [displayPoints, regressionModel])
 
   const currency = effectiveMode === 'LOCAL' ? localCurrency : 'EUR'
   const requestedStartDate = data?.requested_start_date ?? getPriceHistoryStartDate(horizon)
@@ -163,6 +219,24 @@ export function AssetPriceChart({
           )
         })}
         <path d={chart.areaPath} fill={`url(#${fillId})`} />
+        {chart.plus2Path && (
+          <path d={chart.plus2Path} fill="none" stroke="#94a3b8" strokeWidth="1" strokeOpacity="0.35" strokeDasharray="4 4" />
+        )}
+        {chart.plus1Path && (
+          <path d={chart.plus1Path} fill="none" stroke="#94a3b8" strokeWidth="1" strokeOpacity="0.5" strokeDasharray="3 3" />
+        )}
+        {chart.regressionPath && (
+          <path d={chart.regressionPath} fill="none" stroke="#f97316" strokeWidth="2" strokeOpacity="0.95" />
+        )}
+        {chart.minus1Path && (
+          <path d={chart.minus1Path} fill="none" stroke="#94a3b8" strokeWidth="1" strokeOpacity="0.5" strokeDasharray="3 3" />
+        )}
+        {chart.minus2Path && (
+          <path d={chart.minus2Path} fill="none" stroke="#94a3b8" strokeWidth="1" strokeOpacity="0.35" strokeDasharray="4 4" />
+        )}
+        {chart.ma200Path && (
+          <path d={chart.ma200Path} fill="none" stroke="#22c55e" strokeWidth="1.8" strokeOpacity="0.9" />
+        )}
         <path d={chart.linePath} fill="none" stroke="#0ea5e9" strokeWidth="2.5" />
         <circle
           cx={chart.getX(displayPoints.length - 1)}
@@ -248,6 +322,7 @@ export function AssetPriceChart({
                   <span>{currency}</span>
                   <span>{horizon}</span>
                   <span>{stats.source}</span>
+                  {regressionModel && <span>regression + sigma + MM200</span>}
                   <span>{formatDate(stats.first.date)} {'->'} {formatDate(stats.last.date)}</span>
                 </div>
               </div>
@@ -329,6 +404,22 @@ export function AssetPriceChart({
                   {stats.source}
                 </div>
               </div>
+              <div className="rounded-xl border border-slate-200 dark:border-white/5 bg-white dark:bg-[#0A0D12] p-3">
+                <div className="text-[9px] font-black uppercase tracking-wider text-slate-400 dark:text-gray-500">
+                  Z-score
+                </div>
+                <div className="mt-1 text-sm font-mono font-black text-slate-950 dark:text-white">
+                  {formatSignedOneDecimal(regressionModel?.latestZScore, 'σ')}
+                </div>
+              </div>
+              <div className="rounded-xl border border-slate-200 dark:border-white/5 bg-white dark:bg-[#0A0D12] p-3">
+                <div className="text-[9px] font-black uppercase tracking-wider text-slate-400 dark:text-gray-500">
+                  Slope
+                </div>
+                <div className="mt-1 text-sm font-mono font-black text-slate-950 dark:text-white">
+                  {formatSignedOneDecimal(regressionModel?.annualizedSlopePct, '%')}
+                </div>
+              </div>
             </div>
 
             <div className="rounded-xl border border-slate-200 dark:border-white/5 bg-white dark:bg-[#0A0D12] p-3">
@@ -339,6 +430,17 @@ export function AssetPriceChart({
               <span>{currency}</span>
               <span>through {formatDate(stats.last.date)}</span>
               {stats.latestUpdatedAt && <span>updated {formatDate(stats.latestUpdatedAt)}</span>}
+              {regressionModel ? (
+                <>
+                  <span>Regression</span>
+                  <span>±1/±2σ</span>
+                  <span>MM200</span>
+                </>
+              ) : (
+                <span className="text-amber-600 dark:text-amber-400">
+                  Insufficient regression history {displayPoints.length}/{REGRESSION_MIN_POINTS}
+                </span>
+              )}
               {!hasLocalPrices && <span className="text-amber-600 dark:text-amber-400">Local unavailable</span>}
               {shortHistory && <span className="text-amber-600 dark:text-amber-400">Short history</span>}
               {isStale && <span className="text-red-600 dark:text-red-400">Stale {staleDays}d</span>}

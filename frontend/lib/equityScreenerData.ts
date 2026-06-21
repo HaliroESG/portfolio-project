@@ -27,7 +27,7 @@ export interface EquityScreenerBundle {
   message?: string
 }
 
-const SELECTOR = [
+const SELECTOR_V2 = [
   'instrument_key',
   'as_of_date',
   'ticker',
@@ -45,6 +45,9 @@ const SELECTOR = [
   'financial_currency',
   'valuation_currency',
   'market_cap',
+  'market_cap_usd',
+  'market_cap_fx_rate',
+  'market_cap_fx_as_of',
   'revenue',
   'free_cash_flow',
   'fcf_margin',
@@ -73,6 +76,11 @@ const SELECTOR = [
   'data_state',
   'updated_at',
 ].join(',')
+
+const SELECTOR_V1 = SELECTOR_V2
+  .split(',')
+  .filter((field) => !['market_cap_usd', 'market_cap_fx_rate', 'market_cap_fx_as_of'].includes(field))
+  .join(',')
 
 function readString(value: unknown): string | null {
   if (typeof value === 'string' && value.trim().length > 0) return value.trim()
@@ -152,6 +160,9 @@ function parseRow(raw: JsonRecord): EquityScreenerRow | null {
     financial_currency: readString(raw.financial_currency),
     valuation_currency: readString(raw.valuation_currency),
     market_cap: readNumber(raw.market_cap),
+    market_cap_usd: readNumber(raw.market_cap_usd),
+    market_cap_fx_rate: readNumber(raw.market_cap_fx_rate),
+    market_cap_fx_as_of: readString(raw.market_cap_fx_as_of),
     revenue: readNumber(raw.revenue),
     free_cash_flow: readNumber(raw.free_cash_flow),
     fcf_margin: readNumber(raw.fcf_margin),
@@ -198,13 +209,22 @@ function isSchemaPending(error: { message?: string } | null | undefined): boolea
 
 async function loadAllRows(supabase: SupabaseClient): Promise<JsonRecord[]> {
   const rows: JsonRecord[] = []
+  let selector = SELECTOR_V2
   for (let offset = 0; ; offset += PAGE_SIZE) {
     const { data, error } = await supabase
       .from('equity_screener_latest')
-      .select(SELECTOR)
+      .select(selector)
       .order('quality_value_score', { ascending: false })
       .range(offset, offset + PAGE_SIZE - 1)
-    if (error) throw error
+    if (error) {
+      if (selector === SELECTOR_V2 && isSchemaPending(error)) {
+        selector = SELECTOR_V1
+        rows.length = 0
+        offset = -PAGE_SIZE
+        continue
+      }
+      throw error
+    }
     const page = (data ?? []) as unknown as JsonRecord[]
     rows.push(...page)
     if (page.length < PAGE_SIZE) break
