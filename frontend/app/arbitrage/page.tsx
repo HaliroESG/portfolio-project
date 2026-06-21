@@ -230,6 +230,10 @@ function parseDecisionRow(raw: RawDecisionRow): PortfolioDecisionItemRow | null 
   }
 }
 
+function decisionRowKey(row: PortfolioDecisionItemRow, index: number): string {
+  return `${row.portfolio_id}-${row.ticker}-${row.action}-${row.data_state}-${index}`
+}
+
 function formatPortfolioName(portfolio: PortfolioRow): string {
   return portfolio.name?.trim() || `Portfolio ${portfolio.id.slice(0, 6)}`
 }
@@ -753,8 +757,8 @@ export default function ArbitragePage() {
               </div>
 
               <div className="divide-y divide-slate-200 dark:divide-white/10 md:hidden">
-                {filteredRows.map((row) => (
-                  <DecisionCard key={`${row.portfolio_id}-${row.ticker}`} row={row} />
+                {filteredRows.map((row, index) => (
+                  <DecisionCard key={decisionRowKey(row, index)} row={row} />
                 ))}
               </div>
 
@@ -775,8 +779,8 @@ export default function ArbitragePage() {
                     </tr>
                   </thead>
                   <tbody className="divide-y divide-slate-200 dark:divide-white/5">
-                    {filteredRows.map((row) => (
-                      <tr key={`${row.portfolio_id}-${row.ticker}`} className="transition-colors hover:bg-slate-50/70 dark:hover:bg-white/5">
+                    {filteredRows.map((row, index) => (
+                      <tr key={decisionRowKey(row, index)} className="transition-colors hover:bg-slate-50/70 dark:hover:bg-white/5">
                         <td className="p-3">
                           <span className={cn('rounded border px-2 py-0.5 text-[9px] font-black uppercase tracking-wider', actionClass(row.action))}>
                             {row.action}

@@ -24,6 +24,7 @@ if str(BACKEND_ROOT) not in sys.path:
 from etl_stats import build_etl_stats
 from historical_prices_sync import finish_etl_run, start_etl_run
 from supabase_key_guard import require_backend_supabase_key
+from trident_screener import CURATED_IT_SERVICES_SYMBOLS
 
 JOB_NAME = "trident_stock_insights_sync"
 DEFAULT_TOP_N = 200
@@ -216,6 +217,40 @@ def fetch_target_by_ticker(supabase: Any, ticker: str) -> list[TridentInsightTar
         for row in rows
         if (target := target_from_row(row)) is not None
     ]
+
+
+def fetch_targets_by_symbols(supabase: Any, symbols: list[str]) -> list[TridentInsightTarget]:
+    normalized_symbols = [symbol for symbol in (normalize_symbol(value) for value in symbols) if symbol]
+    if not normalized_symbols:
+        return []
+
+    rows_by_key: dict[str, Mapping[str, Any]] = {}
+    for column in ("ticker", "provider_symbol"):
+        response = (
+            supabase
+            .table("trident_screener_latest")
+            .select(TRIDENT_SELECTOR)
+            .in_(column, normalized_symbols)
+            .execute()
+        )
+        for row in response.data or []:
+            key = clean_text(row.get("instrument_key"))
+            if key:
+                rows_by_key[key] = row
+
+    targets = [
+        target
+        for row in rows_by_key.values()
+        if (target := target_from_row(row)) is not None
+    ]
+    symbol_rank = {symbol: index for index, symbol in enumerate(normalized_symbols)}
+    return sorted(
+        targets,
+        key=lambda target: (
+            symbol_rank.get(normalize_symbol(target.lookup_symbol) or "", len(symbol_rank)),
+            target.ticker,
+        ),
+    )
 
 
 def fetch_existing_updates(supabase: Any, instrument_keys: list[str]) -> dict[str, str | None]:
@@ -725,6 +760,8 @@ def resolve_targets(args: argparse.Namespace, supabase: Any) -> list[TridentInsi
         return fetch_target_by_instrument_key(supabase, args.instrument_key)
     if args.ticker:
         return fetch_target_by_ticker(supabase, args.ticker)
+    if args.curated_it_services:
+        return fetch_targets_by_symbols(supabase, list(CURATED_IT_SERVICES_SYMBOLS))
     return fetch_top_targets(supabase, args.top_n)
 
 
@@ -733,6 +770,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--top-n", type=int, default=DEFAULT_TOP_N)
     parser.add_argument("--ticker", default=None)
     parser.add_argument("--instrument-key", default=None)
+    parser.add_argument("--curated-it-services", action="store_true")
     parser.add_argument("--stale-hours", type=int, default=DEFAULT_STALE_HOURS)
     parser.add_argument("--force", action="store_true")
     parser.add_argument("--dry-run", action="store_true")

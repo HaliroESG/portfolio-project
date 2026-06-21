@@ -132,6 +132,8 @@ jobs:
       TRIDENT_UNIVERSE_CSV: ${{ vars.TRIDENT_UNIVERSE_CSV }}
       TRIDENT_FINANCIALS_CSV: ${{ vars.TRIDENT_FINANCIALS_CSV }}
       TRIDENT_SOURCE_LICENSE_NOTE: ${{ vars.TRIDENT_SOURCE_LICENSE_NOTE }}
+      YFINANCE_PROFILE_TIMEOUT_SEC: ${{ vars.YFINANCE_PROFILE_TIMEOUT_SEC || '30' }}
+      TRIDENT_STOCK_INSIGHTS_BATCH_SIZE: ${{ vars.TRIDENT_STOCK_INSIGHTS_BATCH_SIZE || '25' }}
 
     steps:
       - name: Checkout
@@ -217,6 +219,12 @@ jobs:
             cmd+=(--per-index-limit "$TRIDENT_PER_INDEX_LIMIT")
           fi
           "${cmd[@]}"
+          python scripts/sync_trident_stock_insights.py \
+            --curated-it-services \
+            --batch-size "$TRIDENT_STOCK_INSIGHTS_BATCH_SIZE" \
+            --force \
+            --no-ai \
+            --output curated-it-services-insights.json
           python scripts/sync_equity_screener.py
 
       - name: Setup Node for Supabase smoke

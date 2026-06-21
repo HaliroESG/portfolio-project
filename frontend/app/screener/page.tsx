@@ -1,5 +1,6 @@
 "use client"
 
+import dynamic from 'next/dynamic'
 import React, { useMemo, useState } from 'react'
 import useSWR from 'swr'
 import {
@@ -32,11 +33,22 @@ type SortKey =
   | 'trident'
 type SortDirection = 'asc' | 'desc'
 type SortConfig = { key: SortKey; direction: SortDirection }
-type Preset = 'ALL' | 'IT_SERVICES_VALUE' | 'FCF_COMPOUNDERS' | 'QUALITY_VALUE'
+type Preset = 'ALL' | 'ESN_UNIVERSE' | 'IT_SERVICES_VALUE' | 'FCF_COMPOUNDERS' | 'QUALITY_VALUE'
 
 const EMPTY_ROWS: EquityScreenerRow[] = []
 const PAGE_SIZE = 100
 const FORECAST_UNAVAILABLE_STATE = 'FORECAST_UNAVAILABLE'
+const TridentRegressionChart = dynamic(
+  () => import('../../components/TridentRegressionChart').then((mod) => mod.TridentRegressionChart),
+  {
+    ssr: false,
+    loading: () => (
+      <div className="rounded-lg border border-slate-200 bg-slate-50 p-3 text-[11px] font-mono text-slate-500 dark:border-white/10 dark:bg-black/20 dark:text-gray-400">
+        Loading regression chart.
+      </div>
+    ),
+  }
+)
 const DEFAULT_SORT: Record<SortKey, SortDirection> = {
   company: 'asc',
   score: 'desc',
@@ -227,7 +239,7 @@ function ScoreBreakdown({ row }: { row: EquityScreenerRow }) {
 
 export default function ScreenerPage() {
   const [search, setSearch] = useState('')
-  const [preset, setPreset] = useState<Preset>('IT_SERVICES_VALUE')
+  const [preset, setPreset] = useState<Preset>('ESN_UNIVERSE')
   const [country, setCountry] = useState('ALL')
   const [sector, setSector] = useState('ALL')
   const [theme, setTheme] = useState('ALL')
@@ -258,6 +270,7 @@ export default function ScreenerPage() {
           const haystack = `${row.ticker} ${row.name ?? ''} ${row.industry ?? ''}`.toLowerCase()
           if (!haystack.includes(query)) return false
         }
+        if (preset === 'ESN_UNIVERSE' && !row.themes.includes('IT_SERVICES')) return false
         if (preset === 'IT_SERVICES_VALUE' && (!row.themes.includes('IT_SERVICES') || row.valuation_tag !== 'POTENTIAL_VALUE')) return false
         if (preset === 'FCF_COMPOUNDERS' && ((row.fcf_yield ?? 0) < 0.03 || (row.revenue_cagr_3y ?? 0) < 0.03)) return false
         if (preset === 'QUALITY_VALUE' && (row.quality_value_score < 55 || row.valuation_tag === 'EXPENSIVE')) return false
@@ -348,6 +361,7 @@ export default function ScreenerPage() {
             onChange={(event) => resetPage(setPreset)(event.target.value as Preset)}
             className="h-9 rounded-md border border-slate-200 bg-slate-50 px-2 text-xs font-black uppercase outline-none dark:border-white/10 dark:bg-black/20 dark:text-white"
           >
+            <option value="ESN_UNIVERSE">ESN universe</option>
             <option value="IT_SERVICES_VALUE">ESN value</option>
             <option value="QUALITY_VALUE">Quality value</option>
             <option value="FCF_COMPOUNDERS">FCF compounders</option>
@@ -510,6 +524,7 @@ export default function ScreenerPage() {
                       <div className="truncate text-lg font-black text-slate-950 dark:text-white">{selectedRow.name ?? selectedRow.ticker}</div>
                       <div className="mt-1 flex flex-wrap gap-2 text-[10px] font-mono text-slate-500">
                         <span>{selectedRow.ticker}</span>
+                        {selectedRow.provider_symbol && selectedRow.provider_symbol !== selectedRow.ticker && <span>via {selectedRow.provider_symbol}</span>}
                         <span>{selectedRow.exchange ?? '--'}</span>
                         <span>{selectedRow.country ?? '--'}</span>
                       </div>
@@ -543,6 +558,12 @@ export default function ScreenerPage() {
                       Forward revenue forecast unavailable. Current row uses historical financials, stock insights, and Trident facts from Supabase.
                     </div>
                   )}
+                  <TridentRegressionChart
+                    ticker={selectedRow.ticker}
+                    instrumentKey={selectedRow.instrument_key}
+                    providerSymbol={selectedRow.provider_symbol}
+                    assetCurrency={selectedRow.currency}
+                  />
                 </div>
               )}
             </aside>

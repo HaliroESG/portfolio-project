@@ -39,6 +39,7 @@ TICKER_MARKET_HINTS = {
     ".L": ("London Stock Exchange", "GB"),
     ".MC": ("Bolsa de Madrid", "ES"),
     ".MI": ("Borsa Italiana", "IT"),
+    ".NS": ("National Stock Exchange of India", "IN"),
     ".PA": ("Euronext Paris", "FR"),
     ".SW": ("SIX Swiss Exchange", "CH"),
     ".TO": ("Toronto Stock Exchange", "CA"),
@@ -86,6 +87,7 @@ GLOBAL_YAHOO_SOURCE_NOTE = (
     "Universe from public index constituent tables; annual financial statements "
     "from Yahoo Finance through yfinance. Verify source terms before production use."
 )
+CURATED_IT_SERVICES_SOURCE_INDEX = "Curated IT Services"
 WIKI_USER_AGENT = "PortfolioProjectTrident/1.0"
 
 
@@ -148,6 +150,40 @@ class IndexSource:
     symbol_suffix_by_country: dict[str, str] | None = None
     symbol_transform: str = "default"
     min_rows: int = 10
+
+
+CURATED_IT_SERVICES_UNIVERSE: tuple[dict[str, str], ...] = (
+    {"ticker": "ACN", "name": "Accenture", "exchange": "US listed", "country": "US", "sector": "Information Technology", "industry": "IT Consulting & Other Services", "currency": "USD"},
+    {"ticker": "CAP.PA", "name": "Capgemini", "exchange": "Euronext Paris", "country": "FR", "sector": "Technology", "industry": "IT Consulting & Other Services", "currency": "EUR"},
+    {"ticker": "SOP.PA", "name": "Sopra Steria Group", "exchange": "Euronext Paris", "country": "FR", "sector": "Technology", "industry": "IT Consulting & Other Services", "currency": "EUR"},
+    {"ticker": "WAVE.PA", "name": "Wavestone", "exchange": "Euronext Paris", "country": "FR", "sector": "Technology", "industry": "IT Consulting & Other Services", "currency": "EUR"},
+    {"ticker": "ATE.PA", "name": "Alten", "exchange": "Euronext Paris", "country": "FR", "sector": "Technology", "industry": "IT Consulting & Other Services", "currency": "EUR"},
+    {"ticker": "ATO.PA", "name": "Atos", "exchange": "Euronext Paris", "country": "FR", "sector": "Technology", "industry": "IT Consulting & Other Services", "currency": "EUR"},
+    {"ticker": "AUB.PA", "name": "Aubay", "exchange": "Euronext Paris", "country": "FR", "sector": "Technology", "industry": "IT Consulting & Other Services", "currency": "EUR"},
+    {"ticker": "INF.PA", "name": "Infotel", "exchange": "Euronext Paris", "country": "FR", "sector": "Technology", "industry": "IT Consulting & Other Services", "currency": "EUR"},
+    {"ticker": "GIB-A.TO", "name": "CGI Inc.", "exchange": "Toronto Stock Exchange", "country": "CA", "sector": "Technology", "industry": "IT Consulting & Other Services", "currency": "CAD"},
+    {"ticker": "CTSH", "name": "Cognizant", "exchange": "US listed", "country": "US", "sector": "Information Technology", "industry": "IT Consulting & Other Services", "currency": "USD"},
+    {"ticker": "EPAM", "name": "EPAM Systems", "exchange": "US listed", "country": "US", "sector": "Information Technology", "industry": "IT Consulting & Other Services", "currency": "USD"},
+    {"ticker": "GLOB", "name": "Globant", "exchange": "US listed", "country": "US", "sector": "Information Technology", "industry": "IT Consulting & Other Services", "currency": "USD"},
+    {"ticker": "DAVA", "name": "Endava", "exchange": "US listed", "country": "US", "sector": "Information Technology", "industry": "IT Consulting & Other Services", "currency": "USD"},
+    {"ticker": "IBM", "name": "IBM", "exchange": "US listed", "country": "US", "sector": "Information Technology", "industry": "IT Consulting & Other Services", "currency": "USD"},
+    {"ticker": "IT", "name": "Gartner", "exchange": "US listed", "country": "US", "sector": "Information Technology", "industry": "IT Consulting & Other Services", "currency": "USD"},
+    {"ticker": "VRSK", "name": "Verisk Analytics", "exchange": "US listed", "country": "US", "sector": "Industrials", "industry": "Research & Consulting Services", "currency": "USD"},
+    {"ticker": "CCC.L", "name": "Computacenter", "exchange": "London Stock Exchange", "country": "GB", "sector": "Technology", "industry": "IT Consulting & Other Services", "currency": "GBP"},
+    {"ticker": "SGE.L", "name": "Sage Group", "exchange": "London Stock Exchange", "country": "GB", "sector": "Technology", "industry": "Software & Computer Services", "currency": "GBP"},
+    {"ticker": "REY.MI", "name": "Reply SpA", "exchange": "Borsa Italiana", "country": "IT", "sector": "Technology", "industry": "IT Consulting & Other Services", "currency": "EUR"},
+    {"ticker": "INFY.NS", "name": "Infosys", "exchange": "National Stock Exchange of India", "country": "IN", "sector": "Technology", "industry": "IT Consulting & Other Services", "currency": "INR"},
+    {"ticker": "TCS.NS", "name": "Tata Consultancy Services", "exchange": "National Stock Exchange of India", "country": "IN", "sector": "Technology", "industry": "IT Consulting & Other Services", "currency": "INR"},
+    {"ticker": "WIPRO.NS", "name": "Wipro", "exchange": "National Stock Exchange of India", "country": "IN", "sector": "Technology", "industry": "IT Consulting & Other Services", "currency": "INR"},
+    {"ticker": "HCLTECH.NS", "name": "HCL Technologies", "exchange": "National Stock Exchange of India", "country": "IN", "sector": "Technology", "industry": "IT Consulting & Other Services", "currency": "INR"},
+    {"ticker": "TECHM.NS", "name": "Tech Mahindra", "exchange": "National Stock Exchange of India", "country": "IN", "sector": "Technology", "industry": "IT Consulting & Other Services", "currency": "INR"},
+    {"ticker": "PERSISTENT.NS", "name": "Persistent Systems", "exchange": "National Stock Exchange of India", "country": "IN", "sector": "Technology", "industry": "IT Consulting & Other Services", "currency": "INR"},
+    {"ticker": "MPHASIS.NS", "name": "Mphasis", "exchange": "National Stock Exchange of India", "country": "IN", "sector": "Technology", "industry": "IT Consulting & Other Services", "currency": "INR"},
+    {"ticker": "COFORGE.NS", "name": "Coforge", "exchange": "National Stock Exchange of India", "country": "IN", "sector": "Technology", "industry": "IT Consulting & Other Services", "currency": "INR"},
+    {"ticker": "LTTS.NS", "name": "L&T Technology Services", "exchange": "National Stock Exchange of India", "country": "IN", "sector": "Technology", "industry": "IT Consulting & Other Services", "currency": "INR"},
+    {"ticker": "OFSS.NS", "name": "Oracle Financial Services Software", "exchange": "National Stock Exchange of India", "country": "IN", "sector": "Technology", "industry": "Software & Computer Services", "currency": "INR"},
+)
+CURATED_IT_SERVICES_SYMBOLS = tuple(record["ticker"] for record in CURATED_IT_SERVICES_UNIVERSE)
 
 
 @dataclass(frozen=True)
@@ -681,16 +717,44 @@ class GlobalYahooDataProvider:
         max_years: int = 10,
         sleep_seconds: float = 0.15,
         per_index_limit: int | None = None,
+        include_curated_it_services: bool = True,
     ) -> None:
         self.indexes = indexes
         self.request_timeout_sec = request_timeout_sec
         self.max_years = max_years
         self.sleep_seconds = sleep_seconds
         self.per_index_limit = per_index_limit
+        self.include_curated_it_services = include_curated_it_services
         self.index_stats: dict[str, dict[str, Any]] = {}
         self.financial_errors: dict[str, str] = {}
         if source_license_note:
             self.source_license_note = source_license_note
+
+    def _curated_it_services_records(self) -> list[UniverseRecord]:
+        records: list[UniverseRecord] = []
+        for row in CURATED_IT_SERVICES_UNIVERSE:
+            symbol = row["ticker"]
+            records.append(
+                UniverseRecord(
+                    instrument_key=make_instrument_key(self.provider_name, symbol).lower(),
+                    ticker=symbol,
+                    name=row["name"],
+                    exchange=row["exchange"],
+                    country=row["country"],
+                    sector=row["sector"],
+                    industry=row["industry"],
+                    currency=row["currency"],
+                    isin=None,
+                    provider=self.provider_name,
+                    provider_symbol=symbol,
+                    source_license_note=(
+                        f"{self.source_license_note} Curated seed: IT services universe."
+                    ),
+                    source_index=CURATED_IT_SERVICES_SOURCE_INDEX,
+                    is_active=True,
+                )
+            )
+        return records
 
     def _fetch_index_tables(self, source: IndexSource) -> list[Any]:
         import pandas as pd
@@ -765,6 +829,23 @@ class GlobalYahooDataProvider:
                 "table_rows": len(table.index),
                 "universe_rows": accepted_for_index,
                 "per_index_limit": self.per_index_limit,
+            }
+
+        if self.include_curated_it_services:
+            curated_records = self._curated_it_services_records()
+            accepted_curated = 0
+            for record in curated_records:
+                if record.provider_symbol in records_by_symbol:
+                    continue
+                records_by_symbol[record.provider_symbol] = record
+                accepted_curated += 1
+            self.index_stats[CURATED_IT_SERVICES_SOURCE_INDEX] = {
+                "key": "curated_it_services",
+                "label": CURATED_IT_SERVICES_SOURCE_INDEX,
+                "source_url": None,
+                "table_rows": len(curated_records),
+                "universe_rows": accepted_curated,
+                "per_index_limit": None,
             }
 
         if not records_by_symbol:
@@ -1929,6 +2010,10 @@ def build_provider_from_args(args: argparse.Namespace) -> StockDataProvider:
             source_license_note=os.environ.get("TRIDENT_SOURCE_LICENSE_NOTE"),
             max_years=args.max_years or env_int("TRIDENT_MAX_YEARS", 10),
             per_index_limit=args.per_index_limit or env_int("TRIDENT_PER_INDEX_LIMIT", 0) or None,
+            include_curated_it_services=(
+                not args.no_curated_it_services
+                and parse_bool(os.environ.get("TRIDENT_INCLUDE_CURATED_IT_SERVICES"), True)
+            ),
             sleep_seconds=(
                 args.sleep_seconds
                 if args.sleep_seconds is not None
@@ -1974,6 +2059,7 @@ def main() -> None:
     parser.add_argument("--max-years", type=int, default=None)
     parser.add_argument("--per-index-limit", type=int, default=None)
     parser.add_argument("--sleep-seconds", type=float, default=None)
+    parser.add_argument("--no-curated-it-services", action="store_true")
     parser.add_argument("--limit", type=int, default=None)
     parser.add_argument("--dry-run", action="store_true")
     args = parser.parse_args()

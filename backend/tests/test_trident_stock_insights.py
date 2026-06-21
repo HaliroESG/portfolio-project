@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from datetime import date, timedelta
+from types import SimpleNamespace
 
 from scripts import sync_trident_stock_insights as insights
 
@@ -182,3 +183,45 @@ def test_run_sync_dry_run_builds_payload_without_upsert(monkeypatch):
     assert stats["sample_payloads"][0]["business_summary"] == "Microsoft builds software."
     assert "SHORT_HISTORY" in stats["sample_payloads"][0]["data_state"]
     assert supabase.upserted == []
+
+
+def test_resolve_targets_can_select_curated_it_services_from_latest():
+    supabase = _FakeSupabase({
+        "trident_screener_latest": [
+            {
+                "instrument_key": "global_yahoo:acn",
+                "ticker": "ACN",
+                "provider_symbol": "ACN",
+                "name": "Accenture",
+                "currency": "USD",
+                "score": 88,
+            },
+            {
+                "instrument_key": "global_yahoo:sop.pa",
+                "ticker": "SOP.PA",
+                "provider_symbol": "SOP.PA",
+                "name": "Sopra Steria Group",
+                "currency": "EUR",
+                "score": 42,
+            },
+            {
+                "instrument_key": "global_yahoo:tm",
+                "ticker": "TM",
+                "provider_symbol": "TM",
+                "name": "Toyota Motor Corporation",
+                "currency": "JPY",
+                "score": 60,
+            },
+        ],
+        "trident_stock_insights": [],
+    })
+    args = SimpleNamespace(
+        instrument_key=None,
+        ticker=None,
+        curated_it_services=True,
+        top_n=200,
+    )
+
+    targets = insights.resolve_targets(args, supabase)
+
+    assert [target.ticker for target in targets] == ["ACN", "SOP.PA"]

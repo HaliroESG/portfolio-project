@@ -1,4 +1,6 @@
 from trident_screener import (
+    CURATED_IT_SERVICES_SOURCE_INDEX,
+    CURATED_IT_SERVICES_SYMBOLS,
     FinancialRecord,
     GLOBAL_INDEX_SOURCES,
     GlobalYahooDataProvider,
@@ -165,7 +167,11 @@ def test_portfolio_seed_provider_builds_equity_universe_without_financials():
 def test_global_yahoo_provider_builds_world_index_universe(monkeypatch):
     import pandas as pd
 
-    provider = GlobalYahooDataProvider(indexes=("sp500", "kospi_200"), sleep_seconds=0)
+    provider = GlobalYahooDataProvider(
+        indexes=("sp500", "kospi_200"),
+        sleep_seconds=0,
+        include_curated_it_services=False,
+    )
 
     def fake_tables(source):
         if source.key == "sp500":
@@ -209,6 +215,40 @@ def test_global_yahoo_provider_builds_world_index_universe(monkeypatch):
     assert universe[1].country == "US"
     assert universe[1].industry == "Multi-Sector Holdings"
     assert universe[1].source_index == "S&P 500"
+
+
+def test_global_yahoo_provider_adds_curated_it_services_by_default(monkeypatch):
+    import pandas as pd
+
+    provider = GlobalYahooDataProvider(indexes=("sp500",), sleep_seconds=0)
+
+    def fake_tables(_source):
+        return [
+            pd.DataFrame(
+                [
+                    {
+                        "Symbol": "BRK.B",
+                        "Security": "Berkshire Hathaway",
+                        "GICS Sector": "Financials",
+                        "GICS Sub-Industry": "Multi-Sector Holdings",
+                    }
+                ]
+                * 10
+            )
+        ]
+
+    monkeypatch.setattr(provider, "_fetch_index_tables", fake_tables)
+
+    universe = provider.fetch_universe()
+    by_ticker = {record.ticker: record for record in universe}
+
+    assert len(CURATED_IT_SERVICES_SYMBOLS) == len(set(CURATED_IT_SERVICES_SYMBOLS))
+    assert {"CAP.PA", "SOP.PA", "WAVE.PA", "INFY.NS", "TCS.NS", "REY.MI"} <= set(by_ticker)
+    assert by_ticker["SOP.PA"].country == "FR"
+    assert by_ticker["INFY.NS"].country == "IN"
+    assert by_ticker["GIB-A.TO"].country == "CA"
+    assert by_ticker["CCC.L"].country == "GB"
+    assert by_ticker["REY.MI"].source_index == CURATED_IT_SERVICES_SOURCE_INDEX
 
 
 def test_global_yahoo_symbol_suffixes_do_not_double_encode_european_tickers():

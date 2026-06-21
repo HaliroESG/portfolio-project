@@ -166,10 +166,12 @@ try {
     'frontend.open_screener_present',
     hasAll(screenerPage, [
       'Open Screener',
+      "value=\"ESN_UNIVERSE\"",
       "value=\"IT_SERVICES_VALUE\"",
       'data-equity-screener-row="true"',
       'FORECAST_UNAVAILABLE',
       'FCF yield',
+      '<TridentRegressionChart',
     ]) && hasAll(equityScreenerData, [
       "from('equity_screener_latest')",
       'SCHEMA_PENDING',

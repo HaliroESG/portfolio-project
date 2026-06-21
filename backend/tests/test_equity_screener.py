@@ -219,6 +219,23 @@ def test_world_sample_screener_classifies_it_services_and_value_candidates():
     assert round(by_key["global_yahoo:acn"]["target_upside"], 6) == 0.2
 
 
+def test_it_services_universe_keeps_insufficient_rows_visible():
+    insights = [row for row in _insights() if row["instrument_key"] != "global_yahoo:cap.pa"]
+    rows = build_screener_rows(
+        _world_universe()[:2],
+        _financials(),
+        _trident_results(),
+        insights,
+    )
+    it_services = [row for row in rows if "IT_SERVICES" in row["themes"]]
+    by_key = {row["instrument_key"]: row for row in it_services}
+
+    assert set(by_key) == {"global_yahoo:acn", "global_yahoo:cap.pa"}
+    assert by_key["global_yahoo:acn"]["valuation_tag"] == "POTENTIAL_VALUE"
+    assert by_key["global_yahoo:cap.pa"]["valuation_tag"] == "INSUFFICIENT_DATA"
+    assert "INSIGHTS_UNAVAILABLE" in by_key["global_yahoo:cap.pa"]["data_state"]
+
+
 def test_missing_forecast_and_forward_metrics_stay_explicit():
     insights = [row for row in _insights() if row["instrument_key"] != "global_yahoo:acn"]
     rows = build_screener_rows([_world_universe()[0]], _financials(), _trident_results(), insights)
