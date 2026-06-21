@@ -615,11 +615,17 @@ async function fetchQualityMetrics(): Promise<QualityMetric[]> {
     const priceHistoryCoveragePct = readNumber(stats?.price_history_coverage_pct)
     const fxCoveragePct = readNumber(stats?.fx_coverage_pct)
     const duplicateGroups = readNumber(stats?.duplicate_groups)
+    const unresolvedDuplicateGroups = readNumber(stats?.unresolved_duplicate_groups) ?? duplicateGroups
+    const duplicatesSuppressed = readNumber(stats?.duplicates_suppressed)
     const staleRows = readNumber(stats?.stale_row_count)
     const qualityGateFailureValue = stats?.quality_gate_failures
     const qualityGateFailures = Array.isArray(qualityGateFailureValue)
       ? qualityGateFailureValue.length
       : readNumber(qualityGateFailureValue)
+    const qualityGateWarningValue = stats?.quality_gate_warnings
+    const qualityGateWarnings = Array.isArray(qualityGateWarningValue)
+      ? qualityGateWarningValue.length
+      : readNumber(qualityGateWarningValue)
 
     metrics.push(
       {
@@ -633,38 +639,47 @@ async function fetchQualityMetrics(): Promise<QualityMetric[]> {
         id: 'screener-insights',
         label: 'Screener Insights',
         value: formatPercent(insightsCoveragePct),
-        hint: 'Open screener rows enriched by trident_stock_insights. Threshold v1: >= 90%.',
+        hint: 'Open screener rows enriched by trident_stock_insights. Warning threshold v1: >= 90%.',
         tone: toneForHighIsGood(insightsCoveragePct, 90, 80),
       },
       {
         id: 'screener-price-history',
         label: 'Price History',
         value: formatPercent(priceHistoryCoveragePct),
-        hint: 'Active universe rows with price history available for regression. Threshold v1: >= 95%.',
+        hint: 'Active universe rows with price history available for regression. Warning threshold v1: >= 95%.',
         tone: toneForHighIsGood(priceHistoryCoveragePct, 95, 85),
       },
       {
         id: 'screener-fx',
         label: 'FX Coverage',
         value: formatPercent(fxCoveragePct),
-        hint: 'Rows with market cap USD conversion available through currencies.rate_to_eur. Threshold v1: >= 95%.',
+        hint: 'Rows with market cap USD conversion available through currencies.rate_to_eur. Warning threshold v1: >= 95%.',
         tone: toneForHighIsGood(fxCoveragePct, 95, 85),
       },
       {
         id: 'screener-duplicates',
-        label: 'Canonical Duplicates',
-        value: duplicateGroups !== null ? `${Math.round(duplicateGroups)} groups` : 'n/a',
-        hint: `Duplicate ticker groups suppressed in the read model. Stale rows: ${staleRows !== null ? Math.round(staleRows) : 'n/a'}.`,
-        tone: toneForLowIsGood(duplicateGroups, 0, 2),
+        label: 'Unresolved Duplicates',
+        value:
+          unresolvedDuplicateGroups !== null
+            ? `${Math.round(unresolvedDuplicateGroups)} groups`
+            : 'n/a',
+        hint: `Duplicate source groups suppressed: ${
+          duplicatesSuppressed !== null ? Math.round(duplicatesSuppressed) : 'n/a'
+        }. Stale rows: ${staleRows !== null ? Math.round(staleRows) : 'n/a'}.`,
+        tone: toneForLowIsGood(unresolvedDuplicateGroups, 0, 2),
       },
       {
         id: 'screener-quality-gate',
         label: 'Screener Gate',
-        value: row?.status ? `${row.status}${qualityGateFailures ? ` · ${qualityGateFailures} failures` : ''}` : 'sync pending',
-        hint: 'Critical gate checks: zero duplicate groups, FX fresh, price history >= 95%, financials/insights >= 90%.',
+        value: row?.status
+          ? `${row.status}${qualityGateFailures ? ` · ${qualityGateFailures} failures` : ''}${qualityGateWarnings ? ` · ${qualityGateWarnings} warnings` : ''}`
+          : 'sync pending',
+        hint: 'Critical checks: zero unresolved canonical duplicates and financials >= 90%. Warnings track insights >= 90%, price history >= 95%, and FX >= 95%.',
         tone:
           row?.status === 'FAILED' || (qualityGateFailures !== null && qualityGateFailures > 0)
             ? 'BAD'
+            : qualityGateWarnings !== null && qualityGateWarnings > 0
+            ? 'WARN'
             : row?.status === 'SUCCESS'
             ? 'GOOD'
             : 'WARN',

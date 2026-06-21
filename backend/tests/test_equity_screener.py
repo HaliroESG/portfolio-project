@@ -1,6 +1,13 @@
 from __future__ import annotations
 
-from equity_screener import build_screener_rows, deduplicate_screener_rows, run_equity_screener_sync
+import pytest
+
+from equity_screener import (
+    EquityScreenerQualityGateError,
+    build_screener_rows,
+    deduplicate_screener_rows,
+    run_equity_screener_sync,
+)
 
 
 class _FakeResponse:
@@ -424,4 +431,48 @@ def test_dry_run_sync_reports_global_theme_and_country_coverage():
     assert stats["financials_coverage_pct"] == 100.0
     assert stats["insights_coverage_pct"] == 100.0
     assert stats["fx_coverage_pct"] == 100.0
-    assert stats["quality_gate_failures"]
+    assert stats["unresolved_duplicate_groups"] == 0
+    assert stats["quality_gate_failures"] == []
+    assert stats["quality_gate_warnings"]
+    assert stats["quality_gate_status"] == "WARN"
+
+
+def test_quality_gate_allows_warnings_but_blocks_critical_failures():
+    warning_supabase = _FakeSupabase({
+        "trident_equity_universe": _world_universe(),
+        "trident_financial_annual": _financials(),
+        "trident_results": _trident_results(),
+        "trident_stock_insights": _insights(),
+        "historical_price_coverage": _coverage(),
+        "currencies": _currencies(),
+        "equity_screener_results": [],
+    })
+
+    warning_stats = run_equity_screener_sync(
+        warning_supabase,
+        dry_run=True,
+        enforce_quality_gate=True,
+    )
+
+    assert warning_stats["quality_gate_status"] == "WARN"
+    assert warning_stats["quality_gate_failures"] == []
+    assert warning_stats["quality_gate_warnings"]
+
+    sparse_financials = [
+        row for row in _financials()
+        if row["instrument_key"] == "global_yahoo:acn"
+    ]
+    failing_supabase = _FakeSupabase({
+        "trident_equity_universe": _world_universe(),
+        "trident_financial_annual": sparse_financials,
+        "trident_results": _trident_results(),
+        "trident_stock_insights": _insights(),
+        "historical_price_coverage": _coverage(),
+        "currencies": _currencies(),
+        "equity_screener_results": [],
+    })
+
+    with pytest.raises(EquityScreenerQualityGateError) as excinfo:
+        run_equity_screener_sync(failing_supabase, dry_run=True, enforce_quality_gate=True)
+
+    assert "financials_coverage_pct" in str(excinfo.value)

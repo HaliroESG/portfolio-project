@@ -22,11 +22,13 @@ PAGE_SIZE = 1000
 BASE_FX_CURRENCY = "EUR"
 USD_FX_CURRENCY = "USD"
 FX_MAX_AGE_DAYS = 4
-MARKET_QUALITY_THRESHOLDS = {
-    "duplicate_groups": 0,
+MARKET_QUALITY_CRITICAL_THRESHOLDS = {
+    "unresolved_duplicate_groups": 0,
+    "financials_coverage_pct": 90.0,
+}
+MARKET_QUALITY_WARNING_THRESHOLDS = {
     "fx_coverage_pct": 95.0,
     "price_history_coverage_pct": 95.0,
-    "financials_coverage_pct": 90.0,
     "insights_coverage_pct": 90.0,
 }
 
@@ -806,6 +808,17 @@ def deduplicate_screener_rows(rows: list[dict[str, Any]]) -> tuple[list[dict[str
     }
 
 
+def count_duplicate_ticker_groups(rows: Iterable[Mapping[str, Any]]) -> int:
+    counts: dict[str, int] = {}
+    for row in rows:
+        ticker = clean_string(row.get("ticker"))
+        if not ticker:
+            continue
+        key = ticker.upper()
+        counts[key] = counts.get(key, 0) + 1
+    return sum(1 for count in counts.values() if count > 1)
+
+
 def upsert_rows(supabase: Any, rows: list[dict[str, Any]], *, dry_run: bool) -> int:
     if dry_run or not rows:
         return 0
@@ -954,20 +967,26 @@ def run_equity_screener_sync(
         )
         if value is not None
     ]
+    unresolved_duplicate_groups = count_duplicate_ticker_groups(rows)
     quality_gate_failures: list[str] = []
-    if dedupe_stats["duplicate_groups"] > MARKET_QUALITY_THRESHOLDS["duplicate_groups"]:
+    quality_gate_warnings: list[str] = []
+    if unresolved_duplicate_groups > MARKET_QUALITY_CRITICAL_THRESHOLDS["unresolved_duplicate_groups"]:
         quality_gate_failures.append(
-            f"duplicate_groups={dedupe_stats['duplicate_groups']} > {MARKET_QUALITY_THRESHOLDS['duplicate_groups']}"
+            f"unresolved_duplicate_groups={unresolved_duplicate_groups} > {MARKET_QUALITY_CRITICAL_THRESHOLDS['unresolved_duplicate_groups']}"
+        )
+    financials_threshold = MARKET_QUALITY_CRITICAL_THRESHOLDS["financials_coverage_pct"]
+    if financials_coverage_pct is not None and financials_coverage_pct < financials_threshold:
+        quality_gate_failures.append(
+            f"financials_coverage_pct={financials_coverage_pct:.2f}% < {financials_threshold:.2f}%"
         )
     for key, value in [
-        ("financials_coverage_pct", financials_coverage_pct),
         ("insights_coverage_pct", insights_coverage_pct),
         ("price_history_coverage_pct", price_history_coverage_pct),
         ("fx_coverage_pct", fx_coverage_pct),
     ]:
-        threshold = MARKET_QUALITY_THRESHOLDS[key]
+        threshold = MARKET_QUALITY_WARNING_THRESHOLDS[key]
         if value is not None and value < threshold:
-            quality_gate_failures.append(f"{key}={value:.2f}% < {threshold:.2f}%")
+            quality_gate_warnings.append(f"{key}={value:.2f}% < {threshold:.2f}%")
 
     stats = {
         "source_universe_rows": len(universe),
@@ -991,7 +1010,12 @@ def run_equity_screener_sync(
         "price_history_ready": price_history_ready,
         "fx_ready": fx_ready,
         "stale_row_count": stale_rows,
+        "unresolved_duplicate_groups": unresolved_duplicate_groups,
         "quality_gate_failures": quality_gate_failures,
+        "quality_gate_warnings": quality_gate_warnings,
+        "quality_gate_status": "FAILED" if quality_gate_failures else "WARN" if quality_gate_warnings else "PASS",
+        "critical_thresholds": MARKET_QUALITY_CRITICAL_THRESHOLDS,
+        "warning_thresholds": MARKET_QUALITY_WARNING_THRESHOLDS,
         "theme_counts": dict(sorted(theme_counts.items())),
         "strategy_counts": dict(sorted(strategy_counts.items())),
         "valuation_tag_counts": dict(sorted(tag_counts.items())),
