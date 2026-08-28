@@ -23,6 +23,7 @@ from broker_ingest.reconciliation import (  # noqa: E402
 )
 from broker_ingest.sync_reconciliation import persist_reconciliation_report  # noqa: E402
 from broker_ingest.sync_transactions import upsert_canonical_transactions  # noqa: E402
+from supabase_key_guard import require_backend_supabase_key  # noqa: E402
 
 
 ParserFn = Callable[[str | Path, str, str | None], list[CanonicalTransaction]]
@@ -43,7 +44,7 @@ def _required_env(name: str) -> str:
 def _build_supabase_client() -> Any:
     from supabase import create_client
 
-    return create_client(_required_env("SUPABASE_URL"), _required_env("SUPABASE_KEY"))
+    return create_client(_required_env("SUPABASE_URL"), require_backend_supabase_key(os.environ))
 
 
 def _side_counts(transactions: list[CanonicalTransaction]) -> dict[str, int]:

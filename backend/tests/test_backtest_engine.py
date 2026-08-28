@@ -8,6 +8,7 @@ from backtest.engine import (
     simulate_nav,
     simulate_nav_with_holdings,
 )
+from backtest.presets import build_preset_specs, select_preset_keys
 
 
 def make_prices(start: str, end: str, columns: dict[str, list[float]]) -> pd.DataFrame:
@@ -104,3 +105,13 @@ def test_kpis_basic():
     assert kpis["cagr"] is not None
     expected_cagr = (nav_df["nav"].iloc[-1] / nav_df["nav"].iloc[0]) ** (365 / 365) - 1
     assert abs(kpis["cagr"] - expected_cagr) < 1e-6
+
+
+def test_baseline_preset_specs_can_be_selected():
+    keys = select_preset_keys("baseline", None)
+    specs = build_preset_specs(keys)
+
+    assert keys == ["msci_world"]
+    assert specs[0]["portfolio_key"] == "msci_world"
+    assert specs[0]["role"] == "baseline"
+    assert specs[0]["weights"]

@@ -3,7 +3,8 @@
 import { useEffect, useMemo, useState } from 'react'
 import { supabase } from '../lib/supabase'
 import { cn } from '../lib/utils'
-import { Activity, AlertTriangle, Clock, Database, Minus, TrendingDown, TrendingUp } from 'lucide-react'
+import { Activity, AlertTriangle, ChevronDown, Clock, Database, Minus, TrendingDown, TrendingUp, X } from 'lucide-react'
+import { resolveFreshness } from '../lib/dataFreshness'
 
 interface HealthItem {
   id: string
@@ -67,14 +68,21 @@ interface EtlJobView {
 type JsonRecord = Record<string, unknown>
 
 const FRESHNESS_SOURCES = [
-  { id: 'market', label: 'Market Watch', table: 'market_watch', field: 'last_update' },
-  { id: 'valuations', label: 'Valuation Snapshots', table: 'valuation_snapshots', field: 'created_at' },
-  { id: 'news', label: 'News Feed', table: 'news_feed', field: 'published_at' },
-  { id: 'macro', label: 'Macro Indicators', table: 'macro_indicators', field: 'last_update' },
+  { id: 'market', label: 'Market Watch', table: 'market_watch', field: 'last_update', staleAfterMinutes: 36 * 60, marketAware: true },
+  { id: 'valuations', label: 'Valuation Snapshots', table: 'valuation_snapshots', field: 'created_at', staleAfterMinutes: 7 * 24 * 60, marketAware: false },
+  { id: 'news', label: 'News Feed', table: 'news_feed', field: 'published_at', staleAfterMinutes: 48 * 60, marketAware: false },
+  { id: 'macro', label: 'Macro Indicators', table: 'macro_indicators', field: 'last_update', staleAfterMinutes: 36 * 60, marketAware: true },
+  { id: 'macro-series', label: 'Macro Series', table: 'macro_series_latest', field: 'updated_at', staleAfterMinutes: 36 * 60, marketAware: false },
+  { id: 'macro-regime', label: 'Macro Regime', table: 'macro_regime_snapshots', field: 'updated_at', staleAfterMinutes: 36 * 60, marketAware: false },
+  { id: 'macro-targets', label: 'Macro Targets', table: 'macro_satellite_targets_latest', field: 'updated_at', staleAfterMinutes: 36 * 60, marketAware: false },
+  { id: 'trident-insights', label: 'Trident Insights', table: 'trident_stock_insights', field: 'updated_at', staleAfterMinutes: 24 * 60, marketAware: false },
+  { id: 'equity-publications', label: 'Equity Publications', table: 'equity_publication_dashboard_latest', field: 'updated_at', staleAfterMinutes: 36 * 60, marketAware: false },
 ] as const
 
 const ETL_HISTORY_LIMIT = 120
 const ETL_TREND_POINTS = 8
+const GITHUB_ACTIONS_URL = 'https://github.com/HaliroESG/portfolio-project/actions'
+const VERCEL_DASHBOARD_URL = 'https://vercel.com/dashboard'
 
 const ETL_QUALITY_THRESHOLDS = {
   failRateWarnPct: 5,
@@ -84,7 +92,6 @@ const ETL_QUALITY_THRESHOLDS = {
 } as const
 
 let QUALITY_MARKET_WATCH_SELECTOR_CACHE: string | null = null
-const QUALITY_MARKET_WATCH_BAD_SELECTORS = new Set<string>()
 const MARKET_WATCH_TECHNICAL_COLUMNS = [
   'macd_line',
   'macd_signal',
@@ -96,14 +103,13 @@ const MARKET_WATCH_TECHNICAL_COLUMNS = [
 ] as const
 let MARKET_WATCH_TECHNICAL_SCHEMA_AVAILABLE: boolean | null = null
 
-function computeStatus(ts: string | null): { status: HealthItem['status']; ageMinutes: number | null } {
-  if (!ts) return { status: 'MISSING', ageMinutes: null }
-  const date = new Date(ts)
-  if (Number.isNaN(date.getTime())) return { status: 'MISSING', ageMinutes: null }
-  const ageMs = Date.now() - date.getTime()
-  const ageMinutes = Math.max(0, Math.round(ageMs / 60000))
-  if (ageMinutes <= 60) return { status: 'LIVE', ageMinutes }
-  return { status: 'STALE', ageMinutes }
+function computeStatus(
+  ts: string | null,
+  staleAfterMinutes = 60,
+  marketAware = false
+): { status: HealthItem['status']; ageMinutes: number | null } {
+  const freshness = resolveFreshness(ts, staleAfterMinutes, { marketAware })
+  return { status: freshness.state, ageMinutes: freshness.ageMinutes }
 }
 
 function readNumber(value: unknown): number | null {
@@ -118,6 +124,17 @@ function readNumber(value: unknown): number | null {
 function readString(value: unknown): string | null {
   if (typeof value === 'string' && value.trim().length > 0) return value.trim()
   return null
+}
+
+function errorMessage(error: unknown): string {
+  if (error instanceof Error) return error.message
+  if (error && typeof error === 'object' && 'message' in error) return String(error.message)
+  return String(error ?? '')
+}
+
+function isMissingSchemaError(error: unknown): boolean {
+  const message = errorMessage(error)
+  return /could not find the table|schema cache|relation .* does not exist|PGRST205/i.test(message)
 }
 
 function formatPercent(value: number | null): string {
@@ -375,7 +392,11 @@ async function fetchFreshnessItems(): Promise<HealthItem[]> {
 
         const row = (data ?? null) as JsonRecord | null
         const timestamp = readString(row?.[source.field])
-        const { status, ageMinutes } = computeStatus(timestamp)
+        const { status, ageMinutes } = computeStatus(
+          timestamp,
+          source.staleAfterMinutes,
+          Boolean(source.marketAware)
+        )
         return {
           id: source.id,
           label: source.label,
@@ -384,7 +405,14 @@ async function fetchFreshnessItems(): Promise<HealthItem[]> {
           ageMinutes,
         }
       } catch (error) {
-        console.error('Data health fetch error', source.id, error)
+        if (
+          !(
+            (source.id === 'trident-insights' || source.id === 'equity-publications' || source.id.startsWith('macro-')) &&
+            isMissingSchemaError(error)
+          )
+        ) {
+          console.error('Data health fetch error', source.id, error)
+        }
         const fallbackItem: HealthItem = {
           id: source.id,
           label: source.label,
@@ -439,19 +467,15 @@ async function fetchQualityMetrics(): Promise<QualityMetric[]> {
     'ticker,last_price,data_status,last_update,rsi_14,macd_line,macd_signal,momentum_20',
     'ticker,last_price,data_status,last_update',
   ]
-  const cachedSelector = QUALITY_MARKET_WATCH_SELECTOR_CACHE
-  const orderedSelectors = (cachedSelector
-    ? [cachedSelector, ...selectors.filter((selector) => selector !== cachedSelector)]
+  const orderedSelectors = QUALITY_MARKET_WATCH_SELECTOR_CACHE
+    ? [QUALITY_MARKET_WATCH_SELECTOR_CACHE, ...selectors.filter((selector) => selector !== QUALITY_MARKET_WATCH_SELECTOR_CACHE)]
     : technicalColumnsAvailable
     ? selectors
-    : [selectors[1]]).filter((selector) => !QUALITY_MARKET_WATCH_BAD_SELECTORS.has(selector))
+    : [selectors[1]]
 
   for (const selector of orderedSelectors) {
     const { data, error } = await supabase.from('market_watch').select(selector).limit(600)
-    if (error) {
-      QUALITY_MARKET_WATCH_BAD_SELECTORS.add(selector)
-      continue
-    }
+    if (error) continue
     marketRows = (data ?? []) as unknown as JsonRecord[]
     QUALITY_MARKET_WATCH_SELECTOR_CACHE = selector
     break
@@ -505,7 +529,7 @@ async function fetchQualityMetrics(): Promise<QualityMetric[]> {
     valuationCoveragePct = null
   }
 
-  return [
+  const metrics: QualityMetric[] = [
     {
       id: 'priced-assets',
       label: 'Priced Assets',
@@ -540,6 +564,222 @@ async function fetchQualityMetrics(): Promise<QualityMetric[]> {
       tone: toneForHighIsGood(valuationCoveragePct, 95, 85),
     },
   ]
+
+  try {
+    const [regimeResult, targetsResult, seriesResult] = await Promise.all([
+      supabase
+        .from('macro_regime_snapshots')
+        .select('regime,regime_state,confidence,updated_at')
+        .order('as_of_date', { ascending: false })
+        .limit(1)
+        .maybeSingle(),
+      supabase
+        .from('macro_satellite_targets_latest')
+        .select('bucket_key,data_state,is_blocked', { count: 'exact' }),
+      supabase
+        .from('macro_series_latest')
+        .select('series_id,data_state', { count: 'exact' }),
+    ])
+    const macroError = regimeResult.error ?? targetsResult.error ?? seriesResult.error
+    if (macroError) throw macroError
+    const regimeRow = (regimeResult.data ?? null) as JsonRecord | null
+    const targetRows = (targetsResult.data ?? []) as unknown as JsonRecord[]
+    const seriesRows = (seriesResult.data ?? []) as unknown as JsonRecord[]
+    const confidence = readNumber(regimeRow?.confidence)
+    const blockedTargets = targetRows.filter((row) => row.is_blocked === true).length
+    const nonReadySeries = seriesRows.filter((row) => readString(row.data_state) !== 'READY').length
+    metrics.push({
+      id: 'macro-regime',
+      label: 'Macro Regime',
+      value: regimeRow
+        ? `${readString(regimeRow.regime) ?? 'UNKNOWN'} · ${confidence !== null ? `${confidence}%` : 'n/a'}`
+        : 'sync pending',
+      hint: `${targetRows.length} satellite targets, ${blockedTargets} trend-blocked, ${nonReadySeries} non-ready series.`,
+      tone:
+        !regimeRow
+          ? 'WARN'
+          : readString(regimeRow.regime_state) === 'READY'
+          ? toneForHighIsGood(confidence, 70, 50)
+          : 'WARN',
+    })
+  } catch {
+    metrics.push({
+      id: 'macro-regime',
+      label: 'Macro Regime',
+      value: 'schema pending',
+      hint: 'macro_series_latest, macro_regime_snapshots, or macro_satellite_targets_latest is not readable yet.',
+      tone: 'BAD',
+    })
+  }
+
+  try {
+    const { data, error } = await supabase
+      .from('equity_publication_dashboard_latest')
+      .select('instrument_key,source_index,data_state,interim_period_end,next_event_date')
+      .limit(1000)
+    if (error) throw error
+    const rows = (data ?? []) as unknown as JsonRecord[]
+    const ready = rows.filter((row) => readString(row.data_state) === 'READY').length
+    const interim = rows.filter((row) => readString(row.interim_period_end) !== null).length
+    const calendar = rows.filter((row) => readString(row.next_event_date) !== null).length
+    const readyPct = rows.length > 0 ? (ready / rows.length) * 100 : null
+    metrics.push({
+      id: 'equity-publications',
+      label: 'Equity Publications',
+      value: rows.length > 0 ? `${ready}/${rows.length} ready` : 'sync pending',
+      hint: `${interim} interim histories and ${calendar} upcoming publication dates across CAC 40 / S&P 500.`,
+      tone: rows.length > 0 ? toneForHighIsGood(readyPct, 75, 50) : 'WARN',
+    })
+  } catch {
+    metrics.push({
+      id: 'equity-publications',
+      label: 'Equity Publications',
+      value: 'schema pending',
+      hint: 'equity_publication_dashboard_latest is not readable yet.',
+      tone: 'BAD',
+    })
+  }
+
+  try {
+    const freshCutoffIso = new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString()
+    const [totalResult, freshResult, aiResult] = await Promise.all([
+      supabase.from('trident_stock_insights').select('instrument_key', { count: 'exact', head: true }),
+      supabase
+        .from('trident_stock_insights')
+        .select('instrument_key', { count: 'exact', head: true })
+        .gte('updated_at', freshCutoffIso),
+      supabase
+        .from('trident_stock_insights')
+        .select('instrument_key', { count: 'exact', head: true })
+        .not('ai_trend_summary', 'is', null),
+    ])
+
+    const insightError = totalResult.error ?? freshResult.error ?? aiResult.error
+    if (insightError) throw insightError
+
+    const totalInsights = totalResult.count ?? 0
+    const freshInsights = freshResult.count ?? 0
+    const aiReadyInsights = aiResult.count ?? 0
+    const freshPct = totalInsights > 0 ? (freshInsights / totalInsights) * 100 : null
+    metrics.push({
+      id: 'trident-insights',
+      label: 'Trident Insights',
+      value:
+        totalInsights > 0
+          ? `${freshInsights}/${totalInsights} fresh · ${aiReadyInsights} AI`
+          : 'sync pending',
+      hint: 'Generated company profile, analyst consensus, trend facts, and AI trend brief rows.',
+      tone: totalInsights > 0 ? toneForHighIsGood(freshPct, 80, 50) : 'WARN',
+    })
+  } catch {
+    metrics.push({
+      id: 'trident-insights',
+      label: 'Trident Insights',
+      value: 'schema pending',
+      hint: 'trident_stock_insights is not available to the frontend yet.',
+      tone: 'BAD',
+    })
+  }
+
+  try {
+    const { data, error } = await supabase
+      .from('etl_runs')
+      .select('status,finished_at,stats')
+      .eq('job_name', 'equity_screener_sync')
+      .order('started_at', { ascending: false })
+      .limit(1)
+      .maybeSingle()
+
+    if (error) throw error
+    const row = (data ?? null) as Pick<EtlRun, 'status' | 'finished_at' | 'stats'> | null
+    const stats = row?.stats ?? null
+    const totalRows = readNumber(stats?.items_total)
+    const financialsCoveragePct = readNumber(stats?.financials_coverage_pct)
+    const insightsCoveragePct = readNumber(stats?.insights_coverage_pct)
+    const priceHistoryCoveragePct = readNumber(stats?.price_history_coverage_pct)
+    const fxCoveragePct = readNumber(stats?.fx_coverage_pct)
+    const duplicateGroups = readNumber(stats?.duplicate_groups)
+    const unresolvedDuplicateGroups = readNumber(stats?.unresolved_duplicate_groups) ?? duplicateGroups
+    const duplicatesSuppressed = readNumber(stats?.duplicates_suppressed)
+    const staleRows = readNumber(stats?.stale_row_count)
+    const qualityGateFailureValue = stats?.quality_gate_failures
+    const qualityGateFailures = Array.isArray(qualityGateFailureValue)
+      ? qualityGateFailureValue.length
+      : readNumber(qualityGateFailureValue)
+    const qualityGateWarningValue = stats?.quality_gate_warnings
+    const qualityGateWarnings = Array.isArray(qualityGateWarningValue)
+      ? qualityGateWarningValue.length
+      : readNumber(qualityGateWarningValue)
+
+    metrics.push(
+      {
+        id: 'screener-financials',
+        label: 'Screener Financials',
+        value: totalRows !== null ? `${formatPercent(financialsCoveragePct)} of ${Math.round(totalRows)}` : formatPercent(financialsCoveragePct),
+        hint: 'Open screener rows with usable financial statement metrics. Threshold v1: >= 90%.',
+        tone: toneForHighIsGood(financialsCoveragePct, 90, 80),
+      },
+      {
+        id: 'screener-insights',
+        label: 'Screener Insights',
+        value: formatPercent(insightsCoveragePct),
+        hint: 'Open screener rows enriched by trident_stock_insights. Warning threshold v1: >= 90%.',
+        tone: toneForHighIsGood(insightsCoveragePct, 90, 80),
+      },
+      {
+        id: 'screener-price-history',
+        label: 'Price History',
+        value: formatPercent(priceHistoryCoveragePct),
+        hint: 'Active universe rows with price history available for regression. Warning threshold v1: >= 95%.',
+        tone: toneForHighIsGood(priceHistoryCoveragePct, 95, 85),
+      },
+      {
+        id: 'screener-fx',
+        label: 'FX Coverage',
+        value: formatPercent(fxCoveragePct),
+        hint: 'Rows with market cap USD conversion available through currencies.rate_to_eur. Warning threshold v1: >= 95%.',
+        tone: toneForHighIsGood(fxCoveragePct, 95, 85),
+      },
+      {
+        id: 'screener-duplicates',
+        label: 'Unresolved Duplicates',
+        value:
+          unresolvedDuplicateGroups !== null
+            ? `${Math.round(unresolvedDuplicateGroups)} groups`
+            : 'n/a',
+        hint: `Duplicate source groups suppressed: ${
+          duplicatesSuppressed !== null ? Math.round(duplicatesSuppressed) : 'n/a'
+        }. Stale rows: ${staleRows !== null ? Math.round(staleRows) : 'n/a'}.`,
+        tone: toneForLowIsGood(unresolvedDuplicateGroups, 0, 2),
+      },
+      {
+        id: 'screener-quality-gate',
+        label: 'Screener Gate',
+        value: row?.status
+          ? `${row.status}${qualityGateFailures ? ` · ${qualityGateFailures} failures` : ''}${qualityGateWarnings ? ` · ${qualityGateWarnings} warnings` : ''}`
+          : 'sync pending',
+        hint: 'Critical checks: zero unresolved canonical duplicates and financials >= 90%. Warnings track insights >= 90%, price history >= 95%, and FX >= 95%.',
+        tone:
+          row?.status === 'FAILED' || (qualityGateFailures !== null && qualityGateFailures > 0)
+            ? 'BAD'
+            : qualityGateWarnings !== null && qualityGateWarnings > 0
+            ? 'WARN'
+            : row?.status === 'SUCCESS'
+            ? 'GOOD'
+            : 'WARN',
+      },
+    )
+  } catch {
+    metrics.push({
+      id: 'screener-quality-gate',
+      label: 'Screener Gate',
+      value: 'schema pending',
+      hint: 'Latest equity_screener_sync stats are not available to the frontend yet.',
+      tone: 'BAD',
+    })
+  }
+
+  return metrics
 }
 
 function shortError(error: string | null | undefined): string {
@@ -547,10 +787,50 @@ function shortError(error: string | null | undefined): string {
   return error.length > 140 ? `${error.slice(0, 140)}...` : error
 }
 
+function operationActionForRun(run: EtlRun): string {
+  const jobName = run.job_name.toLowerCase()
+  if (jobName.includes('equity_publications')) {
+    return 'Run equity_publications_sync daily for dates and weekly in full mode for interim financials.'
+  }
+  if (jobName.includes('macro_regime')) {
+    return 'Run macro_regime_sync after macro indicators and market_watch technicals are fresh.'
+  }
+  if (jobName.includes('historical_prices_trident')) {
+    return 'Run Financial Data Sync with scope=trident, trident_mode=full, and a backend service_role key.'
+  }
+  if (jobName.includes('trident_stock_insights')) {
+    return 'Run Trident Stock Insights Sync with top_n=200 after the Supabase schema is applied.'
+  }
+  if (jobName.includes('macro')) {
+    return 'Run the macro refresh and verify macro_indicators freshness after completion.'
+  }
+  if (jobName.includes('bridge')) {
+    return 'Run bridge_sync after market history is available, then verify technical coverage.'
+  }
+  if (jobName.includes('news')) {
+    return 'Run news_sync and verify macro/high-impact news is available.'
+  }
+  return 'Open the latest GitHub Actions run, fix the failing step, then rerun the data refresh.'
+}
+
+function operationAction(view: EtlJobView): string {
+  if (view.run.status === 'FAILED' || view.qualityState === 'CRITICAL') {
+    return operationActionForRun(view.run)
+  }
+  if (view.metrics.technicalReady !== null && view.metrics.technicalReady === 0) {
+    return 'Backfill market_watch technical indicators or mark the rows explicitly non-calculable.'
+  }
+  if (view.metrics.coveragePct !== null && view.metrics.coveragePct < ETL_QUALITY_THRESHOLDS.coverageWarnPct) {
+    return 'Increase provider coverage, then rerun the same job and compare the coverage trend.'
+  }
+  return 'Monitor the next scheduled refresh.'
+}
+
 export function DataHealthPanel() {
   const [items, setItems] = useState<HealthItem[]>([])
   const [etlJobViews, setEtlJobViews] = useState<EtlJobView[]>([])
   const [qualityMetrics, setQualityMetrics] = useState<QualityMetric[]>([])
+  const [expanded, setExpanded] = useState(false)
 
   useEffect(() => {
     async function fetchHealthData() {
@@ -571,6 +851,12 @@ export function DataHealthPanel() {
   }, [])
 
   const liveCount = useMemo(() => items.filter((i) => i.status === 'LIVE').length, [items])
+  const staleCount = useMemo(() => items.filter((i) => i.status === 'STALE').length, [items])
+  const missingCount = useMemo(() => items.filter((i) => i.status === 'MISSING').length, [items])
+  const criticalEtlCount = useMemo(
+    () => etlJobViews.filter((view) => view.qualityState === 'CRITICAL' || view.run.status === 'FAILED').length,
+    [etlJobViews]
+  )
   const latestFailedRun = useMemo(
     () =>
       etlJobViews
@@ -579,21 +865,108 @@ export function DataHealthPanel() {
         .sort((left, right) => new Date(right.started_at).getTime() - new Date(left.started_at).getTime())[0] ?? null,
     [etlJobViews]
   )
+  const collapsedSummary = useMemo(() => {
+    if (items.length === 0 && etlJobViews.length === 0) return 'Loading health summary. Details stay collapsed by default.'
+    const issueCount = staleCount + missingCount + criticalEtlCount
+    if (issueCount === 0) return 'Summary only. Expand for source freshness, quality signals, and ETL runs.'
+    return `Summary only. ${issueCount} issue${issueCount > 1 ? 's' : ''} visible in the detailed drilldown.`
+  }, [criticalEtlCount, etlJobViews.length, items.length, missingCount, staleCount])
 
   return (
-    <div className="w-full bg-white dark:bg-[#0D1117]/50 border-2 border-slate-200 dark:border-white/5 rounded-3xl shadow-2xl p-4">
-      <div className="flex items-center justify-between mb-3">
-        <div className="flex items-center gap-2">
-          <Database className="w-4 h-4 text-blue-600 dark:text-[#00FF88]" />
-          <h3 className="text-[11px] font-black uppercase tracking-[0.18em] text-slate-500 dark:text-gray-400">Data Health</h3>
+    <div className="w-full rounded-xl border border-slate-200 bg-white/80 p-3 shadow-sm dark:border-white/10 dark:bg-[#0D1117]/70">
+      <div className="flex flex-wrap items-center justify-between gap-3">
+        <div>
+          <div className="flex items-center gap-2">
+            <Database className="w-4 h-4 text-blue-600 dark:text-[#00FF88]" />
+            <h3 className="text-[11px] font-black uppercase tracking-[0.18em] text-slate-500 dark:text-gray-400">Data Operations</h3>
+          </div>
+          {!expanded && (
+            <p className="mt-1 text-[10px] font-mono text-slate-500 dark:text-gray-500">
+              {collapsedSummary}
+            </p>
+          )}
         </div>
-        <div className="flex items-center gap-2 text-[10px] font-black text-slate-600 dark:text-gray-400">
-          <Activity className="w-3 h-3" />
-          {liveCount}/{items.length || 4} live
+        <div className="flex flex-wrap items-center gap-2">
+          <span className="inline-flex items-center gap-1 rounded border border-slate-200 px-2 py-1 text-[10px] font-black uppercase tracking-wider text-slate-600 dark:border-white/10 dark:text-gray-300">
+            <Activity className="w-3 h-3" />
+            {liveCount}/{items.length || FRESHNESS_SOURCES.length} live
+          </span>
+          {staleCount > 0 && (
+            <span className="rounded border border-amber-300 bg-amber-50 px-2 py-1 text-[10px] font-black uppercase tracking-wider text-amber-700 dark:border-amber-800 dark:bg-amber-950/20 dark:text-amber-300">
+              {staleCount} stale
+            </span>
+          )}
+          {missingCount > 0 && (
+            <span className="rounded border border-slate-300 bg-slate-50 px-2 py-1 text-[10px] font-black uppercase tracking-wider text-slate-600 dark:border-slate-700 dark:bg-slate-900/40 dark:text-gray-300">
+              {missingCount} missing
+            </span>
+          )}
+          {criticalEtlCount > 0 && (
+            <span className="rounded border border-red-300 bg-red-50 px-2 py-1 text-[10px] font-black uppercase tracking-wider text-red-700 dark:border-red-900/60 dark:bg-red-950/20 dark:text-red-300">
+              {criticalEtlCount} ETL critical
+            </span>
+          )}
+          <button
+            type="button"
+            onClick={() => setExpanded((value) => !value)}
+            aria-expanded={expanded}
+            className="inline-flex items-center gap-1 rounded border border-slate-200 bg-slate-50 px-2 py-1 text-[10px] font-black uppercase tracking-wider text-slate-600 transition hover:bg-slate-100 dark:border-white/10 dark:bg-white/5 dark:text-gray-300 dark:hover:bg-white/10"
+          >
+            {expanded ? 'Hide details' : 'Show details'}
+            <ChevronDown className={cn('h-3 w-3 transition-transform', expanded && 'rotate-180')} />
+          </button>
         </div>
       </div>
 
-      <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+      {!expanded && latestFailedRun && (
+        <div className="mt-3 rounded-lg border border-red-400/60 bg-red-50 px-3 py-2 text-[11px] font-mono text-red-700 dark:bg-red-950/20 dark:text-red-300">
+          <div>Latest ETL failure: {latestFailedRun.job_name} - {shortError(latestFailedRun.error)}</div>
+          <div className="mt-1">Action: {operationActionForRun(latestFailedRun)}</div>
+        </div>
+      )}
+
+      {expanded && (
+        <div className="fixed inset-0 z-[80] bg-black/50 p-3 backdrop-blur-sm sm:p-6" role="dialog" aria-modal="true" aria-label="Data operations details">
+          <div className="mx-auto flex h-full max-w-6xl flex-col overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-2xl dark:border-white/10 dark:bg-[#080A0F]">
+            <div className="flex items-center justify-between gap-3 border-b border-slate-200 px-4 py-3 dark:border-white/10">
+              <div className="flex min-w-0 items-center gap-2">
+                <Database className="h-4 w-4 shrink-0 text-blue-600 dark:text-[#00FF88]" />
+                <div className="min-w-0">
+                  <div className="text-[11px] font-black uppercase tracking-[0.18em] text-slate-700 dark:text-gray-300">Data Operations Details</div>
+                  <div className="truncate text-[10px] font-mono text-slate-500 dark:text-gray-500">
+                    {liveCount}/{items.length || FRESHNESS_SOURCES.length} live · {criticalEtlCount} ETL critical
+                  </div>
+                </div>
+              </div>
+              <div className="ml-auto hidden items-center gap-2 sm:flex">
+                <a
+                  href={GITHUB_ACTIONS_URL}
+                  target="_blank"
+                  rel="noreferrer"
+                  className="rounded border border-slate-200 bg-slate-50 px-2 py-1 text-[10px] font-black uppercase tracking-wider text-slate-600 transition hover:bg-slate-100 dark:border-white/10 dark:bg-white/5 dark:text-gray-300 dark:hover:bg-white/10"
+                >
+                  Actions
+                </a>
+                <a
+                  href={VERCEL_DASHBOARD_URL}
+                  target="_blank"
+                  rel="noreferrer"
+                  className="rounded border border-slate-200 bg-slate-50 px-2 py-1 text-[10px] font-black uppercase tracking-wider text-slate-600 transition hover:bg-slate-100 dark:border-white/10 dark:bg-white/5 dark:text-gray-300 dark:hover:bg-white/10"
+                >
+                  Vercel
+                </a>
+              </div>
+              <button
+                type="button"
+                aria-label="Close data health details"
+                onClick={() => setExpanded(false)}
+                className="inline-flex h-8 w-8 shrink-0 items-center justify-center rounded-lg border border-slate-200 bg-slate-50 text-slate-500 transition hover:bg-slate-100 hover:text-slate-900 dark:border-white/10 dark:bg-white/5 dark:text-gray-300 dark:hover:bg-white/10 dark:hover:text-white"
+              >
+                <X className="h-4 w-4" />
+              </button>
+            </div>
+            <div className="min-h-0 flex-1 overflow-auto p-4">
+      <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-4">
         {items.map((item) => (
           <div
             key={item.id}
@@ -662,6 +1035,9 @@ export function DataHealthPanel() {
               <div className="mt-1 text-[10px] font-mono text-red-700/90 dark:text-red-300/90">
                 {shortError(latestFailedRun.error)}
               </div>
+              <div className="mt-2 text-[10px] font-mono font-bold text-red-700/90 dark:text-red-300/90">
+                Action: {operationActionForRun(latestFailedRun)}
+              </div>
             </div>
           )}
           <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
@@ -726,6 +1102,9 @@ export function DataHealthPanel() {
                     </div>
                   )}
                   <div className="text-[9px] text-slate-600 dark:text-gray-300">{view.qualityReason}</div>
+                  <div className="text-[9px] font-mono font-bold text-slate-600 dark:text-gray-300">
+                    Action: {operationAction(view)}
+                  </div>
                   <div className="mt-1">
                     <div className="flex items-end gap-1 h-8">
                       {view.trendPoints.map((point, index) => (
@@ -763,6 +1142,10 @@ export function DataHealthPanel() {
                 </div>
               )
             })}
+          </div>
+        </div>
+      )}
+            </div>
           </div>
         </div>
       )}

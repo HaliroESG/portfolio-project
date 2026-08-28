@@ -1,9 +1,9 @@
 "use client"
 
-import React, { useMemo } from 'react';
+import React, { useMemo, useState } from 'react';
 import { Asset } from '../types';
 import { PerformanceCell } from './PerformanceCell';
-import { AlertCircle } from 'lucide-react';
+import { AlertCircle, ArrowDown, ArrowUp, ChevronsUpDown } from 'lucide-react';
 import { DataTrustBadge } from './DataTrustBadge';
 import { cn } from '../lib/utils';
 
@@ -16,35 +16,135 @@ interface AssetTableProps {
   currencyFilter?: string;
 }
 
-export function AssetTable({ assets, onHoverAsset, onSelectAsset, selectedAssetId, groupByClass = false, currencyFilter = "ALL" }: AssetTableProps) {
-  const hasMissingData = (asset: Asset): boolean => {
-    return asset.price === null || asset.price === 0 || asset.price === undefined;
-  }
+type AssetSortKey = 'asset' | 'day' | 'week' | 'month' | 'ytd' | 'volatility' | 'trend'
+type SortDirection = 'asc' | 'desc'
+type GroupHeader = { isHeader: true; type: string }
+type ProcessedAsset = Asset | GroupHeader
 
-  // Calculate volatility (annualized % based on performance variance)
-  const calculateVolatility = (asset: Asset): number => {
-    const perf = asset.performance
-    const values = [
-      perf?.day?.value || 0,
-      perf?.week?.value || 0,
-      perf?.month?.value || 0,
-      perf?.ytd?.value || 0,
-    ].filter(v => v !== 0)
-    
-    if (values.length === 0) return 0
-    
-    const mean = values.reduce((a, b) => a + b, 0) / values.length
-    const variance = values.reduce((sum, val) => sum + Math.pow(val - mean, 2), 0) / values.length
-    const stdDev = Math.sqrt(variance)
-    
-    // Annualize: multiply by sqrt(252) for daily, but we're using mixed periods
-    // Simplified: use stdDev * 16 (rough annualization factor)
-    return Math.abs(stdDev * 16)
+const TREND_SORT_RANK = {
+  BULLISH: 5,
+  NEUTRAL: 4,
+  BEARISH: 3,
+  INSUFFICIENT_HISTORY: 2,
+  UNKNOWN: 1,
+} as const
+
+function sortIcon(active: boolean, direction: SortDirection) {
+  if (!active) return <ChevronsUpDown className="h-3 w-3 opacity-50" />
+  return direction === 'asc' ? <ArrowUp className="h-3 w-3" /> : <ArrowDown className="h-3 w-3" />
+}
+
+function SortHeader({
+  label,
+  sortKey,
+  activeSortKey,
+  direction,
+  align = 'left',
+  className,
+  onSort,
+}: {
+  label: string
+  sortKey: AssetSortKey
+  activeSortKey: AssetSortKey
+  direction: SortDirection
+  align?: 'left' | 'center'
+  className?: string
+  onSort: (sortKey: AssetSortKey) => void
+}) {
+  const active = activeSortKey === sortKey
+
+  return (
+    <th
+      aria-sort={active ? (direction === 'asc' ? 'ascending' : 'descending') : 'none'}
+      className={cn(
+        "p-0 text-[10px] font-black text-slate-950 dark:text-gray-500 uppercase tracking-widest",
+        className
+      )}
+    >
+      <button
+        type="button"
+        onClick={() => onSort(sortKey)}
+        className={cn(
+          "flex w-full items-center gap-1.5 p-4 transition-colors hover:bg-slate-200/70 dark:hover:bg-white/5",
+          align === 'center' ? 'justify-center text-center' : 'justify-start text-left',
+          active && 'text-blue-700 dark:text-[#00FF88]'
+        )}
+      >
+        <span>{label}</span>
+        {sortIcon(active, direction)}
+      </button>
+    </th>
+  )
+}
+
+function hasMissingData(asset: Asset): boolean {
+  return asset.price === null || asset.price === 0 || asset.price === undefined
+}
+
+// Calculate volatility (annualized % based on performance variance)
+function calculateVolatility(asset: Asset): number {
+  const perf = asset.performance
+  const values = [
+    perf?.day?.value || 0,
+    perf?.week?.value || 0,
+    perf?.month?.value || 0,
+    perf?.ytd?.value || 0,
+  ].filter(v => v !== 0)
+
+  if (values.length === 0) return 0
+
+  const mean = values.reduce((a, b) => a + b, 0) / values.length
+  const variance = values.reduce((sum, val) => sum + Math.pow(val - mean, 2), 0) / values.length
+  const stdDev = Math.sqrt(variance)
+
+  // Simplified annualization for mixed periods.
+  return Math.abs(stdDev * 16)
+}
+
+export function AssetTable({ assets, onHoverAsset, onSelectAsset, selectedAssetId, groupByClass = false, currencyFilter = "ALL" }: AssetTableProps) {
+  const [sortKey, setSortKey] = useState<AssetSortKey>('asset')
+  const [sortDirection, setSortDirection] = useState<SortDirection>('asc')
+
+  const handleSort = (nextSortKey: AssetSortKey) => {
+    if (nextSortKey === sortKey) {
+      setSortDirection((current) => (current === 'asc' ? 'desc' : 'asc'))
+      return
+    }
+
+    setSortKey(nextSortKey)
+    setSortDirection(nextSortKey === 'asset' || nextSortKey === 'trend' ? 'asc' : 'desc')
   }
 
   // Filter and group assets
   const processedAssets = useMemo(() => {
-    let filtered = assets
+    const compareAssets = (left: Asset, right: Asset): number => {
+      const direction = sortDirection === 'asc' ? 1 : -1
+      let result = 0
+
+      if (sortKey === 'asset') {
+        result = left.name.localeCompare(right.name, 'en', { sensitivity: 'base' })
+        if (result === 0) result = left.ticker.localeCompare(right.ticker, 'en', { sensitivity: 'base' })
+        return result * direction
+      }
+
+      if (sortKey === 'day') result = left.performance.day.value - right.performance.day.value
+      if (sortKey === 'week') result = left.performance.week.value - right.performance.week.value
+      if (sortKey === 'month') result = left.performance.month.value - right.performance.month.value
+      if (sortKey === 'ytd') result = left.performance.ytd.value - right.performance.ytd.value
+      if (sortKey === 'volatility') result = (left.technical?.volatility_30d ?? calculateVolatility(left)) - (right.technical?.volatility_30d ?? calculateVolatility(right))
+      if (sortKey === 'trend') {
+        const leftRank = TREND_SORT_RANK[left.technical?.trend_state ?? 'UNKNOWN']
+        const rightRank = TREND_SORT_RANK[right.technical?.trend_state ?? 'UNKNOWN']
+        result = leftRank - rightRank
+      }
+
+      if (result === 0) {
+        result = left.name.localeCompare(right.name, 'en', { sensitivity: 'base' })
+      }
+      return result * direction
+    }
+
+    let filtered = [...assets]
 
     // Apply currency filter
     if (currencyFilter !== "ALL") {
@@ -61,29 +161,29 @@ export function AssetTable({ assets, onHoverAsset, onSelectAsset, selectedAssetI
       }, {} as Record<string, Asset[]>)
 
       // Flatten grouped assets with headers
-      const result: (Asset | { isHeader: true; type: string })[] = []
-      Object.entries(grouped).forEach(([type, assets]) => {
+      const result: ProcessedAsset[] = []
+      Object.entries(grouped).sort(([left], [right]) => left.localeCompare(right)).forEach(([type, groupedAssets]) => {
         result.push({ isHeader: true, type })
-        result.push(...assets.sort((a, b) => a.name.localeCompare(b.name)))
+        result.push(...[...groupedAssets].sort(compareAssets))
       })
       return result
     }
 
-    return filtered
-  }, [assets, groupByClass, currencyFilter])
+    return filtered.sort(compareAssets)
+  }, [assets, groupByClass, currencyFilter, sortKey, sortDirection])
 
   return (
     <div className="w-full h-full overflow-auto bg-white dark:bg-[#080A0F] transition-colors duration-300">
       <table className="w-full border-collapse text-left">
         <thead className="sticky top-0 z-10 bg-slate-100 dark:bg-[#0D1117] border-b-2 border-slate-300 dark:border-[#1a1d24]">
           <tr>
-            <th className="p-4 text-[10px] font-black text-slate-950 dark:text-gray-500 uppercase tracking-widest w-[260px]">Asset / Ticker</th>
-            <th className="p-4 text-[10px] font-black text-slate-950 dark:text-gray-500 uppercase tracking-widest text-center border-l border-slate-200 dark:border-[#1a1d24]">Day</th>
-            <th className="p-4 text-[10px] font-black text-slate-950 dark:text-gray-500 uppercase tracking-widest text-center border-l border-slate-200 dark:border-[#1a1d24]">Week</th>
-            <th className="p-4 text-[10px] font-black text-slate-950 dark:text-gray-500 uppercase tracking-widest text-center border-l border-slate-200 dark:border-[#1a1d24]">Month</th>
-            <th className="p-4 text-[10px] font-black text-slate-950 dark:text-gray-500 uppercase tracking-widest text-center border-l border-slate-200 dark:border-[#1a1d24]">YTD</th>
-            <th className="p-4 text-[10px] font-black text-slate-950 dark:text-gray-500 uppercase tracking-widest text-center border-l border-slate-200 dark:border-[#1a1d24]">Volatility</th>
-            <th className="p-4 text-[10px] font-black text-slate-950 dark:text-gray-500 uppercase tracking-widest text-center border-l border-slate-200 dark:border-[#1a1d24]">Trend</th>
+            <SortHeader label="Asset / Ticker" sortKey="asset" activeSortKey={sortKey} direction={sortDirection} className="w-[260px]" onSort={handleSort} />
+            <SortHeader label="Day" sortKey="day" activeSortKey={sortKey} direction={sortDirection} align="center" className="border-l border-slate-200 dark:border-[#1a1d24]" onSort={handleSort} />
+            <SortHeader label="Week" sortKey="week" activeSortKey={sortKey} direction={sortDirection} align="center" className="border-l border-slate-200 dark:border-[#1a1d24]" onSort={handleSort} />
+            <SortHeader label="Month" sortKey="month" activeSortKey={sortKey} direction={sortDirection} align="center" className="border-l border-slate-200 dark:border-[#1a1d24]" onSort={handleSort} />
+            <SortHeader label="YTD" sortKey="ytd" activeSortKey={sortKey} direction={sortDirection} align="center" className="border-l border-slate-200 dark:border-[#1a1d24]" onSort={handleSort} />
+            <SortHeader label="Volatility" sortKey="volatility" activeSortKey={sortKey} direction={sortDirection} align="center" className="border-l border-slate-200 dark:border-[#1a1d24]" onSort={handleSort} />
+            <SortHeader label="Trend" sortKey="trend" activeSortKey={sortKey} direction={sortDirection} align="center" className="border-l border-slate-200 dark:border-[#1a1d24]" onSort={handleSort} />
           </tr>
         </thead>
         <tbody className="divide-y divide-slate-200 dark:divide-[#1a1d24]">
@@ -119,17 +219,17 @@ export function AssetTable({ assets, onHoverAsset, onSelectAsset, selectedAssetI
               quantityCurrent !== null ||
               asset.pru !== null ||
               targetWeight !== null
-            
+
             return (
-              <tr 
-                key={asset.id} 
+              <tr
+                key={asset.id}
                 className={cn(
                   "transition-all duration-200 group cursor-pointer",
                   isSelected
                     ? "bg-blue-100 dark:bg-[#00FF88]/10 border-l-4 border-l-blue-600 dark:border-l-[#00FF88]"
                     : "hover:bg-blue-50/50 dark:hover:bg-white/5"
                 )}
-                onMouseEnter={() => onHoverAsset(asset)} 
+                onMouseEnter={() => onHoverAsset(asset)}
                 onMouseLeave={() => onHoverAsset(null)}
                 onClick={() => onSelectAsset(asset)}
               >

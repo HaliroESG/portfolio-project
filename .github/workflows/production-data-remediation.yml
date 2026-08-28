@@ -1,0 +1,261 @@
+name: Production Data Remediation
+
+on:
+  push:
+    branches:
+      - "codex/trident-screener"
+    paths:
+      - ".github/workflows/production-data-remediation.yml"
+      - "backend/sql/**/*.sql"
+      - "backend/scripts/run_data_refresh.py"
+  workflow_dispatch:
+    inputs:
+      apply_schema:
+        description: "Apply additive Supabase SQL migrations"
+        required: true
+        type: boolean
+        default: true
+      top_n:
+        description: "Top Trident scored rows to backfill first"
+        required: true
+        type: string
+        default: "200"
+      start_date:
+        description: "Historical price start date"
+        required: true
+        type: string
+        default: "1999-01-01"
+      run_full_after_top:
+        description: "Run full Trident sync after top-score backfill"
+        required: true
+        type: boolean
+        default: true
+
+permissions:
+  contents: read
+
+concurrency:
+  group: production-data-remediation-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  remediate-data:
+    runs-on: ubuntu-latest
+    timeout-minutes: 360
+
+    env:
+      SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+      SUPABASE_SERVICE_KEY: ${{ secrets.SUPABASE_SERVICE_KEY }}
+      SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_KEY }}
+      SUPABASE_DB_URL: ${{ secrets.SUPABASE_DB_URL }}
+      DATABASE_URL: ${{ secrets.DATABASE_URL }}
+      SUPABASE_DB_URL_VAR: ${{ vars.SUPABASE_DB_URL }}
+      DATABASE_URL_VAR: ${{ vars.DATABASE_URL }}
+      TRIDENT_PROVIDER: ${{ vars.TRIDENT_PROVIDER || 'global_yahoo' }}
+      TRIDENT_INDEXES: ${{ vars.TRIDENT_INDEXES }}
+      TRIDENT_LIMIT: ${{ vars.TRIDENT_LIMIT }}
+      TRIDENT_PER_INDEX_LIMIT: ${{ vars.TRIDENT_PER_INDEX_LIMIT }}
+      TRIDENT_YAHOO_SLEEP_SEC: ${{ vars.TRIDENT_YAHOO_SLEEP_SEC || '0.15' }}
+      TRIDENT_UNIVERSE_CSV: ${{ vars.TRIDENT_UNIVERSE_CSV }}
+      TRIDENT_FINANCIALS_CSV: ${{ vars.TRIDENT_FINANCIALS_CSV }}
+      TRIDENT_SOURCE_LICENSE_NOTE: ${{ vars.TRIDENT_SOURCE_LICENSE_NOTE }}
+      YFINANCE_DOWNLOAD_TIMEOUT_SEC: ${{ vars.YFINANCE_DOWNLOAD_TIMEOUT_SEC || '30' }}
+      YFINANCE_PROFILE_TIMEOUT_SEC: ${{ vars.YFINANCE_PROFILE_TIMEOUT_SEC || '30' }}
+      TRIDENT_STOCK_INSIGHTS_BATCH_SIZE: ${{ vars.TRIDENT_STOCK_INSIGHTS_BATCH_SIZE || '25' }}
+      TOP_N: ${{ github.event_name == 'workflow_dispatch' && inputs.top_n || '200' }}
+      START_DATE: ${{ github.event_name == 'workflow_dispatch' && inputs.start_date || '1999-01-01' }}
+      APPLY_SCHEMA: ${{ github.event_name == 'push' || inputs.apply_schema }}
+      RUN_FULL_AFTER_TOP: ${{ github.event_name == 'push' || inputs.run_full_after_top }}
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Verify required configuration
+        run: |
+          missing=()
+          for name in SUPABASE_URL SUPABASE_SERVICE_KEY TOP_N START_DATE; do
+            if [ -z "${!name}" ]; then
+              missing+=("$name")
+            fi
+          done
+          if [ "${#missing[@]}" -gt 0 ]; then
+            printf '::error::Missing required configuration: %s\n' "${missing[*]}"
+            exit 2
+          fi
+          if ! [[ "$TOP_N" =~ ^[0-9]+$ ]] || [ "$TOP_N" -lt 1 ]; then
+            echo "::error::top_n must be a positive integer."
+            exit 2
+          fi
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Install backend dependencies
+        working-directory: ./backend
+        run: |
+          python -m pip install --upgrade pip
+          pip install wheel
+          pip install scipy==1.15.1 statsmodels==0.14.4
+          pip install -r requirements.txt
+
+      - name: Resolve database URL
+        run: |
+          db_url="$SUPABASE_DB_URL"
+          if [ -z "$db_url" ]; then
+            db_url="$DATABASE_URL"
+          fi
+          if [ -z "$db_url" ]; then
+            db_url="$SUPABASE_DB_URL_VAR"
+          fi
+          if [ -z "$db_url" ]; then
+            db_url="$DATABASE_URL_VAR"
+          fi
+          if [ "$APPLY_SCHEMA" = "true" ] && [ -z "$db_url" ]; then
+            echo "::error::SUPABASE_DB_URL or DATABASE_URL is required to apply SQL migrations before Trident stock insights sync."
+            echo "::error::Without it, provider_symbol and trident_stock_insights remain unavailable, so the data sync cannot succeed."
+            exit 2
+          fi
+          if [ -n "$db_url" ]; then
+            echo "::add-mask::$db_url"
+          fi
+          echo "Database URL configuration resolved."
+
+      - name: Pre-migration schema check
+        continue-on-error: true
+        working-directory: ./backend
+        env:
+          SUPABASE_KEY: ${{ secrets.SUPABASE_SERVICE_KEY }}
+        run: python tools/schema_check.py --pretty --output schema-check-before-remediation.json
+
+      - name: Apply additive Supabase migrations
+        if: ${{ env.APPLY_SCHEMA == 'true' }}
+        env:
+          PGPASSWORD: ""
+        run: |
+          db_url="$SUPABASE_DB_URL"
+          if [ -z "$db_url" ]; then
+            db_url="$DATABASE_URL"
+          fi
+          if [ -z "$db_url" ]; then
+            db_url="$SUPABASE_DB_URL_VAR"
+          fi
+          if [ -z "$db_url" ]; then
+            db_url="$DATABASE_URL_VAR"
+          fi
+          echo "::add-mask::$db_url"
+          sudo apt-get update
+          sudo apt-get install -y postgresql-client
+          psql "$db_url" \
+            -v ON_ERROR_STOP=1 \
+            -f backend/sql/20260210_market_watch_phase2_technicals.sql \
+            -f backend/sql/20260210_portfolio_positions_phase3.sql \
+            -f backend/sql/20260213_isin_identifier_map.sql \
+            -f backend/sql/20260222_historical_prices.sql \
+            -f backend/sql/20260524_historical_price_local_columns.sql \
+            -f backend/sql/20260222_backtest_model.sql \
+            -f backend/sql/20260222_backtest_common_start.sql \
+            -f backend/sql/20260222_backtest_portfolio_key_relax.sql \
+            -f backend/sql/20260222_backtest_config_hash_idx.sql \
+            -f backend/sql/20260511_broker_transactions.sql \
+            -f backend/sql/20260525_broker_position_snapshots.sql \
+            -f backend/sql/20260524_trident_screener.sql \
+            -f backend/sql/20260525_portfolio_decision_items.sql \
+            -f backend/sql/20260526_supports_targets_advice.sql \
+            -f backend/sql/20260527_trident_stock_insights.sql \
+            -f backend/sql/20260528_equity_screener.sql
+
+      - name: Report skipped schema migration
+        if: ${{ env.APPLY_SCHEMA != 'true' }}
+        run: |
+          echo "::warning::SQL migration skipped: ${SCHEMA_SKIP_REASON:-apply_schema disabled}."
+
+      - name: Post-migration schema check
+        continue-on-error: ${{ env.APPLY_SCHEMA != 'true' }}
+        working-directory: ./backend
+        env:
+          SUPABASE_KEY: ${{ secrets.SUPABASE_SERVICE_KEY }}
+        run: python tools/schema_check.py --pretty --output schema-check-after-remediation.json
+
+      - name: Backfill top Trident prices
+        working-directory: ./backend
+        env:
+          SUPABASE_KEY: ${{ secrets.SUPABASE_SERVICE_KEY }}
+        run: |
+          python scripts/backfill_top_trident_prices.py \
+            --top-n "$TOP_N" \
+            --start-date "$START_DATE" \
+            --output top-trident-price-backfill.json
+
+      - name: Sync top Trident stock insights
+        working-directory: ./backend
+        env:
+          SUPABASE_KEY: ${{ secrets.SUPABASE_SERVICE_KEY }}
+          OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
+          OPENAI_MODEL: ${{ vars.OPENAI_MODEL || 'gpt-4.1-mini' }}
+        run: |
+          python scripts/sync_trident_stock_insights.py \
+            --top-n "$TOP_N" \
+            --batch-size "$TRIDENT_STOCK_INSIGHTS_BATCH_SIZE" \
+            --force \
+            --output top-trident-stock-insights.json
+
+      - name: Sync visible Trident stock insight checks
+        working-directory: ./backend
+        env:
+          SUPABASE_KEY: ${{ secrets.SUPABASE_SERVICE_KEY }}
+          OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
+          OPENAI_MODEL: ${{ vars.OPENAI_MODEL || 'gpt-4.1-mini' }}
+        run: |
+          for ticker in GOOGL MSFT INTU NVDA; do
+            python scripts/sync_trident_stock_insights.py \
+              --ticker "$ticker" \
+              --batch-size "$TRIDENT_STOCK_INSIGHTS_BATCH_SIZE" \
+              --force \
+              --output "trident-stock-insights-${ticker}.json"
+          done
+
+      - name: Sync open equity screener read model
+        working-directory: ./backend
+        env:
+          SUPABASE_KEY: ${{ secrets.SUPABASE_SERVICE_KEY }}
+        run: python scripts/sync_equity_screener.py --enforce-quality-gate --output equity-screener-sync.json
+
+      - name: Full Trident data sync
+        if: ${{ env.RUN_FULL_AFTER_TOP == 'true' }}
+        working-directory: ./backend
+        env:
+          SUPABASE_KEY: ${{ secrets.SUPABASE_SERVICE_KEY }}
+          REFRESH_TRIDENT_MODE: full
+          TRIDENT_PRICE_SYNC_START_DATE: ${{ env.START_DATE }}
+        run: |
+          python scripts/run_data_refresh.py \
+            --scope trident \
+            --trident-mode full \
+            --trident-price-start-date "$START_DATE" \
+            --output refresh-report-trident-full.json
+
+      - name: Trident freshness check
+        if: always()
+        working-directory: ./backend
+        env:
+          SUPABASE_KEY: ${{ secrets.SUPABASE_SERVICE_KEY }}
+        run: python scripts/check_refresh_freshness.py --scope trident --output freshness-trident-remediation.json
+
+      - name: Upload remediation reports
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: production-data-remediation-reports
+          path: |
+            backend/schema-check-before-remediation.json
+            backend/schema-check-after-remediation.json
+            backend/top-trident-price-backfill.json
+            backend/top-trident-stock-insights.json
+            backend/trident-stock-insights-*.json
+            backend/equity-screener-sync.json
+            backend/refresh-report-trident-full.json
+            backend/freshness-trident-remediation.json
+          if-no-files-found: warn

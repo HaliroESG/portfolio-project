@@ -2,169 +2,434 @@ name: Financial Data Sync
 
 on:
   schedule:
-    - cron: '0 8 * * *'  # Exécution quotidienne à 8h UTC (une fois par jour)
-  workflow_dispatch:  # Déclenchement manuel possible
-  # Note: Déclencheur push supprimé pour économiser les crédits API pendant le développement
+    - cron: '37 22 * * 1-5' # Core/history/backtest after US market close.
+    - cron: '17 7 * * 0' # Weekly full Trident refresh.
+  workflow_dispatch:
+    inputs:
+      scope:
+        description: "Refresh scope to run"
+        required: true
+        type: choice
+        default: all
+        options:
+          - all
+          - core
+          - history
+          - trident
+          - backtest
+          - validate
+      trident_mode:
+        description: "Trident mode for scope=all or scope=trident"
+        required: true
+        type: choice
+        default: daily
+        options:
+          - daily
+          - full
+      trident_price_start_date:
+        description: "Optional Trident price sync start date, for example 1999-01-01 for full backfill"
+        required: false
+        type: string
+
+permissions:
+  contents: read
+
+concurrency:
+  group: financial-data-sync-${{ github.ref }}
+  cancel-in-progress: false
 
 jobs:
-  build:
+  preflight:
     runs-on: ubuntu-latest
+    timeout-minutes: 15
+    outputs:
+      scope: ${{ steps.plan.outputs.scope }}
+      trident_mode: ${{ steps.plan.outputs.trident_mode }}
+      run_core: ${{ steps.plan.outputs.run_core }}
+      run_history: ${{ steps.plan.outputs.run_history }}
+      run_trident: ${{ steps.plan.outputs.run_trident }}
+      run_backtest: ${{ steps.plan.outputs.run_backtest }}
+      freshness_scope: ${{ steps.plan.outputs.freshness_scope }}
 
     steps:
       - name: Checkout code
-        uses: actions/checkout@v3
+        uses: actions/checkout@v4
+
+      - name: Resolve refresh plan
+        id: plan
+        run: |
+          scope="${{ github.event.inputs.scope }}"
+          trident_mode="${{ github.event.inputs.trident_mode }}"
+
+          if [ "${{ github.event_name }}" = "schedule" ]; then
+            if [ "${{ github.event.schedule }}" = "17 7 * * 0" ]; then
+              scope="trident"
+              trident_mode="full"
+            else
+              scope="all"
+              trident_mode="daily"
+            fi
+          fi
+
+          if [ -z "$scope" ]; then
+            scope="all"
+          fi
+          if [ -z "$trident_mode" ]; then
+            trident_mode="daily"
+          fi
+
+          run_core=false
+          run_history=false
+          run_trident=false
+          run_backtest=false
+          freshness_scope="$scope"
+
+          case "$scope" in
+            all)
+              run_core=true
+              run_history=true
+              run_trident=true
+              run_backtest=true
+              freshness_scope=all
+              ;;
+            core)
+              run_core=true
+              ;;
+            history)
+              run_history=true
+              ;;
+            trident)
+              run_trident=true
+              ;;
+            backtest)
+              run_backtest=true
+              ;;
+            validate)
+              freshness_scope=all
+              ;;
+            *)
+              echo "::error::Unsupported refresh scope: $scope"
+              exit 2
+              ;;
+          esac
+
+          {
+            echo "scope=$scope"
+            echo "trident_mode=$trident_mode"
+            echo "run_core=$run_core"
+            echo "run_history=$run_history"
+            echo "run_trident=$run_trident"
+            echo "run_backtest=$run_backtest"
+            echo "freshness_scope=$freshness_scope"
+          } >> "$GITHUB_OUTPUT"
+
+          echo "Resolved scope=$scope trident_mode=$trident_mode freshness_scope=$freshness_scope"
+
+      - name: Verify required secrets and variables
+        env:
+          SCOPE: ${{ steps.plan.outputs.scope }}
+          RUN_CORE: ${{ steps.plan.outputs.run_core }}
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_SERVICE_KEY: ${{ secrets.SUPABASE_SERVICE_KEY }}
+          SUPABASE_ANON_KEY: ${{ secrets.SUPABASE_ANON_KEY }}
+          GSPREAD_SERVICE_ACCOUNT: ${{ secrets.GSPREAD_SERVICE_ACCOUNT }}
+          GSHEET_NAME: ${{ secrets.GSHEET_NAME }}
+        run: |
+          missing=()
+          for name in SUPABASE_URL SUPABASE_SERVICE_KEY SUPABASE_ANON_KEY; do
+            if [ -z "${!name}" ]; then
+              missing+=("$name")
+            fi
+          done
+          if [ "$RUN_CORE" = "true" ]; then
+            for name in GSPREAD_SERVICE_ACCOUNT GSHEET_NAME; do
+              if [ -z "${!name}" ]; then
+                missing+=("$name")
+              fi
+            done
+          fi
+          if [ "${#missing[@]}" -gt 0 ]; then
+            printf '::error::Missing required configuration: %s\n' "${missing[*]}"
+            exit 2
+          fi
+          echo "Configuration present for scope=$SCOPE"
 
       - name: Set up Python
-        uses: actions/setup-python@v4
+        uses: actions/setup-python@v5
         with:
           python-version: '3.11'
 
-      # Monorepo: Toutes les opérations Python s'exécutent dans ./backend
-      - name: Install dependencies
+      - name: Install backend dependencies
         working-directory: ./backend
         run: |
           python -m pip install --upgrade pip
           pip install wheel
-          # On installe explicitement les libs scientifiques lourdes d'abord
           pip install scipy==1.15.1 statsmodels==0.14.4
-          # On installe le reste via le fichier
           pip install -r requirements.txt
 
-      - name: Sync Stock Data
-        working-directory: ./backend
-        env:
-          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
-          # ICI LA CORRECTION : On mappe le bon secret vers le bon nom de variable
-          SUPABASE_KEY: ${{ secrets.SUPABASE_SERVICE_KEY }}
-          GSPREAD_SERVICE_ACCOUNT: ${{ secrets.GSPREAD_SERVICE_ACCOUNT }}
-          GSHEET_NAME: ${{ secrets.GSHEET_NAME }}
-        run: python bridge.py
-
-      - name: Sync Macro Indicators
+      - name: Preflight schema check
         working-directory: ./backend
         env:
           SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
           SUPABASE_KEY: ${{ secrets.SUPABASE_SERVICE_KEY }}
-        run: python macro_sync.py
+        run: python tools/schema_check.py --pretty --output schema-check-preflight.json
 
-      - name: Sync News Feed
-        working-directory: ./backend
-        env:
-          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
-          SUPABASE_KEY: ${{ secrets.SUPABASE_SERVICE_KEY }}
-          MARKETAUX_API_KEY: ${{ secrets.MARKETAUX_API_KEY }}
-        run: python news_sync.py
-
-  schema-parity-check:
-    runs-on: ubuntu-latest
-    continue-on-error: true
-
-    steps:
-      - name: Checkout code
-        uses: actions/checkout@v3
-
-      - name: Set up Python
-        uses: actions/setup-python@v4
-        with:
-          python-version: '3.11'
-
-      - name: Validate Python runtime
-        run: python --version
-
-      - name: Run schema parity check (read-only)
-        if: ${{ secrets.SUPABASE_URL != '' && secrets.SUPABASE_SERVICE_KEY != '' }}
-        working-directory: ./backend
-        env:
-          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
-          SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_KEY }}
-        run: python tools/schema_check.py --pretty --output schema-check.json
-
-      - name: Skip schema parity check (missing secrets)
-        if: ${{ secrets.SUPABASE_URL == '' || secrets.SUPABASE_SERVICE_KEY == '' }}
-        run: |
-          echo "schema-parity-check skipped: missing SUPABASE_URL or SUPABASE_SERVICE_KEY"
-
-      - name: Upload schema report artifact
+      - name: Upload preflight report
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: schema-check-report
-          path: backend/schema-check.json
+          name: preflight-schema-report
+          path: backend/schema-check-preflight.json
           if-no-files-found: warn
 
-
-  anon-supabase-smoke:
+  refresh-core:
     runs-on: ubuntu-latest
-    continue-on-error: true
+    needs: preflight
+    if: ${{ needs.preflight.outputs.run_core == 'true' }}
+    timeout-minutes: 90
 
     steps:
       - name: Checkout code
-        uses: actions/checkout@v3
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Install backend dependencies
+        working-directory: ./backend
+        run: |
+          python -m pip install --upgrade pip
+          pip install wheel
+          pip install scipy==1.15.1 statsmodels==0.14.4
+          pip install -r requirements.txt
+
+      - name: Refresh core feeds
+        working-directory: ./backend
+        env:
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_KEY: ${{ secrets.SUPABASE_SERVICE_KEY }}
+          GSPREAD_SERVICE_ACCOUNT: ${{ secrets.GSPREAD_SERVICE_ACCOUNT }}
+          GSHEET_NAME: ${{ secrets.GSHEET_NAME }}
+          MARKETAUX_API_KEY: ${{ secrets.MARKETAUX_API_KEY }}
+        run: python scripts/run_data_refresh.py --scope core --output refresh-report-core.json
+
+      - name: Upload core refresh report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: refresh-report-core
+          path: backend/refresh-report-core.json
+          if-no-files-found: warn
+
+  refresh-market-history:
+    runs-on: ubuntu-latest
+    needs:
+      - preflight
+      - refresh-core
+    if: ${{ always() && needs.preflight.outputs.run_history == 'true' && needs.preflight.result == 'success' && (needs.refresh-core.result == 'success' || needs.refresh-core.result == 'skipped') }}
+    timeout-minutes: 120
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Install backend dependencies
+        working-directory: ./backend
+        run: |
+          python -m pip install --upgrade pip
+          pip install wheel
+          pip install scipy==1.15.1 statsmodels==0.14.4
+          pip install -r requirements.txt
+
+      - name: Refresh historical prices
+        working-directory: ./backend
+        env:
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_KEY: ${{ secrets.SUPABASE_SERVICE_KEY }}
+        run: python scripts/run_data_refresh.py --scope history --output refresh-report-history.json
+
+      - name: Upload history refresh report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: refresh-report-history
+          path: backend/refresh-report-history.json
+          if-no-files-found: warn
+
+  refresh-trident:
+    runs-on: ubuntu-latest
+    needs:
+      - preflight
+      - refresh-core
+    if: ${{ always() && needs.preflight.outputs.run_trident == 'true' && needs.preflight.result == 'success' && (needs.refresh-core.result == 'success' || needs.refresh-core.result == 'skipped') }}
+    timeout-minutes: 180
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Install backend dependencies
+        working-directory: ./backend
+        run: |
+          python -m pip install --upgrade pip
+          pip install wheel
+          pip install scipy==1.15.1 statsmodels==0.14.4
+          pip install -r requirements.txt
+
+      - name: Refresh Trident screener
+        working-directory: ./backend
+        env:
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_KEY: ${{ secrets.SUPABASE_SERVICE_KEY }}
+          REFRESH_TRIDENT_MODE: ${{ needs.preflight.outputs.trident_mode }}
+          TRIDENT_PROVIDER: ${{ vars.TRIDENT_PROVIDER || 'global_yahoo' }}
+          TRIDENT_INDEXES: ${{ vars.TRIDENT_INDEXES }}
+          TRIDENT_LIMIT: ${{ vars.TRIDENT_LIMIT }}
+          TRIDENT_PER_INDEX_LIMIT: ${{ vars.TRIDENT_PER_INDEX_LIMIT }}
+          TRIDENT_YAHOO_SLEEP_SEC: ${{ vars.TRIDENT_YAHOO_SLEEP_SEC || '0.15' }}
+          TRIDENT_SOURCE_LICENSE_NOTE: ${{ vars.TRIDENT_SOURCE_LICENSE_NOTE }}
+          TRIDENT_PRICE_SYNC_START_DATE: ${{ github.event.inputs.trident_price_start_date || vars.TRIDENT_PRICE_SYNC_START_DATE }}
+          TRIDENT_STOCK_INSIGHTS_TOP_N: ${{ vars.TRIDENT_STOCK_INSIGHTS_TOP_N || '200' }}
+          TRIDENT_STOCK_INSIGHTS_BATCH_SIZE: ${{ vars.TRIDENT_STOCK_INSIGHTS_BATCH_SIZE || '25' }}
+          YFINANCE_PROFILE_TIMEOUT_SEC: ${{ vars.YFINANCE_PROFILE_TIMEOUT_SEC || '30' }}
+          OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
+          OPENAI_MODEL: ${{ vars.OPENAI_MODEL || 'gpt-4.1-mini' }}
+        run: |
+          python scripts/run_data_refresh.py \
+            --scope trident \
+            --trident-mode "$REFRESH_TRIDENT_MODE" \
+            --output refresh-report-trident.json
+
+      - name: Upload Trident refresh report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: refresh-report-trident
+          path: backend/refresh-report-trident.json
+          if-no-files-found: warn
+
+  refresh-backtest:
+    runs-on: ubuntu-latest
+    needs:
+      - preflight
+      - refresh-core
+      - refresh-market-history
+    if: ${{ always() && needs.preflight.outputs.run_backtest == 'true' && needs.preflight.result == 'success' && (needs.refresh-core.result == 'success' || needs.refresh-core.result == 'skipped') && (needs.refresh-market-history.result == 'success' || needs.refresh-market-history.result == 'skipped') }}
+    timeout-minutes: 60
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Install backend dependencies
+        working-directory: ./backend
+        run: |
+          python -m pip install --upgrade pip
+          pip install wheel
+          pip install scipy==1.15.1 statsmodels==0.14.4
+          pip install -r requirements.txt
+
+      - name: Refresh production reference backtest
+        working-directory: ./backend
+        env:
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_KEY: ${{ secrets.SUPABASE_SERVICE_KEY }}
+        run: python scripts/run_data_refresh.py --scope backtest --output refresh-report-backtest.json
+
+      - name: Upload backtest refresh report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: refresh-report-backtest
+          path: backend/refresh-report-backtest.json
+          if-no-files-found: warn
+
+  post-refresh-gate:
+    runs-on: ubuntu-latest
+    needs:
+      - preflight
+      - refresh-core
+      - refresh-market-history
+      - refresh-trident
+      - refresh-backtest
+    if: ${{ always() && needs.preflight.result == 'success' && !contains(needs.*.result, 'failure') && !contains(needs.*.result, 'cancelled') }}
+    timeout-minutes: 45
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Install backend dependencies
+        working-directory: ./backend
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+
+      - name: Post-refresh schema check
+        working-directory: ./backend
+        env:
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_KEY: ${{ secrets.SUPABASE_SERVICE_KEY }}
+        run: python tools/schema_check.py --pretty --output schema-check-post-refresh.json
+
+      - name: Post-refresh freshness check
+        working-directory: ./backend
+        env:
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_KEY: ${{ secrets.SUPABASE_SERVICE_KEY }}
+        run: |
+          python scripts/check_refresh_freshness.py \
+            --scope "${{ needs.preflight.outputs.freshness_scope }}" \
+            --output refresh-freshness-report.json
 
       - name: Setup Node
         uses: actions/setup-node@v4
         with:
           node-version: '22'
+          cache: 'npm'
+          cache-dependency-path: frontend/package-lock.json
 
       - name: Install frontend deps
         working-directory: ./frontend
         run: npm ci
 
-      - name: Run ANON Supabase smoke (when secrets present)
-        if: ${{ secrets.SUPABASE_URL != '' && secrets.SUPABASE_ANON_KEY != '' }}
+      - name: Run ANON Supabase smoke
         working-directory: ./frontend
         env:
           NEXT_PUBLIC_SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
           NEXT_PUBLIC_SUPABASE_ANON_KEY: ${{ secrets.SUPABASE_ANON_KEY }}
+          REQUIRE_TRIDENT_ROWS: 'true'
         run: npm run smoke:supabase -- --output=smoke-supabase-report.json
 
-      - name: Skip ANON smoke (missing secrets)
-        if: ${{ secrets.SUPABASE_URL == '' || secrets.SUPABASE_ANON_KEY == '' }}
-        working-directory: ./frontend
-        run: node scripts/smoke-supabase.mjs --ci-skip-missing-env --output=smoke-supabase-report.json
-
-      - name: Upload ANON smoke report artifact
+      - name: Upload post-refresh reports
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: anon-supabase-smoke-report
-          path: frontend/smoke-supabase-report.json
-          if-no-files-found: warn
-
-
-  # Week 2 strategy:
-  # - Enable repository variable SCHEMA_CHECK_ENFORCE=true
-  # - This job becomes blocking on main (continue-on-error is NOT set)
-  schema-parity-check-enforced:
-    if: ${{ github.ref == 'refs/heads/main' && vars.SCHEMA_CHECK_ENFORCE == 'true' }}
-    runs-on: ubuntu-latest
-
-    steps:
-      - name: Checkout code
-        uses: actions/checkout@v3
-
-      - name: Set up Python
-        uses: actions/setup-python@v4
-        with:
-          python-version: '3.11'
-
-      - name: Run schema parity check (blocking, secrets present)
-        if: ${{ secrets.SUPABASE_URL != '' && secrets.SUPABASE_SERVICE_KEY != '' }}
-        working-directory: ./backend
-        env:
-          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
-          SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_KEY }}
-        run: python tools/schema_check.py --pretty --output schema-check.json
-
-      - name: Skip enforced schema check (missing secrets)
-        if: ${{ secrets.SUPABASE_URL == '' || secrets.SUPABASE_SERVICE_KEY == '' }}
-        run: |
-          echo "schema-parity-check-enforced skipped: missing SUPABASE_URL or SUPABASE_SERVICE_KEY"
-
-      - name: Upload schema report artifact
-        if: always()
-        uses: actions/upload-artifact@v4
-        with:
-          name: schema-check-report-enforced
-          path: backend/schema-check.json
+          name: post-refresh-reports
+          path: |
+            backend/schema-check-post-refresh.json
+            backend/refresh-freshness-report.json
+            frontend/smoke-supabase-report.json
           if-no-files-found: warn

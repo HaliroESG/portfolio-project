@@ -547,20 +547,6 @@ def get_latest_prices(
     return price_map
 
 
-def build_preset_specs() -> list[dict]:
-    specs = []
-    for key, payload in PRESET_PORTFOLIOS.items():
-        specs.append({
-            "portfolio_key": key,
-            "portfolio_id": None,
-            "preset_key": key,
-            "label": payload["label"],
-            "role": payload["role"],
-            "weights": payload["weights"],
-        })
-    return specs
-
-
 def upsert_rows(supabase, table: str, rows: list[dict], chunk_size: int = 1000) -> int:
     total = 0
     for i in range(0, len(rows), chunk_size):
