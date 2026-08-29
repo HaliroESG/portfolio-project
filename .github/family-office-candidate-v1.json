@@ -1,0 +1,27 @@
+{
+  "schema_version": "astrocyte_family_office_candidate_v1",
+  "candidate_sha": "c01eb33878e4030975144c5b0ae98e9bdf31ea04",
+  "candidate_branch": "codex/portfolio-astrocyte-pga-004-correction-v1",
+  "files": {
+    "backend/sql/20260829_family_office_owner_isolation.sql": {
+      "git_blob_sha1": "9b2cc418bc55705bdab3211bd52f6cb7999bae7f",
+      "sha256": "5ca9423c2a4eb367d764b3c8830fb6ba2d38bb91f7b70f545576e618928932cf"
+    },
+    "backend/sql/20260829_family_office_owner_isolation_preflight.sql": {
+      "git_blob_sha1": "128c9a16484535df3fdcf57705969677edbc2775",
+      "sha256": "6c62e5d3a97c7eef33291dd83109e8b13b6c17852e3322d61696a445b4a452db"
+    },
+    "backend/sql/20260829_family_office_owner_isolation_rollback.sql": {
+      "git_blob_sha1": "0ba4fb84129e72d10d3d09422c61cabf6266cbb4",
+      "sha256": "faeb0504c75a806bfe3c4e6af3a93f077512cc32fc84c3ac7f83be2911a3d284"
+    },
+    "backend/tests/sql/pga004_legacy_fixture.sql": {
+      "git_blob_sha1": "23a0eaebdc365c2af88c1a66da3d4c2cfc3f30df",
+      "sha256": "32e523e0449086ff8a4a155f4b68b1aa47f29198badde86ca89f6a1323979e7c"
+    },
+    "backend/tests/sql/pga004_owner_isolation_test.sql": {
+      "git_blob_sha1": "8be90a65289a8ca4af1c27886204e7922de73a9c",
+      "sha256": "58575f4c77badc168c8d9437d407e936d2bea310dee36fc1f11582638860eb48"
+    }
+  }
+}

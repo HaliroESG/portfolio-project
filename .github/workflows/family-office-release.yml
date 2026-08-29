@@ -1,0 +1,224 @@
+name: Family Office Release Gate
+
+on:
+  pull_request:
+    paths:
+      - ".github/family-office-candidate-v1.json"
+      - ".github/scripts/family_office_release_gate.py"
+      - ".github/scripts/verify_family_office_local_receipt.py"
+      - ".github/scripts/check_mutation_contract.py"
+      - ".github/tests/**"
+      - ".github/workflows/family-office-release.yml"
+      - "backend/sql/20260713_02_family_office_core.sql"
+      - "backend/sql/20260713_03_family_office_security.sql"
+      - "backend/sql/20260713_04_family_office_truthful_overview.sql"
+      - "backend/sql/20260713_05_family_office_policy_cleanup_indexes.sql"
+      - "docs/schemas/astrocyte_family_office_local_restore_receipt_v1.schema.json"
+  push:
+    branches:
+      - main
+    paths:
+      - ".github/family-office-candidate-v1.json"
+      - ".github/scripts/family_office_release_gate.py"
+      - ".github/scripts/verify_family_office_local_receipt.py"
+      - ".github/scripts/check_mutation_contract.py"
+      - ".github/tests/**"
+      - ".github/workflows/family-office-release.yml"
+      - "backend/sql/20260713_02_family_office_core.sql"
+      - "backend/sql/20260713_03_family_office_security.sql"
+      - "backend/sql/20260713_04_family_office_truthful_overview.sql"
+      - "backend/sql/20260713_05_family_office_policy_cleanup_indexes.sql"
+      - "docs/schemas/astrocyte_family_office_local_restore_receipt_v1.schema.json"
+  workflow_dispatch:
+    inputs:
+      mutate_production:
+        description: "Request the separately gated Production stage (disabled by default and currently HTTP 503)"
+        required: true
+        type: boolean
+        default: false
+      candidate_sha:
+        description: "Exact independently reviewed PR12 candidate SHA"
+        required: true
+        type: string
+        default: "c01eb33878e4030975144c5b0ae98e9bdf31ea04"
+      migration_sha256:
+        description: "Exact SHA-256 of the reviewed Family Office migration"
+        required: true
+        type: string
+        default: "5ca9423c2a4eb367d764b3c8830fb6ba2d38bb91f7b70f545576e618928932cf"
+      authorization_manifest:
+        description: "Canonical authorization with a recent ISOLATED_PROJECT receipt"
+        required: false
+        type: string
+      authorization_manifest_sha256:
+        description: "SHA-256 of the canonical authorization manifest"
+        required: false
+        type: string
+      authorization_signature:
+        description: "HMAC-SHA256 from the existing independent issuer"
+        required: false
+        type: string
+      authorization_nonce:
+        description: "One-shot lowercase hexadecimal authorization nonce"
+        required: false
+        type: string
+      authorization_receipt_id:
+        description: "One-shot authorization receipt identifier"
+        required: false
+        type: string
+
+permissions:
+  contents: read
+  actions: read
+
+concurrency:
+  group: ${{ github.event_name == 'workflow_dispatch' && inputs.mutate_production && 'portfolio-production-mutation' || format('family-office-release-validation-{0}', github.run_id) }}
+  cancel-in-progress: false
+
+jobs:
+  validate:
+    name: Validate pinned contracts
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Checkout complete repository history
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          fetch-depth: 0
+      - name: Set up Python
+        uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065 # v5
+        with:
+          python-version: "3.11"
+      - name: Validate Family Office release contracts without secrets
+        run: |
+          python3.11 -m py_compile \
+            .github/scripts/family_office_release_gate.py \
+            .github/scripts/verify_family_office_local_receipt.py \
+            .github/scripts/check_mutation_contract.py
+          python3.11 .github/tests/test_family_office_release_gate.py
+          python3.11 .github/scripts/check_workflow_parity.py
+
+  prepare:
+    name: Prepare local isolated restore evidence
+    needs: validate
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - name: Checkout complete repository history
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          fetch-depth: 0
+      - name: Install PostgreSQL 15+ tools
+        run: |
+          set -euo pipefail
+          sudo apt-get update
+          sudo apt-get install -y postgresql postgresql-client
+      - name: Run provider-free logical backup and isolated restore drill
+        shell: bash
+        run: |
+          set -euo pipefail
+          pg_bin=$(pg_config --bindir)
+          FAMILY_OFFICE_PG_BIN="$pg_bin" \
+            python3 .github/scripts/family_office_release_gate.py \
+              --run \
+              --receipt-file "$RUNNER_TEMP/family-office-local-restore-receipt.json"
+          python3 .github/scripts/verify_family_office_local_receipt.py \
+            --receipt-file "$RUNNER_TEMP/family-office-local-restore-receipt.json" \
+            --expected-candidate-sha c01eb33878e4030975144c5b0ae98e9bdf31ea04
+      - name: Upload sanitized non-promotable local receipt
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: family-office-local-restore-${{ github.run_id }}-${{ github.run_attempt }}
+          path: ${{ runner.temp }}/family-office-local-restore-receipt.json
+          if-no-files-found: error
+          retention-days: 7
+
+  mutate-production:
+    name: Mutate Production (fail-closed HTTP 503)
+    needs:
+      - validate
+      - prepare
+    if: ${{ github.event_name == 'workflow_dispatch' && inputs.mutate_production }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    environment: Production
+    env:
+      AUTHORIZATION_MANIFEST: ${{ inputs.authorization_manifest }}
+      AUTHORIZATION_MANIFEST_SHA256: ${{ inputs.authorization_manifest_sha256 }}
+      MUTATE_PRODUCTION: ${{ inputs.mutate_production }}
+      CANDIDATE_SHA: ${{ inputs.candidate_sha }}
+      MIGRATION_SHA256: ${{ inputs.migration_sha256 }}
+      MUTATION_GATE: ${{ vars.ASTROCYTE_MUTATION_GATE }}
+      FAMILY_OFFICE_PRODUCTION_GATE: ${{ vars.ASTROCYTE_FAMILY_OFFICE_PRODUCTION_GATE }}
+    steps:
+      - name: Checkout trusted gate
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+      - name: Record trusted verifier digest before authorization
+        id: trusted-verifier
+        shell: bash
+        run: |
+          set -euo pipefail
+          digest_line=$(/usr/bin/sha256sum .github/scripts/check_mutation_contract.py)
+          digest="${digest_line%% *}"
+          [[ "$digest" =~ ^[0-9a-f]{64}$ ]]
+          echo "sha256=$digest" >> "$GITHUB_OUTPUT"
+      - name: Claim one-shot mutation authorization
+        env:
+          AUTHORIZATION_SIGNATURE: ${{ inputs.authorization_signature }}
+          AUTHORIZATION_HMAC_KEY: ${{ secrets.ASTROCYTE_AUTHORIZATION_HMAC_KEY }}
+          AUTHORIZATION_NONCE: ${{ inputs.authorization_nonce }}
+          AUTHORIZATION_RECEIPT_ID: ${{ inputs.authorization_receipt_id }}
+          GITHUB_TOKEN: ${{ github.token }}
+        run: |
+          /usr/bin/python3 -I -S .github/scripts/check_mutation_contract.py \
+            --workflow family-office-release \
+            --replay-phase claim \
+            --marker-file "$RUNNER_TEMP/mutation-replay-marker.json" \
+            --input "candidate_sha=$CANDIDATE_SHA" \
+            --input "migration_sha256=$MIGRATION_SHA256" \
+            --input "mutate_production=$MUTATE_PRODUCTION"
+      - name: Persist one-shot anti-replay marker
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: mutation-replay-${{ inputs.authorization_receipt_id }}-${{ inputs.authorization_nonce }}
+          path: ${{ runner.temp }}/mutation-replay-marker.json
+          if-no-files-found: error
+          retention-days: 30
+      - name: Apply Production and Family Office kill switches
+        run: |
+          set -euo pipefail
+          if [ "$MUTATION_GATE" != "APPROVED" ]; then
+            echo "::error::ASTROCYTE_MUTATION_GATE is closed."
+            exit 2
+          fi
+          if [ "$FAMILY_OFFICE_PRODUCTION_GATE" != "APPROVED" ]; then
+            echo "::error::ASTROCYTE_FAMILY_OFFICE_PRODUCTION_GATE is closed."
+            exit 2
+          fi
+      - name: Verify trusted verifier integrity before final authority
+        env:
+          EXPECTED_VERIFIER_SHA256: ${{ steps.trusted-verifier.outputs.sha256 }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          digest_line=$(/usr/bin/sha256sum .github/scripts/check_mutation_contract.py)
+          actual="${digest_line%% *}"
+          test "$actual" = "$EXPECTED_VERIFIER_SHA256"
+      - name: Enforce one-shot authorization immediately before provider access
+        env:
+          AUTHORIZATION_SIGNATURE: ${{ inputs.authorization_signature }}
+          AUTHORIZATION_HMAC_KEY: ${{ secrets.ASTROCYTE_AUTHORIZATION_HMAC_KEY }}
+          AUTHORIZATION_NONCE: ${{ inputs.authorization_nonce }}
+          AUTHORIZATION_RECEIPT_ID: ${{ inputs.authorization_receipt_id }}
+          GITHUB_TOKEN: ${{ github.token }}
+        run: |
+          /usr/bin/python3 -I -S .github/scripts/check_mutation_contract.py \
+            --workflow family-office-release \
+            --replay-phase enforce \
+            --input "candidate_sha=$CANDIDATE_SHA" \
+            --input "migration_sha256=$MIGRATION_SHA256" \
+            --input "mutate_production=$MUTATE_PRODUCTION"
+      - name: Refuse provider mutation while Production contract is HTTP 503
+        run: |
+          echo "::error::FAMILY_OFFICE_PRODUCTION_HTTP_503: no provider mutation command is enabled."
+          exit 78

@@ -556,6 +556,18 @@ Acceptance still required before financial reliance:
 - Resolve the Supabase `402 exceed_db_size_quota` Data API restriction even though measured Postgres size is below the Free-plan database limit.
 - Run authenticated desktop/mobile browser smoke after the owner session exists.
 
+Release-gate preparation (separate candidate, not Production evidence):
+- The Family Office owner-isolation release gate pins PR12 candidate
+  `c01eb33878e4030975144c5b0ae98e9bdf31ea04` and its migration/test blobs.
+- Its PostgreSQL 15+ drill proves only a logical backup and restore into local
+  isolated databases. The receipt is explicitly `LOCAL_ISOLATED_DATABASE` and
+  cannot satisfy the provider-native `ISOLATED_PROJECT` Production gate.
+- The dedicated GitHub workflow separates validate, prepare and
+  mutate-production. Mutation defaults off and remains an explicit HTTP 503
+  refusal until the independent issuer, HMAC key, Production environment gates
+  and recent provider-native restore receipt are separately configured and
+  authorized.
+
 Deferred scope:
 - Tax lots and realized-tax reporting by PEA/PER/CTO/AV.
 - Automated broker APIs and broker order transmission.
