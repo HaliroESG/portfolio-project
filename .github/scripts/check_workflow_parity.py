@@ -85,6 +85,14 @@ PINNED_ACTIONS = {
     "actions/download-artifact": "d3f86a106a0bac45b974a628896c90dbdf5c8093",
 }
 BOOTSTRAP_SHA256 = "77c9966f7a0d40efa2abd56cac0801a11437a34efec35145a69e1bb35729ae0d"
+ACTIONLINT_VERSION = "1.7.7"
+ACTIONLINT_ARCHIVE_SHA256 = (
+    "023070a287cd8cccd71515fedc843f1985bf96c436b7effaecce67290e7e0757"
+)
+ACTIONLINT_ARCHIVE_URL = (
+    "https://github.com/rhysd/actionlint/releases/download/v1.7.7/"
+    "actionlint_1.7.7_linux_amd64.tar.gz"
+)
 
 
 def section(text: str, start: str, end: str) -> str:
@@ -185,6 +193,90 @@ def _parse_workflow_document(name: str, text: str) -> dict[str, object]:
     if not isinstance(parsed, dict):
         raise AssertionError(f"{name}: workflow document must be a mapping")
     return parsed
+
+
+def _semantic_strings(value: object):
+    if isinstance(value, str):
+        yield value
+    elif isinstance(value, dict):
+        for nested in value.values():
+            yield from _semantic_strings(nested)
+    elif isinstance(value, list):
+        for nested in value:
+            yield from _semantic_strings(nested)
+
+
+def _references_expression_context(value: object, context: str) -> bool:
+    marker = "${{" + context + "."
+    return any(marker in "".join(text.split()) for text in _semantic_strings(value))
+
+
+def _check_job_environment_contexts(name: str, text: str) -> None:
+    document = _parse_workflow_document(name, text)
+    jobs = document.get("jobs")
+    if not isinstance(jobs, dict):
+        raise AssertionError(f"{name}: jobs must be a mapping")
+    for job_name, job in jobs.items():
+        if not isinstance(job, dict):
+            raise AssertionError(f"{name}: job {job_name} must be a mapping")
+        if _references_expression_context(job.get("env", {}), "runner"):
+            raise AssertionError(
+                f"{name} {job_name}: runner context is unavailable in job env"
+            )
+
+
+def _check_required_actionlint(text: str) -> None:
+    document = _parse_workflow_document("workflow-parity.yml", text)
+    jobs = document.get("jobs")
+    if not isinstance(jobs, dict):
+        raise AssertionError("workflow-parity.yml: jobs must be a mapping")
+    job = jobs.get("workflow-contract")
+    if not isinstance(job, dict):
+        raise AssertionError("workflow-parity.yml: required job is missing")
+    steps = job.get("steps")
+    if not isinstance(steps, list) or not all(isinstance(step, dict) for step in steps):
+        raise AssertionError("workflow-parity.yml: required job steps must be mappings")
+    names = [step.get("name") for step in steps]
+    install_name = "Install checksum-pinned Actionlint"
+    validate_name = "Validate every workflow with Actionlint"
+    if install_name not in names or validate_name not in names:
+        raise AssertionError("workflow-parity.yml: required Actionlint steps are missing")
+    install_index = names.index(install_name)
+    validate_index = names.index(validate_name)
+    if install_index >= validate_index:
+        raise AssertionError("workflow-parity.yml: Actionlint validation order is unsafe")
+
+    install = steps[install_index]
+    environment = install.get("env")
+    if not isinstance(environment, dict) or environment.get(
+        "ACTIONLINT_VERSION"
+    ) != ACTIONLINT_VERSION or environment.get(
+        "ACTIONLINT_ARCHIVE_SHA256"
+    ) != ACTIONLINT_ARCHIVE_SHA256:
+        raise AssertionError(
+            "workflow-parity.yml: Actionlint version and archive checksum must be pinned"
+        )
+    install_run = install.get("run")
+    if not isinstance(install_run, str) or not all(
+        fragment in install_run
+        for fragment in (
+            ACTIONLINT_ARCHIVE_URL,
+            "sha256sum --check --strict",
+            'reported_version=$("$install_dir/actionlint" -version)',
+            'test "${reported_version%%$\'\\n\'*}" = "$ACTIONLINT_VERSION"',
+        )
+    ):
+        raise AssertionError(
+            "workflow-parity.yml: Actionlint acquisition must verify checksum and version"
+        )
+    validate_run = steps[validate_index].get("run")
+    if not isinstance(validate_run, str) or validate_run.strip() != (
+        "actionlint -shellcheck= -pyflakes= .github/workflows/*.yml"
+    ):
+        raise AssertionError(
+            "workflow-parity.yml: required Actionlint scan must cover every workflow "
+            "with optional ShellCheck and Pyflakes integrations disabled"
+        )
 
 
 def _check_trust_boundaries(name: str, text: str) -> None:
@@ -330,6 +422,7 @@ def validate_workflow_contract(contents: dict[str, str]) -> None:
         raise AssertionError("workflow inventory mismatch")
     for name, text in contents.items():
         require(text, "permissions:\n  contents: read", name)
+        _check_job_environment_contexts(name, text)
 
     bootstrap = contents["bootstrap-private-owner.yml"]
     digest = hashlib.sha256(bootstrap.encode("utf-8")).hexdigest()
@@ -353,6 +446,7 @@ def validate_workflow_contract(contents: dict[str, str]) -> None:
         "python3 -m unittest discover -s .github/tests -p 'test_*.py'",
         "workflow-parity.yml",
     )
+    _check_required_actionlint(contents["workflow-parity.yml"])
     _check_action_pins("workflow-parity.yml", contents["workflow-parity.yml"])
 
     schedule_on = section(contents["schedule.yml"], "on:\n", "\npermissions:")
