@@ -22,8 +22,12 @@ on:
         required: true
         type: boolean
         default: true
-      authorization_ref:
-        description: "Separate approved change or runbook reference for writes"
+      authorization_manifest:
+        description: "Canonical JSON authorization required only when dry_run=false"
+        required: false
+        type: string
+      authorization_manifest_sha256:
+        description: "SHA-256 of the canonical authorization manifest"
         required: false
         type: string
 
@@ -31,7 +35,7 @@ permissions:
   contents: read
 
 concurrency:
-  group: trident-price-backfill-${{ github.ref }}
+  group: portfolio-production-mutation
   cancel-in-progress: false
 
 jobs:
@@ -41,7 +45,8 @@ jobs:
     environment: Production
 
     env:
-      AUTHORIZATION_REF: ${{ inputs.authorization_ref }}
+      AUTHORIZATION_MANIFEST: ${{ inputs.authorization_manifest }}
+      AUTHORIZATION_MANIFEST_SHA256: ${{ inputs.authorization_manifest_sha256 }}
       MUTATION_GATE: ${{ vars.ASTROCYTE_MUTATION_GATE }}
       SOURCE_RIGHTS_GATE: ${{ vars.ASTROCYTE_SOURCE_RIGHTS_GATE }}
       SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
@@ -53,16 +58,26 @@ jobs:
 
     steps:
       - name: Checkout code
-        uses: actions/checkout@v4
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
 
-      - name: Verify required configuration
+      - name: Verify immutable mutation authorization
+        if: ${{ inputs.dry_run == false }}
+        run: |
+          python3 .github/scripts/check_mutation_contract.py \
+            --workflow trident-price-backfill \
+            --input "top_n=$TOP_N" \
+            --input "start_date=$START_DATE" \
+            --input "end_date=$END_DATE" \
+            --input "dry_run=$DRY_RUN"
+
+      - name: Apply provider kill switches and verify required configuration
         run: |
           if [ "$SOURCE_RIGHTS_GATE" != "APPROVED" ]; then
             echo "::error::Price backfill is disabled until ASTROCYTE_SOURCE_RIGHTS_GATE is APPROVED."
             exit 2
           fi
-          if [ "$DRY_RUN" != "true" ] && { [ "$MUTATION_GATE" != "APPROVED" ] || [ -z "$AUTHORIZATION_REF" ]; }; then
-            echo "::error::Writes require ASTROCYTE_MUTATION_GATE=APPROVED and authorization_ref."
+          if [ "$DRY_RUN" != "true" ] && [ "$MUTATION_GATE" != "APPROVED" ]; then
+            echo "::error::ASTROCYTE_MUTATION_GATE kill switch is closed."
             exit 2
           fi
           missing=()
@@ -81,7 +96,7 @@ jobs:
           fi
 
       - name: Set up Python
-        uses: actions/setup-python@v5
+        uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065 # v5
         with:
           python-version: "3.11"
 
@@ -127,7 +142,7 @@ jobs:
 
       - name: Upload backfill reports
         if: always()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
         with:
           name: trident-price-backfill-reports
           path: |

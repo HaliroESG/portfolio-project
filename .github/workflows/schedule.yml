@@ -1,6 +1,8 @@
 name: Financial Data Sync
 
 on:
+  schedule:
+    - cron: "17 5 * * *"
   workflow_dispatch:
     inputs:
       scope:
@@ -27,8 +29,12 @@ on:
         description: "Optional Trident price sync start date, for example 1999-01-01 for full backfill"
         required: false
         type: string
-      authorization_ref:
-        description: "Separate approved change or runbook reference for mutating scopes"
+      authorization_manifest:
+        description: "Canonical JSON authorization required for mutating scopes"
+        required: false
+        type: string
+      authorization_manifest_sha256:
+        description: "SHA-256 of the canonical authorization manifest"
         required: false
         type: string
 
@@ -36,15 +42,39 @@ permissions:
   contents: read
 
 concurrency:
-  group: financial-data-sync-${{ github.ref }}
+  group: ${{ github.event_name == 'workflow_dispatch' && inputs.scope != 'validate' && 'portfolio-production-mutation' || format('financial-data-sync-validation-{0}', github.run_id) }}
   cancel-in-progress: false
 
 jobs:
+  scheduler-heartbeat:
+    if: ${{ github.event_name == 'schedule' || (github.event_name == 'workflow_dispatch' && inputs.scope == 'validate') }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+
+    steps:
+      - name: Checkout exact scheduler SHA
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+
+      - name: Verify scheduler identity
+        run: |
+          test "$GITHUB_REF" = "refs/heads/main"
+          test "$(git rev-parse HEAD)" = "$GITHUB_SHA"
+
+      - name: Validate fail-closed workflow contract
+        run: |
+          python3 .github/scripts/check_workflow_parity.py
+          python3 -m unittest discover -s .github/tests -p 'test_*.py'
+
   preflight:
+    if: ${{ github.event_name == 'workflow_dispatch' && inputs.scope != 'validate' }}
     runs-on: ubuntu-latest
     timeout-minutes: 15
     env:
-      AUTHORIZATION_REF: ${{ inputs.authorization_ref }}
+      AUTHORIZATION_MANIFEST: ${{ inputs.authorization_manifest }}
+      AUTHORIZATION_MANIFEST_SHA256: ${{ inputs.authorization_manifest_sha256 }}
+      SCOPE_INPUT: ${{ inputs.scope }}
+      TRIDENT_MODE_INPUT: ${{ inputs.trident_mode }}
+      TRIDENT_PRICE_START_DATE_INPUT: ${{ inputs.trident_price_start_date }}
       MUTATION_GATE: ${{ vars.ASTROCYTE_MUTATION_GATE }}
       SOURCE_RIGHTS_GATE: ${{ vars.ASTROCYTE_SOURCE_RIGHTS_GATE }}
     outputs:
@@ -58,7 +88,22 @@ jobs:
 
     steps:
       - name: Checkout code
-        uses: actions/checkout@v4
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+
+      - name: Verify immutable mutation authorization
+        run: |
+          python3 .github/scripts/check_mutation_contract.py \
+            --workflow financial-data-sync \
+            --input "scope=$SCOPE_INPUT" \
+            --input "trident_mode=$TRIDENT_MODE_INPUT" \
+            --input "trident_price_start_date=$TRIDENT_PRICE_START_DATE_INPUT"
+
+      - name: Apply provider kill switches
+        run: |
+          if [ "$SOURCE_RIGHTS_GATE" != "APPROVED" ] || [ "$MUTATION_GATE" != "APPROVED" ]; then
+            echo "::error::Provider source-rights or mutation kill switch is closed."
+            exit 2
+          fi
 
       - name: Resolve refresh plan
         id: plan
@@ -108,17 +153,6 @@ jobs:
               ;;
           esac
 
-          if [ "$scope" != "validate" ]; then
-            if [ "$SOURCE_RIGHTS_GATE" != "APPROVED" ] || [ "$MUTATION_GATE" != "APPROVED" ]; then
-              echo "::error::Mutating refresh scopes require approved source-rights and mutation gates."
-              exit 2
-            fi
-            if [ -z "$AUTHORIZATION_REF" ]; then
-              echo "::error::authorization_ref is required for mutating refresh scopes."
-              exit 2
-            fi
-          fi
-
           {
             echo "scope=$scope"
             echo "trident_mode=$trident_mode"
@@ -161,7 +195,7 @@ jobs:
           echo "Configuration present for scope=$SCOPE"
 
       - name: Set up Python
-        uses: actions/setup-python@v5
+        uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065 # v5
         with:
           python-version: '3.11'
 
@@ -182,7 +216,7 @@ jobs:
 
       - name: Upload preflight report
         if: always()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
         with:
           name: preflight-schema-report
           path: backend/schema-check-preflight.json
@@ -197,10 +231,10 @@ jobs:
 
     steps:
       - name: Checkout code
-        uses: actions/checkout@v4
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
 
       - name: Set up Python
-        uses: actions/setup-python@v5
+        uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065 # v5
         with:
           python-version: '3.11'
 
@@ -224,7 +258,7 @@ jobs:
 
       - name: Upload core refresh report
         if: always()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
         with:
           name: refresh-report-core
           path: backend/refresh-report-core.json
@@ -241,10 +275,10 @@ jobs:
 
     steps:
       - name: Checkout code
-        uses: actions/checkout@v4
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
 
       - name: Set up Python
-        uses: actions/setup-python@v5
+        uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065 # v5
         with:
           python-version: '3.11'
 
@@ -265,7 +299,7 @@ jobs:
 
       - name: Upload history refresh report
         if: always()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
         with:
           name: refresh-report-history
           path: backend/refresh-report-history.json
@@ -282,10 +316,10 @@ jobs:
 
     steps:
       - name: Checkout code
-        uses: actions/checkout@v4
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
 
       - name: Set up Python
-        uses: actions/setup-python@v5
+        uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065 # v5
         with:
           python-version: '3.11'
 
@@ -323,7 +357,7 @@ jobs:
 
       - name: Upload Trident refresh report
         if: always()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
         with:
           name: refresh-report-trident
           path: backend/refresh-report-trident.json
@@ -341,10 +375,10 @@ jobs:
 
     steps:
       - name: Checkout code
-        uses: actions/checkout@v4
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
 
       - name: Set up Python
-        uses: actions/setup-python@v5
+        uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065 # v5
         with:
           python-version: '3.11'
 
@@ -365,7 +399,7 @@ jobs:
 
       - name: Upload backtest refresh report
         if: always()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
         with:
           name: refresh-report-backtest
           path: backend/refresh-report-backtest.json
@@ -384,10 +418,10 @@ jobs:
 
     steps:
       - name: Checkout code
-        uses: actions/checkout@v4
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
 
       - name: Set up Python
-        uses: actions/setup-python@v5
+        uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065 # v5
         with:
           python-version: '3.11'
 
@@ -415,7 +449,7 @@ jobs:
             --output refresh-freshness-report.json
 
       - name: Setup Node
-        uses: actions/setup-node@v4
+        uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
         with:
           node-version: '22'
           cache: 'npm'
@@ -435,7 +469,7 @@ jobs:
 
       - name: Upload post-refresh reports
         if: always()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
         with:
           name: post-refresh-reports
           path: |

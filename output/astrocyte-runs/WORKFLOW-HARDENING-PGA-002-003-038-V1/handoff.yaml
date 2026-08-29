@@ -1,0 +1,73 @@
+schema_version: astrocyte_workflow_hardening_handoff_v1
+workstream: portfolio-astrocyte-workflow-hardening-pga-002-003-038-v1
+owner_thread_id: 01a04cc7-807e-7720-b53e-011f4e5dacfd
+controller_thread_id: 01a048fb-6d82-7363-be6a-781ed87229b0
+created_at_utc: 2026-08-29T09:26:50Z
+status: LOCAL_GATES_GREEN_READY_FOR_DRAFT_PR
+route: solo
+lease:
+  registry: /Users/oliviersoudee/.codex/haliro-execution-governor/portfolio-project-workstreams.json
+  profile: high-risk-train
+  base_sha: 6a8ede970c0b9041a6e04f8b081b286e9ecb8499
+git:
+  branch: codex/astrocyte-workflow-hardening-v1
+  origin_main_sha: 6a8ede970c0b9041a6e04f8b081b286e9ecb8499
+  commit: PENDING_LOCAL_COMMIT
+  pr: PENDING_DRAFT_CREATION
+source_plan:
+  path: /Users/oliviersoudee/.codex/worktrees/3ef2/Portfolio-Project/output/astrocyte-runs/OPS-PGA-003-038-V1/change-plan.md
+  expected_sha256: 1b464866d80fff80e1bf62db3828bca33889e27fc991d1745c22e6c4e65c6556
+  observed_sha256: 1bef0ed5bc4e2be326d16e0a2babb9c9aec966ca62eada5bfc4dc3536216b038
+  integrity: MISMATCH_NOT_USED_AS_AUTHORITY
+impact:
+  backend_writes: NO_PAYLOAD_OR_ETL_CHANGE_WORKFLOWS_ONLY
+  supabase_schema_data: NO_PROVIDER_MUTATION_NO_SCHEMA_CHANGE
+  frontend_reads_ui: NO_CONTRACT_OR_UI_CHANGE
+files:
+  - .github/scripts/check_mutation_contract.py
+  - .github/scripts/check_workflow_parity.py
+  - .github/scripts/verify_backup_restore_receipt.py
+  - .github/tests/test_mutation_contract.py
+  - .github/tests/test_workflow_contracts.py
+  - .github/workflows/production-data-remediation.yml
+  - .github/workflows/schedule.yml
+  - .github/workflows/trident-price-backfill.yml
+  - .github/workflows/trident-stock-insights.yml
+  - .github/workflows/trident-supabase.yml
+  - .github/workflows/workflow-parity.yml
+  - docs/production-mutation-runbook.md
+  - docs/supabase-backup-restore.md
+security_properties:
+  scheduler: AUTOMATIC_HEARTBEAT_NON_MUTATING_NO_PROVIDER_SECRET
+  push_validation: SEPARATE_FROM_PRODUCTION_MUTATION
+  production_concurrency: portfolio-production-mutation
+  cancel_in_progress: false
+  git_identity: MAIN_REF_EXACT_SHA_EXACT_WORKFLOW_REF
+  inputs: TYPED_CANONICAL_AND_MANIFEST_BOUND
+  authorization: CONTROLLER_REF_EXPIRY_AND_CANONICAL_SHA256
+  provider_variables: KILL_SWITCHES_ONLY
+  restore_receipt: REQUIRED_FRESH_TARGET_AND_SHA_BOUND
+  migrations: BLOCKING_PRECHECK_SINGLE_TRANSACTION_BLOCKING_POSTCHECK
+  bootstrap_private_owner_sha256: 77c9966f7a0d40efa2abd56cac0801a11437a34efec35145a69e1bb35729ae0d
+tests:
+  workflow_parity: PASS
+  workflow_contract_unittest: PASS_20_TESTS
+  workflow_yaml_parse: PASS_10_FILES
+  backend_pytest: PASS_136
+  backend_py_compile: PASS
+  frontend_lint: PASS
+  frontend_tsc: PASS
+  frontend_build: PASS
+  frontend_smoke_supabase: NOT_RUN_PROVIDER_ACCESS_FORBIDDEN_AND_NO_READ_CONTRACT_CHANGE
+  remote_ci: NOT_RUN_BEFORE_PUSH
+risks:
+  - SOURCE_PLAN_HASH_MISMATCH
+  - GITHUB_PROVIDER_PROTECTIONS_UNVERIFIED
+  - PRODUCTION_ENVIRONMENT_REVIEWERS_UNVERIFIED
+  - SUPABASE_BACKUP_PITR_AND_RESTORE_CAPABILITY_UNVERIFIED
+  - RESTORE_RECEIPT_AND_AUTHORIZATION_MANIFEST_NOT_YET_ISSUED
+  - NPM_CI_REPORTED_8_EXISTING_DEPENDENCY_VULNERABILITIES_WITH_NO_PACKAGE_CHANGE
+blocked:
+  - NO_PRODUCTION_MUTATION_AUTHORIZED
+  - NO_WORKFLOW_DISPATCH_AUTHORIZED
+next_single_action: COMMIT_PUSH_AND_OPEN_DRAFT_PR
