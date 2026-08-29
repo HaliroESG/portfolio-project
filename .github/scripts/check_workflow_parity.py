@@ -519,6 +519,11 @@ def validate_workflow_contract(contents: dict[str, str]) -> None:
         "python3 -m unittest discover -s .github/tests -p 'test_*.py'",
         "workflow-parity.yml",
     )
+    require(
+        contents["workflow-parity.yml"],
+        "fetch-depth: 0",
+        "workflow-parity.yml pinned candidate history",
+    )
     _check_required_actionlint(contents["workflow-parity.yml"])
     _check_action_pins("workflow-parity.yml", contents["workflow-parity.yml"])
 
