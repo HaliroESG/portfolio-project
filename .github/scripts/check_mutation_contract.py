@@ -1,14 +1,17 @@
 #!/usr/bin/env python3
-"""Validate immutable authorization before any Production mutation."""
+"""Authenticate and consume one-shot authority before a Production mutation."""
 
 from __future__ import annotations
 
 import argparse
 import hashlib
 import hmac
-import json
 import os
 import re
+import time
+import urllib.error
+import urllib.parse
+import urllib.request
 from datetime import date, datetime, timedelta, timezone
 from pathlib import Path
 from typing import Any, Callable
@@ -18,27 +21,38 @@ from verify_backup_restore_receipt import (
     canonical_json,
     parse_utc,
     receipt_sha256,
+    strict_json_loads,
     validate_receipt,
 )
 
 
-SCHEMA_VERSION = "astrocyte_mutation_authorization_v1"
+SCHEMA_VERSION = "astrocyte_mutation_authorization_v2"
+TRUSTED_ISSUER = "ASTROCYTE_CONTROL_CENTER_V1"
 MAX_AUTHORIZATION_WINDOW = timedelta(hours=24)
+MAX_CLOCK_SKEW = timedelta(minutes=5)
+REPLAY_RETENTION_DAYS = 30
 SHA256_RE = re.compile(r"^[0-9a-f]{64}$")
 SHA_RE = re.compile(r"^[0-9a-f]{40}$")
 CONTROLLER_REF_RE = re.compile(r"^[A-Z0-9][A-Z0-9._:/-]{7,127}$")
+NONCE_RE = re.compile(r"^[0-9a-f]{32,64}$")
+RECEIPT_ID_RE = re.compile(r"^[a-z0-9][a-z0-9-]{15,63}$")
 TICKER_RE = re.compile(r"^[A-Z0-9.^:=/-]{1,32}$")
 REQUIRED_MANIFEST_FIELDS = {
     "schema_version",
+    "issuer",
+    "repository",
     "workflow",
     "ref",
     "run_sha",
     "controller_ref",
+    "issued_at",
     "expires_at",
     "target_sha256",
     "restore_receipt_sha256",
     "restore_receipt",
     "inputs",
+    "nonce",
+    "receipt_id",
 }
 
 
@@ -122,6 +136,14 @@ WORKFLOW_SCHEMAS: dict[str, dict[str, Callable[[str], Any]]] = {
     },
 }
 
+WORKFLOW_FILES = {
+    "financial-data-sync": "schedule.yml",
+    "production-data-remediation": "production-data-remediation.yml",
+    "trident-price-backfill": "trident-price-backfill.yml",
+    "trident-stock-insights": "trident-stock-insights.yml",
+    "trident-supabase": "trident-supabase.yml",
+}
+
 
 def parse_inputs(items: list[str]) -> dict[str, str]:
     parsed: dict[str, str] = {}
@@ -143,8 +165,6 @@ def normalize_inputs(workflow: str, raw: dict[str, str]) -> dict[str, Any]:
             f"unexpected={sorted(set(raw) - set(schema))}"
         )
     normalized = {name: schema[name](raw[name]) for name in sorted(schema)}
-    if workflow == "financial-data-sync" and normalized["scope"] == "validate":
-        raise ContractError("validate is not a mutating scope")
     if workflow == "trident-supabase" and not (
         normalized["apply_schema"] or normalized["run_trident_etl"]
     ):
@@ -160,10 +180,24 @@ def manifest_sha256(manifest: dict[str, Any]) -> str:
     return hashlib.sha256(canonical_json(manifest).encode("utf-8")).hexdigest()
 
 
+def authorization_signature(manifest: dict[str, Any], secret: str) -> str:
+    if len(secret.encode("utf-8")) < 32:
+        raise ContractError("authorization HMAC key must contain at least 32 bytes")
+    return hmac.new(
+        secret.encode("utf-8"),
+        canonical_json(manifest).encode("utf-8"),
+        hashlib.sha256,
+    ).hexdigest()
+
+
 def validate_contract(
     manifest: object,
     *,
     expected_manifest_sha256: str,
+    signature: str,
+    hmac_key: str,
+    expected_nonce: str,
+    expected_receipt_id: str,
     workflow: str,
     repository: str,
     workflow_ref: str,
@@ -183,6 +217,10 @@ def validate_contract(
         )
     if manifest["schema_version"] != SCHEMA_VERSION:
         raise ContractError("unsupported authorization manifest schema")
+    if manifest["issuer"] != TRUSTED_ISSUER:
+        raise ContractError("authorization issuer is not trusted")
+    if not repository or manifest["repository"] != repository:
+        raise ContractError("authorization repository does not match github.repository")
     if event_name != "workflow_dispatch":
         raise ContractError("Production mutation requires workflow_dispatch")
     if ref != "refs/heads/main" or manifest["ref"] != ref:
@@ -192,8 +230,7 @@ def validate_contract(
     if manifest["workflow"] != workflow or workflow not in WORKFLOW_SCHEMAS:
         raise ContractError("workflow/action is not authorized")
     expected_workflow_ref = (
-        f"{repository}/.github/workflows/"
-        f"{workflow.replace('financial-data-sync', 'schedule')}.yml@{ref}"
+        f"{repository}/.github/workflows/{WORKFLOW_FILES[workflow]}@{ref}"
     )
     if workflow_ref != expected_workflow_ref:
         raise ContractError("controller workflow_ref does not match the main workflow")
@@ -203,31 +240,64 @@ def validate_contract(
         controller_ref
     ):
         raise ContractError("controller_ref is missing or not normalized")
+    nonce = manifest["nonce"]
+    if (
+        not isinstance(nonce, str)
+        or not NONCE_RE.fullmatch(nonce)
+        or nonce != expected_nonce
+    ):
+        raise ContractError("authorization nonce is missing, invalid, or mismatched")
+    receipt_id = manifest["receipt_id"]
+    if (
+        not isinstance(receipt_id, str)
+        or not RECEIPT_ID_RE.fullmatch(receipt_id)
+        or receipt_id != expected_receipt_id
+    ):
+        raise ContractError("authorization receipt_id is missing, invalid, or mismatched")
     target_sha256 = manifest["target_sha256"]
     if not isinstance(target_sha256, str) or not SHA256_RE.fullmatch(target_sha256):
         raise ContractError("target_sha256 must be a lowercase SHA-256")
     receipt_digest = manifest["restore_receipt_sha256"]
     if not isinstance(receipt_digest, str) or not SHA256_RE.fullmatch(receipt_digest):
         raise ContractError("restore_receipt_sha256 must be a lowercase SHA-256")
-    if not hmac.compare_digest(receipt_digest, receipt_sha256(manifest["restore_receipt"])):
+    try:
+        actual_receipt_digest = receipt_sha256(manifest["restore_receipt"])
+    except ReceiptError as exc:
+        raise ContractError(str(exc)) from exc
+    if not hmac.compare_digest(receipt_digest, actual_receipt_digest):
         raise ContractError("restore receipt hash mismatch")
 
     current = now or datetime.now(timezone.utc)
-    expires_at = parse_utc(manifest["expires_at"], "expires_at")
+    if current.tzinfo != timezone.utc:
+        raise ContractError("validator clock must use UTC")
+    try:
+        issued_at = parse_utc(manifest["issued_at"], "issued_at")
+        expires_at = parse_utc(manifest["expires_at"], "expires_at")
+    except ReceiptError as exc:
+        raise ContractError(str(exc)) from exc
+    if issued_at > current + MAX_CLOCK_SKEW:
+        raise ContractError("authorization issue time is in the future")
     if expires_at <= current:
         raise ContractError("authorization manifest has expired")
-    if expires_at > current + MAX_AUTHORIZATION_WINDOW:
-        raise ContractError("authorization manifest exceeds the 24-hour run window")
+    if expires_at <= issued_at or expires_at > issued_at + MAX_AUTHORIZATION_WINDOW:
+        raise ContractError("authorization validity must be within 24 hours of issue")
 
     normalized_inputs = normalize_inputs(workflow, raw_inputs)
     if manifest["inputs"] != normalized_inputs:
         raise ContractError("authorization inputs do not match normalized run inputs")
     if not SHA256_RE.fullmatch(expected_manifest_sha256):
         raise ContractError("authorization manifest hash is invalid")
-    if not hmac.compare_digest(
-        manifest_sha256(manifest), expected_manifest_sha256
-    ):
+    try:
+        actual_manifest_digest = manifest_sha256(manifest)
+    except ReceiptError as exc:
+        raise ContractError(str(exc)) from exc
+    if not hmac.compare_digest(actual_manifest_digest, expected_manifest_sha256):
         raise ContractError("authorization manifest hash mismatch")
+    if not SHA256_RE.fullmatch(signature):
+        raise ContractError("authorization signature must be a lowercase HMAC-SHA256")
+    expected_signature = authorization_signature(manifest, hmac_key)
+    if not hmac.compare_digest(expected_signature, signature):
+        raise ContractError("authorization signature is invalid")
 
     try:
         validate_receipt(
@@ -241,14 +311,108 @@ def validate_contract(
     return manifest
 
 
+def replay_artifact_name(receipt_id: str, nonce: str) -> str:
+    if not RECEIPT_ID_RE.fullmatch(receipt_id) or not NONCE_RE.fullmatch(nonce):
+        raise ContractError("cannot derive replay key from invalid receipt_id or nonce")
+    return f"mutation-replay-{receipt_id}-{nonce}"
+
+
+def validate_replay_artifacts(
+    phase: str,
+    artifacts: object,
+    *,
+    expected_name: str,
+    run_id: str,
+) -> None:
+    if phase not in {"claim", "enforce"}:
+        raise ContractError("anti-replay phase must be claim or enforce")
+    if not isinstance(artifacts, list):
+        raise ContractError("GitHub artifact response is not a list")
+    exact: list[dict[str, Any]] = []
+    for artifact in artifacts:
+        if not isinstance(artifact, dict) or artifact.get("name") != expected_name:
+            raise ContractError("GitHub artifact response contains an invalid record")
+        exact.append(artifact)
+    if phase == "claim":
+        if exact:
+            raise ContractError("authorization receipt_id and nonce were already consumed")
+        return
+    if len(exact) != 1:
+        raise ContractError("one current-run anti-replay marker is required")
+    artifact = exact[0]
+    workflow_run = artifact.get("workflow_run")
+    if artifact.get("expired") is not False or not isinstance(workflow_run, dict):
+        raise ContractError("anti-replay marker is expired or lacks run provenance")
+    if not run_id or str(workflow_run.get("id")) != run_id:
+        raise ContractError("anti-replay marker belongs to a different workflow run")
+
+
 def _load_manifest(raw: str) -> dict[str, Any]:
     try:
-        value = json.loads(raw)
-    except json.JSONDecodeError as exc:
-        raise ContractError("authorization manifest is not valid JSON") from exc
+        value = strict_json_loads(raw)
+    except ReceiptError as exc:
+        raise ContractError("authorization manifest is not valid strict JSON") from exc
     if not isinstance(value, dict):
         raise ContractError("authorization manifest must be a JSON object")
     return value
+
+
+def _fetch_replay_artifacts(name: str, *, attempts: int) -> list[dict[str, Any]]:
+    repository = os.environ.get("GITHUB_REPOSITORY", "")
+    token = os.environ.get("GITHUB_TOKEN", "")
+    api_url = os.environ.get("GITHUB_API_URL", "https://api.github.com").rstrip("/")
+    if not repository or not token:
+        raise ContractError("GitHub repository and token are required for anti-replay")
+    query = urllib.parse.urlencode({"name": name, "per_page": "100"})
+    url = f"{api_url}/repos/{repository}/actions/artifacts?{query}"
+    for attempt in range(attempts):
+        request = urllib.request.Request(
+            url,
+            headers={
+                "Accept": "application/vnd.github+json",
+                "Authorization": f"Bearer {token}",
+                "X-GitHub-Api-Version": "2022-11-28",
+            },
+        )
+        try:
+            with urllib.request.urlopen(request, timeout=15) as response:
+                payload = strict_json_loads(response.read().decode("utf-8"))
+        except (OSError, UnicodeError, urllib.error.HTTPError, ReceiptError) as exc:
+            raise ContractError("GitHub anti-replay artifact lookup failed") from exc
+        artifacts = payload.get("artifacts") if isinstance(payload, dict) else None
+        if not isinstance(artifacts, list):
+            raise ContractError("GitHub anti-replay artifact response is malformed")
+        if artifacts or attempt == attempts - 1:
+            return artifacts
+        time.sleep(1)
+    raise ContractError("GitHub anti-replay artifact lookup exhausted")
+
+
+def _write_marker(path_value: str, manifest: dict[str, Any], run_id: str) -> None:
+    runner_temp = os.environ.get("RUNNER_TEMP", "")
+    if not runner_temp or not path_value or not run_id:
+        raise ContractError("runner temp, marker path, and run id are required")
+    root = Path(runner_temp).resolve()
+    path = Path(path_value)
+    if path.parent.resolve() != root or path.exists() or path.is_symlink():
+        raise ContractError("anti-replay marker path must be a fresh runner-temp file")
+    marker = {
+        "schema_version": "astrocyte_mutation_replay_marker_v1",
+        "issuer": manifest["issuer"],
+        "repository": manifest["repository"],
+        "workflow": manifest["workflow"],
+        "run_sha": manifest["run_sha"],
+        "receipt_id": manifest["receipt_id"],
+        "nonce": manifest["nonce"],
+        "authorization_manifest_sha256": manifest_sha256(manifest),
+        "workflow_run_id": run_id,
+        "retention_days": REPLAY_RETENTION_DAYS,
+    }
+    try:
+        with path.open("x", encoding="utf-8") as handle:
+            handle.write(canonical_json(marker) + "\n")
+    except OSError as exc:
+        raise ContractError("could not create anti-replay marker") from exc
 
 
 def main() -> None:
@@ -257,6 +421,8 @@ def main() -> None:
     parser.add_argument("--input", action="append", default=[])
     parser.add_argument("--manifest-file")
     parser.add_argument("--hash-only", action="store_true")
+    parser.add_argument("--replay-phase", choices=("claim", "enforce"))
+    parser.add_argument("--marker-file")
     args = parser.parse_args()
 
     try:
@@ -277,6 +443,10 @@ def main() -> None:
             expected_manifest_sha256=os.environ.get(
                 "AUTHORIZATION_MANIFEST_SHA256", ""
             ),
+            signature=os.environ.get("AUTHORIZATION_SIGNATURE", ""),
+            hmac_key=os.environ.get("AUTHORIZATION_HMAC_KEY", ""),
+            expected_nonce=os.environ.get("AUTHORIZATION_NONCE", ""),
+            expected_receipt_id=os.environ.get("AUTHORIZATION_RECEIPT_ID", ""),
             workflow=args.workflow,
             repository=os.environ.get("GITHUB_REPOSITORY", ""),
             workflow_ref=os.environ.get("GITHUB_WORKFLOW_REF", ""),
@@ -285,11 +455,29 @@ def main() -> None:
             run_sha=os.environ.get("GITHUB_SHA", ""),
             raw_inputs=parse_inputs(args.input),
         )
+        if not args.replay_phase:
+            raise ContractError("one-shot anti-replay phase is required")
+        replay_name = replay_artifact_name(manifest["receipt_id"], manifest["nonce"])
+        artifacts = _fetch_replay_artifacts(
+            replay_name, attempts=5 if args.replay_phase == "enforce" else 1
+        )
+        validate_replay_artifacts(
+            args.replay_phase,
+            artifacts,
+            expected_name=replay_name,
+            run_id=os.environ.get("GITHUB_RUN_ID", ""),
+        )
+        if args.replay_phase == "claim":
+            if not args.marker_file:
+                raise ContractError("claim phase requires a marker file")
+            _write_marker(args.marker_file, manifest, os.environ.get("GITHUB_RUN_ID", ""))
+        elif args.marker_file:
+            raise ContractError("enforce phase must not create a marker file")
     except (ContractError, ReceiptError) as exc:
         parser.error(str(exc))
     print(
         f"mutation contract PASS workflow={args.workflow} "
-        f"manifest_sha256={digest}"
+        f"phase={args.replay_phase} manifest_sha256={digest}"
     )
 
 

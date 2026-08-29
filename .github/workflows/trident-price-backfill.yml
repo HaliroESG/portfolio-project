@@ -30,9 +30,22 @@ on:
         description: "SHA-256 of the canonical authorization manifest"
         required: false
         type: string
+      authorization_signature:
+        description: "HMAC-SHA256 signature required only when dry_run=false"
+        required: false
+        type: string
+      authorization_nonce:
+        description: "One-shot lowercase hexadecimal authorization nonce"
+        required: false
+        type: string
+      authorization_receipt_id:
+        description: "One-shot authorization receipt identifier"
+        required: false
+        type: string
 
 permissions:
   contents: read
+  actions: read
 
 concurrency:
   group: portfolio-production-mutation
@@ -60,11 +73,58 @@ jobs:
       - name: Checkout code
         uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
 
-      - name: Verify immutable mutation authorization
+      - name: Set up Python
+        uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065 # v5
+        with:
+          python-version: "3.11"
+
+      - name: Install backend dependencies
+        working-directory: ./backend
+        run: |
+          python -m pip install --upgrade pip
+          pip install wheel
+          pip install scipy==1.15.1 statsmodels==0.14.4
+          pip install -r requirements.txt
+
+      - name: Claim one-shot mutation authorization
         if: ${{ inputs.dry_run == false }}
+        env:
+          AUTHORIZATION_SIGNATURE: ${{ inputs.authorization_signature }}
+          AUTHORIZATION_HMAC_KEY: ${{ secrets.ASTROCYTE_AUTHORIZATION_HMAC_KEY }}
+          AUTHORIZATION_NONCE: ${{ inputs.authorization_nonce }}
+          AUTHORIZATION_RECEIPT_ID: ${{ inputs.authorization_receipt_id }}
+          GITHUB_TOKEN: ${{ github.token }}
         run: |
           python3 .github/scripts/check_mutation_contract.py \
             --workflow trident-price-backfill \
+            --replay-phase claim \
+            --marker-file "$RUNNER_TEMP/mutation-replay-marker.json" \
+            --input "top_n=$TOP_N" \
+            --input "start_date=$START_DATE" \
+            --input "end_date=$END_DATE" \
+            --input "dry_run=$DRY_RUN"
+
+      - name: Persist one-shot anti-replay marker
+        if: ${{ inputs.dry_run == false }}
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: mutation-replay-${{ inputs.authorization_receipt_id }}-${{ inputs.authorization_nonce }}
+          path: ${{ runner.temp }}/mutation-replay-marker.json
+          if-no-files-found: error
+          retention-days: 30
+
+      - name: Enforce one-shot authorization immediately before provider access
+        if: ${{ inputs.dry_run == false }}
+        env:
+          AUTHORIZATION_SIGNATURE: ${{ inputs.authorization_signature }}
+          AUTHORIZATION_HMAC_KEY: ${{ secrets.ASTROCYTE_AUTHORIZATION_HMAC_KEY }}
+          AUTHORIZATION_NONCE: ${{ inputs.authorization_nonce }}
+          AUTHORIZATION_RECEIPT_ID: ${{ inputs.authorization_receipt_id }}
+          GITHUB_TOKEN: ${{ github.token }}
+        run: |
+          python3 .github/scripts/check_mutation_contract.py \
+            --workflow trident-price-backfill \
+            --replay-phase enforce \
             --input "top_n=$TOP_N" \
             --input "start_date=$START_DATE" \
             --input "end_date=$END_DATE" \
@@ -94,19 +154,6 @@ jobs:
             echo "::error::top_n must be a positive integer."
             exit 2
           fi
-
-      - name: Set up Python
-        uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065 # v5
-        with:
-          python-version: "3.11"
-
-      - name: Install backend dependencies
-        working-directory: ./backend
-        run: |
-          python -m pip install --upgrade pip
-          pip install wheel
-          pip install scipy==1.15.1 statsmodels==0.14.4
-          pip install -r requirements.txt
 
       - name: Preflight schema check
         working-directory: ./backend

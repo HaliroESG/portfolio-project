@@ -61,6 +61,16 @@ class WorkflowContractTests(unittest.TestCase):
         with self.assertRaisesRegex(AssertionError, "unconditional refusal"):
             validate_workflow_contract(contents)
 
+    def test_escaped_uses_cannot_bypass_action_pin(self) -> None:
+        contents = workflow_contents()
+        contents["workflow-parity.yml"] = contents["workflow-parity.yml"].replace(
+            "uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262",
+            'uses: "actions/checkout\\x40v4"',
+            1,
+        )
+        with self.assertRaisesRegex(AssertionError, "pinned to reviewed SHA"):
+            validate_workflow_contract(contents)
+
 
 if __name__ == "__main__":
     unittest.main()

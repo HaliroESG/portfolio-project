@@ -7,6 +7,7 @@ import argparse
 import hashlib
 import hmac
 import json
+import math
 import re
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
@@ -40,7 +41,26 @@ class ReceiptError(ValueError):
 
 
 def canonical_json(value: Any) -> str:
-    return json.dumps(value, sort_keys=True, separators=(",", ":"), ensure_ascii=True)
+    try:
+        return json.dumps(
+            value,
+            sort_keys=True,
+            separators=(",", ":"),
+            ensure_ascii=True,
+            allow_nan=False,
+        )
+    except (TypeError, ValueError) as exc:
+        raise ReceiptError("value is not strict JSON") from exc
+
+
+def strict_json_loads(raw: str) -> Any:
+    def reject_constant(value: str) -> None:
+        raise ReceiptError(f"non-standard JSON constant {value!r} is forbidden")
+
+    try:
+        return json.loads(raw, parse_constant=reject_constant)
+    except (TypeError, json.JSONDecodeError) as exc:
+        raise ReceiptError("value is not valid strict JSON") from exc
 
 
 def receipt_sha256(receipt: dict[str, Any]) -> str:
@@ -61,7 +81,12 @@ def parse_utc(value: object, field: str) -> datetime:
 
 def _bounded_number(receipt: dict[str, Any], field: str, maximum: int) -> None:
     value = receipt[field]
-    if isinstance(value, bool) or not isinstance(value, (int, float)) or value < 0:
+    if (
+        isinstance(value, bool)
+        or not isinstance(value, (int, float))
+        or not math.isfinite(value)
+        or value < 0
+    ):
         raise ReceiptError(f"{field} must be a non-negative number")
     if value > maximum:
         raise ReceiptError(f"{field} exceeds the accepted maximum of {maximum}")
@@ -136,10 +161,7 @@ def _load_receipt(args: argparse.Namespace) -> dict[str, Any]:
         if path.is_symlink() or not path.is_file():
             raise ReceiptError("receipt file must be a regular non-symlink file")
         raw = path.read_text(encoding="utf-8")
-    try:
-        value = json.loads(raw)
-    except (TypeError, json.JSONDecodeError) as exc:
-        raise ReceiptError("receipt is not valid JSON") from exc
+    value = strict_json_loads(raw)
     if not isinstance(value, dict):
         raise ReceiptError("receipt must be a JSON object")
     return value

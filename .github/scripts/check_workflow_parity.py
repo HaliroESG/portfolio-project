@@ -4,7 +4,9 @@
 from __future__ import annotations
 
 import hashlib
+import json
 import re
+import subprocess
 from pathlib import Path
 
 
@@ -34,6 +36,13 @@ MIGRATION_WORKFLOWS = {
     "production-data-remediation.yml",
     "trident-supabase.yml",
 }
+EXPECTED_ENFORCEMENT_COUNTS = {
+    "production-data-remediation.yml": 1,
+    "schedule.yml": 5,
+    "trident-price-backfill.yml": 1,
+    "trident-stock-insights.yml": 1,
+    "trident-supabase.yml": 1,
+}
 PINNED_ACTIONS = {
     "actions/checkout": "11d5960a326750d5838078e36cf38b85af677262",
     "actions/setup-python": "a26af69be951a213d495a4c3e4e4022e16d87065",
@@ -62,10 +71,62 @@ def forbid(text: str, fragment: str, path: str) -> None:
         raise AssertionError(f"{path}: forbidden contract fragment {fragment!r}")
 
 
+def require_order(text: str, before: str, after: str, path: str) -> None:
+    require(text, before, path)
+    require(text, after, path)
+    if text.index(before) > text.index(after):
+        raise AssertionError(f"{path}: {before!r} must precede {after!r}")
+
+
+RUBY_YAML_USES_PARSER = r"""
+require "json"
+require "psych"
+document = Psych.safe_load(
+  STDIN.read,
+  permitted_classes: [],
+  permitted_symbols: [],
+  aliases: true
+)
+uses = []
+walk = lambda do |node|
+  case node
+  when Hash
+    node.each do |key, value|
+      uses << value if key.to_s == "uses"
+      walk.call(value)
+    end
+  when Array
+    node.each { |value| walk.call(value) }
+  end
+end
+walk.call(document)
+STDOUT.write(JSON.generate(uses))
+"""
+
+
+def _parse_workflow_uses(name: str, text: str) -> list[str]:
+    try:
+        result = subprocess.run(
+            ["ruby", "-e", RUBY_YAML_USES_PARSER],
+            input=text,
+            text=True,
+            capture_output=True,
+            check=True,
+            timeout=15,
+        )
+        parsed = json.loads(result.stdout)
+    except (OSError, subprocess.SubprocessError, json.JSONDecodeError) as exc:
+        raise AssertionError(f"{name}: semantic YAML parsing failed closed") from exc
+    if not isinstance(parsed, list) or not all(isinstance(item, str) for item in parsed):
+        raise AssertionError(f"{name}: every semantic uses value must be a string")
+    return parsed
+
+
 def _check_action_pins(name: str, text: str) -> None:
-    for action, reference in re.findall(
-        r"^\s*uses:\s*([^@\s]+)@([^\s#]+)", text, re.MULTILINE
-    ):
+    for use in _parse_workflow_uses(name, text):
+        action, separator, reference = use.rpartition("@")
+        if not separator or not action or not reference:
+            raise AssertionError(f"{name}: malformed or unpinned action reference {use!r}")
         expected = PINNED_ACTIONS.get(action)
         if expected is None:
             raise AssertionError(f"{name}: unreviewed third-party action {action!r}")
@@ -123,22 +184,57 @@ def validate_workflow_contract(contents: dict[str, str]) -> None:
         "  preflight:\n    if: ${{ github.event_name == 'workflow_dispatch' && inputs.scope != 'validate' }}",
         "schedule.yml",
     )
+    preflight = section(schedule, "  preflight:\n", "\n  refresh-core:")
+    require(preflight, "environment: Production", "schedule.yml preflight")
+    require_order(
+        preflight,
+        "Enforce one-shot authorization immediately before provider access",
+        "Preflight schema check",
+        "schedule.yml preflight",
+    )
+    schedule_jobs = {
+        "refresh-core": ("\n  refresh-market-history:", "Refresh core feeds"),
+        "refresh-market-history": ("\n  refresh-trident:", "Refresh historical prices"),
+        "refresh-trident": ("\n  refresh-backtest:", "Refresh Trident screener"),
+        "refresh-backtest": ("\n  post-refresh-gate:", "Refresh production reference backtest"),
+    }
+    for job, (end, provider_step) in schedule_jobs.items():
+        job_text = section(schedule, f"  {job}:\n", end)
+        require(job_text, "environment: Production", f"schedule.yml {job}")
+        require_order(
+            job_text,
+            "Enforce one-shot authorization immediately before provider access",
+            provider_step,
+            f"schedule.yml {job}",
+        )
 
     for name in MUTATION_WORKFLOWS:
         text = contents[name]
+        require(text, "actions: read", name)
         require(text, "portfolio-production-mutation", name)
         require(text, "cancel-in-progress: false", name)
         require(text, "authorization_manifest:", name)
         require(text, "authorization_manifest_sha256:", name)
+        require(text, "authorization_signature:", name)
+        require(text, "authorization_nonce:", name)
+        require(text, "authorization_receipt_id:", name)
         require(text, "check_mutation_contract.py", name)
-        require(text, "Verify immutable mutation authorization", name)
+        require(text, "Claim one-shot mutation authorization", name)
+        require(text, "--replay-phase claim", name)
+        require(text, "Persist one-shot anti-replay marker", name)
+        require(text, "retention-days: 30", name)
+        require(text, "--replay-phase enforce", name)
+        require(text, "ASTROCYTE_AUTHORIZATION_HMAC_KEY", name)
         require(text, "Apply provider kill switches", name)
         require(text, "ASTROCYTE_MUTATION_GATE", name)
         require(text, "ASTROCYTE_SOURCE_RIGHTS_GATE", name)
-        if text.index("Verify immutable mutation authorization") > text.index(
+        enforcement = "Enforce one-shot authorization immediately before provider access"
+        if text.count(enforcement) != EXPECTED_ENFORCEMENT_COUNTS[name]:
+            raise AssertionError(f"{name}: every mutative job must revalidate authority")
+        if text.index(enforcement) > text.index(
             "Apply provider kill switches"
         ):
-            raise AssertionError(f"{name}: provider kill switches run before authority")
+            raise AssertionError(f"{name}: provider kill switches run before revalidation")
         _check_action_pins(name, text)
 
     for name in MIGRATION_WORKFLOWS:
@@ -168,6 +264,32 @@ def validate_workflow_contract(contents: dict[str, str]) -> None:
         trident,
         "github.event_name == 'workflow_dispatch'",
         "trident-supabase.yml",
+    )
+    mutate_job = trident[trident.index("  mutate-production:\n") :]
+    require_order(
+        mutate_job,
+        "Enforce one-shot authorization immediately before provider access",
+        "Pre-migration schema check",
+        "trident-supabase.yml mutate-production",
+    )
+
+    require_order(
+        contents["production-data-remediation.yml"],
+        "Enforce one-shot authorization immediately before provider access",
+        "Resolve database URL",
+        "production-data-remediation.yml",
+    )
+    require_order(
+        contents["trident-price-backfill.yml"],
+        "Enforce one-shot authorization immediately before provider access",
+        "Preflight schema check",
+        "trident-price-backfill.yml",
+    )
+    require_order(
+        contents["trident-stock-insights.yml"],
+        "Enforce one-shot authorization immediately before provider access",
+        "Preflight schema check",
+        "trident-stock-insights.yml",
     )
 
     remediation_on = section(

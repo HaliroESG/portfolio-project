@@ -37,9 +37,22 @@ on:
         description: "SHA-256 of the canonical authorization manifest"
         required: false
         type: string
+      authorization_signature:
+        description: "HMAC-SHA256 signature required for mutating scopes"
+        required: false
+        type: string
+      authorization_nonce:
+        description: "One-shot lowercase hexadecimal authorization nonce"
+        required: false
+        type: string
+      authorization_receipt_id:
+        description: "One-shot authorization receipt identifier"
+        required: false
+        type: string
 
 permissions:
   contents: read
+  actions: read
 
 concurrency:
   group: ${{ github.event_name == 'workflow_dispatch' && inputs.scope != 'validate' && 'portfolio-production-mutation' || format('financial-data-sync-validation-{0}', github.run_id) }}
@@ -69,6 +82,7 @@ jobs:
     if: ${{ github.event_name == 'workflow_dispatch' && inputs.scope != 'validate' }}
     runs-on: ubuntu-latest
     timeout-minutes: 15
+    environment: Production
     env:
       AUTHORIZATION_MANIFEST: ${{ inputs.authorization_manifest }}
       AUTHORIZATION_MANIFEST_SHA256: ${{ inputs.authorization_manifest_sha256 }}
@@ -89,21 +103,6 @@ jobs:
     steps:
       - name: Checkout code
         uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
-
-      - name: Verify immutable mutation authorization
-        run: |
-          python3 .github/scripts/check_mutation_contract.py \
-            --workflow financial-data-sync \
-            --input "scope=$SCOPE_INPUT" \
-            --input "trident_mode=$TRIDENT_MODE_INPUT" \
-            --input "trident_price_start_date=$TRIDENT_PRICE_START_DATE_INPUT"
-
-      - name: Apply provider kill switches
-        run: |
-          if [ "$SOURCE_RIGHTS_GATE" != "APPROVED" ] || [ "$MUTATION_GATE" != "APPROVED" ]; then
-            echo "::error::Provider source-rights or mutation kill switch is closed."
-            exit 2
-          fi
 
       - name: Resolve refresh plan
         id: plan
@@ -207,6 +206,52 @@ jobs:
           pip install scipy==1.15.1 statsmodels==0.14.4
           pip install -r requirements.txt
 
+      - name: Claim one-shot mutation authorization
+        env:
+          AUTHORIZATION_SIGNATURE: ${{ inputs.authorization_signature }}
+          AUTHORIZATION_HMAC_KEY: ${{ secrets.ASTROCYTE_AUTHORIZATION_HMAC_KEY }}
+          AUTHORIZATION_NONCE: ${{ inputs.authorization_nonce }}
+          AUTHORIZATION_RECEIPT_ID: ${{ inputs.authorization_receipt_id }}
+          GITHUB_TOKEN: ${{ github.token }}
+        run: |
+          python3 .github/scripts/check_mutation_contract.py \
+            --workflow financial-data-sync \
+            --replay-phase claim \
+            --marker-file "$RUNNER_TEMP/mutation-replay-marker.json" \
+            --input "scope=$SCOPE_INPUT" \
+            --input "trident_mode=$TRIDENT_MODE_INPUT" \
+            --input "trident_price_start_date=$TRIDENT_PRICE_START_DATE_INPUT"
+
+      - name: Persist one-shot anti-replay marker
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: mutation-replay-${{ inputs.authorization_receipt_id }}-${{ inputs.authorization_nonce }}
+          path: ${{ runner.temp }}/mutation-replay-marker.json
+          if-no-files-found: error
+          retention-days: 30
+
+      - name: Enforce one-shot authorization immediately before provider access
+        env:
+          AUTHORIZATION_SIGNATURE: ${{ inputs.authorization_signature }}
+          AUTHORIZATION_HMAC_KEY: ${{ secrets.ASTROCYTE_AUTHORIZATION_HMAC_KEY }}
+          AUTHORIZATION_NONCE: ${{ inputs.authorization_nonce }}
+          AUTHORIZATION_RECEIPT_ID: ${{ inputs.authorization_receipt_id }}
+          GITHUB_TOKEN: ${{ github.token }}
+        run: |
+          python3 .github/scripts/check_mutation_contract.py \
+            --workflow financial-data-sync \
+            --replay-phase enforce \
+            --input "scope=$SCOPE_INPUT" \
+            --input "trident_mode=$TRIDENT_MODE_INPUT" \
+            --input "trident_price_start_date=$TRIDENT_PRICE_START_DATE_INPUT"
+
+      - name: Apply provider kill switches
+        run: |
+          if [ "$SOURCE_RIGHTS_GATE" != "APPROVED" ] || [ "$MUTATION_GATE" != "APPROVED" ]; then
+            echo "::error::Provider source-rights or mutation kill switch is closed."
+            exit 2
+          fi
+
       - name: Preflight schema check
         working-directory: ./backend
         env:
@@ -245,6 +290,23 @@ jobs:
           pip install wheel
           pip install scipy==1.15.1 statsmodels==0.14.4
           pip install -r requirements.txt
+
+      - name: Enforce one-shot authorization immediately before provider access
+        env:
+          AUTHORIZATION_MANIFEST: ${{ inputs.authorization_manifest }}
+          AUTHORIZATION_MANIFEST_SHA256: ${{ inputs.authorization_manifest_sha256 }}
+          AUTHORIZATION_SIGNATURE: ${{ inputs.authorization_signature }}
+          AUTHORIZATION_HMAC_KEY: ${{ secrets.ASTROCYTE_AUTHORIZATION_HMAC_KEY }}
+          AUTHORIZATION_NONCE: ${{ inputs.authorization_nonce }}
+          AUTHORIZATION_RECEIPT_ID: ${{ inputs.authorization_receipt_id }}
+          GITHUB_TOKEN: ${{ github.token }}
+        run: |
+          python3 .github/scripts/check_mutation_contract.py \
+            --workflow financial-data-sync \
+            --replay-phase enforce \
+            --input "scope=${{ inputs.scope }}" \
+            --input "trident_mode=${{ inputs.trident_mode }}" \
+            --input "trident_price_start_date=${{ inputs.trident_price_start_date }}"
 
       - name: Refresh core feeds
         working-directory: ./backend
@@ -290,6 +352,23 @@ jobs:
           pip install scipy==1.15.1 statsmodels==0.14.4
           pip install -r requirements.txt
 
+      - name: Enforce one-shot authorization immediately before provider access
+        env:
+          AUTHORIZATION_MANIFEST: ${{ inputs.authorization_manifest }}
+          AUTHORIZATION_MANIFEST_SHA256: ${{ inputs.authorization_manifest_sha256 }}
+          AUTHORIZATION_SIGNATURE: ${{ inputs.authorization_signature }}
+          AUTHORIZATION_HMAC_KEY: ${{ secrets.ASTROCYTE_AUTHORIZATION_HMAC_KEY }}
+          AUTHORIZATION_NONCE: ${{ inputs.authorization_nonce }}
+          AUTHORIZATION_RECEIPT_ID: ${{ inputs.authorization_receipt_id }}
+          GITHUB_TOKEN: ${{ github.token }}
+        run: |
+          python3 .github/scripts/check_mutation_contract.py \
+            --workflow financial-data-sync \
+            --replay-phase enforce \
+            --input "scope=${{ inputs.scope }}" \
+            --input "trident_mode=${{ inputs.trident_mode }}" \
+            --input "trident_price_start_date=${{ inputs.trident_price_start_date }}"
+
       - name: Refresh historical prices
         working-directory: ./backend
         env:
@@ -330,6 +409,23 @@ jobs:
           pip install wheel
           pip install scipy==1.15.1 statsmodels==0.14.4
           pip install -r requirements.txt
+
+      - name: Enforce one-shot authorization immediately before provider access
+        env:
+          AUTHORIZATION_MANIFEST: ${{ inputs.authorization_manifest }}
+          AUTHORIZATION_MANIFEST_SHA256: ${{ inputs.authorization_manifest_sha256 }}
+          AUTHORIZATION_SIGNATURE: ${{ inputs.authorization_signature }}
+          AUTHORIZATION_HMAC_KEY: ${{ secrets.ASTROCYTE_AUTHORIZATION_HMAC_KEY }}
+          AUTHORIZATION_NONCE: ${{ inputs.authorization_nonce }}
+          AUTHORIZATION_RECEIPT_ID: ${{ inputs.authorization_receipt_id }}
+          GITHUB_TOKEN: ${{ github.token }}
+        run: |
+          python3 .github/scripts/check_mutation_contract.py \
+            --workflow financial-data-sync \
+            --replay-phase enforce \
+            --input "scope=${{ inputs.scope }}" \
+            --input "trident_mode=${{ inputs.trident_mode }}" \
+            --input "trident_price_start_date=${{ inputs.trident_price_start_date }}"
 
       - name: Refresh Trident screener
         working-directory: ./backend
@@ -389,6 +485,23 @@ jobs:
           pip install wheel
           pip install scipy==1.15.1 statsmodels==0.14.4
           pip install -r requirements.txt
+
+      - name: Enforce one-shot authorization immediately before provider access
+        env:
+          AUTHORIZATION_MANIFEST: ${{ inputs.authorization_manifest }}
+          AUTHORIZATION_MANIFEST_SHA256: ${{ inputs.authorization_manifest_sha256 }}
+          AUTHORIZATION_SIGNATURE: ${{ inputs.authorization_signature }}
+          AUTHORIZATION_HMAC_KEY: ${{ secrets.ASTROCYTE_AUTHORIZATION_HMAC_KEY }}
+          AUTHORIZATION_NONCE: ${{ inputs.authorization_nonce }}
+          AUTHORIZATION_RECEIPT_ID: ${{ inputs.authorization_receipt_id }}
+          GITHUB_TOKEN: ${{ github.token }}
+        run: |
+          python3 .github/scripts/check_mutation_contract.py \
+            --workflow financial-data-sync \
+            --replay-phase enforce \
+            --input "scope=${{ inputs.scope }}" \
+            --input "trident_mode=${{ inputs.trident_mode }}" \
+            --input "trident_price_start_date=${{ inputs.trident_price_start_date }}"
 
       - name: Refresh production reference backtest
         working-directory: ./backend

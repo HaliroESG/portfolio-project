@@ -12,13 +12,17 @@ sys.path.insert(0, str(SCRIPTS))
 
 from check_mutation_contract import (  # noqa: E402
     ContractError,
+    authorization_signature,
     manifest_sha256,
     normalize_inputs,
+    replay_artifact_name,
     validate_contract,
+    validate_replay_artifacts,
 )
 from verify_backup_restore_receipt import (  # noqa: E402
     ReceiptError,
     receipt_sha256,
+    strict_json_loads,
     validate_receipt,
 )
 
@@ -26,6 +30,9 @@ from verify_backup_restore_receipt import (  # noqa: E402
 NOW = datetime(2026, 8, 29, 10, 0, tzinfo=timezone.utc)
 RUN_SHA = "b" * 40
 TARGET_SHA256 = "a" * 64
+HMAC_KEY = "test-only-hmac-key-material-32-bytes-minimum"
+NONCE = "d" * 32
+RECEIPT_ID = "restore-drill-20260829-0001"
 
 
 def valid_receipt() -> dict[str, object]:
@@ -52,16 +59,21 @@ def valid_case() -> tuple[dict[str, object], dict[str, str]]:
     }
     receipt = valid_receipt()
     manifest = {
-        "schema_version": "astrocyte_mutation_authorization_v1",
+        "schema_version": "astrocyte_mutation_authorization_v2",
+        "issuer": "ASTROCYTE_CONTROL_CENTER_V1",
+        "repository": "HaliroESG/portfolio-project",
         "workflow": "trident-supabase",
         "ref": "refs/heads/main",
         "run_sha": RUN_SHA,
         "controller_ref": "PROGRAM-CONTROLLER-V3/PGA-003",
+        "issued_at": "2026-08-29T09:30:00Z",
         "expires_at": "2026-08-29T18:00:00Z",
         "target_sha256": TARGET_SHA256,
         "restore_receipt_sha256": receipt_sha256(receipt),
         "restore_receipt": receipt,
         "inputs": normalize_inputs("trident-supabase", raw_inputs),
+        "nonce": NONCE,
+        "receipt_id": RECEIPT_ID,
     }
     return manifest, raw_inputs
 
@@ -70,6 +82,10 @@ def check(manifest: dict[str, object], raw_inputs: dict[str, str]) -> None:
     validate_contract(
         manifest,
         expected_manifest_sha256=manifest_sha256(manifest),
+        signature=authorization_signature(manifest, HMAC_KEY),
+        hmac_key=HMAC_KEY,
+        expected_nonce=NONCE,
+        expected_receipt_id=RECEIPT_ID,
         workflow="trident-supabase",
         repository="HaliroESG/portfolio-project",
         workflow_ref=(
@@ -95,6 +111,10 @@ class MutationContractTests(unittest.TestCase):
             validate_contract(
                 manifest,
                 expected_manifest_sha256=manifest_sha256(manifest),
+                signature=authorization_signature(manifest, HMAC_KEY),
+                hmac_key=HMAC_KEY,
+                expected_nonce=NONCE,
+                expected_receipt_id=RECEIPT_ID,
                 workflow="trident-supabase",
                 repository="HaliroESG/portfolio-project",
                 workflow_ref=(
@@ -114,6 +134,10 @@ class MutationContractTests(unittest.TestCase):
             validate_contract(
                 manifest,
                 expected_manifest_sha256=manifest_sha256(manifest),
+                signature=authorization_signature(manifest, HMAC_KEY),
+                hmac_key=HMAC_KEY,
+                expected_nonce=NONCE,
+                expected_receipt_id=RECEIPT_ID,
                 workflow="trident-supabase",
                 repository="HaliroESG/portfolio-project",
                 workflow_ref=(
@@ -145,6 +169,10 @@ class MutationContractTests(unittest.TestCase):
             validate_contract(
                 manifest,
                 expected_manifest_sha256="f" * 64,
+                signature=authorization_signature(manifest, HMAC_KEY),
+                hmac_key=HMAC_KEY,
+                expected_nonce=NONCE,
+                expected_receipt_id=RECEIPT_ID,
                 workflow="trident-supabase",
                 repository="HaliroESG/portfolio-project",
                 workflow_ref=(
@@ -171,6 +199,10 @@ class MutationContractTests(unittest.TestCase):
             validate_contract(
                 manifest,
                 expected_manifest_sha256=manifest_sha256(manifest),
+                signature=authorization_signature(manifest, HMAC_KEY),
+                hmac_key=HMAC_KEY,
+                expected_nonce=NONCE,
+                expected_receipt_id=RECEIPT_ID,
                 workflow="bootstrap-private-owner",
                 repository="HaliroESG/portfolio-project",
                 workflow_ref=(
@@ -198,6 +230,61 @@ class MutationContractTests(unittest.TestCase):
         }
         with self.assertRaisesRegex(ContractError, "normalized run inputs"):
             check(manifest, inputs)
+
+    def test_forgeable_authority_and_replay_fail(self) -> None:
+        manifest, inputs = valid_case()
+        with self.assertRaisesRegex(ContractError, "signature is invalid"):
+            validate_contract(
+                manifest,
+                expected_manifest_sha256=manifest_sha256(manifest),
+                signature="f" * 64,
+                hmac_key=HMAC_KEY,
+                expected_nonce=NONCE,
+                expected_receipt_id=RECEIPT_ID,
+                workflow="trident-supabase",
+                repository="HaliroESG/portfolio-project",
+                workflow_ref=(
+                    "HaliroESG/portfolio-project/.github/workflows/"
+                    "trident-supabase.yml@refs/heads/main"
+                ),
+                event_name="workflow_dispatch",
+                ref="refs/heads/main",
+                run_sha=RUN_SHA,
+                raw_inputs=inputs,
+                now=NOW,
+            )
+        name = replay_artifact_name(RECEIPT_ID, NONCE)
+        with self.assertRaisesRegex(ContractError, "already consumed"):
+            validate_replay_artifacts(
+                "claim",
+                [{"name": name, "expired": False, "workflow_run": {"id": 41}}],
+                expected_name=name,
+                run_id="42",
+            )
+
+    def test_pre_provider_revalidation_rejects_expired_authority(self) -> None:
+        manifest, inputs = valid_case()
+        check(manifest, inputs)
+        with self.assertRaisesRegex(ContractError, "expired"):
+            validate_contract(
+                manifest,
+                expected_manifest_sha256=manifest_sha256(manifest),
+                signature=authorization_signature(manifest, HMAC_KEY),
+                hmac_key=HMAC_KEY,
+                expected_nonce=NONCE,
+                expected_receipt_id=RECEIPT_ID,
+                workflow="trident-supabase",
+                repository="HaliroESG/portfolio-project",
+                workflow_ref=(
+                    "HaliroESG/portfolio-project/.github/workflows/"
+                    "trident-supabase.yml@refs/heads/main"
+                ),
+                event_name="workflow_dispatch",
+                ref="refs/heads/main",
+                run_sha=RUN_SHA,
+                raw_inputs=inputs,
+                now=datetime(2026, 8, 29, 18, 0, 1, tzinfo=timezone.utc),
+            )
 
 
 class RestoreReceiptTests(unittest.TestCase):
@@ -245,6 +332,19 @@ class RestoreReceiptTests(unittest.TestCase):
         receipt = copy.deepcopy(valid_receipt())
         receipt["outbound_side_effects"] = True
         with self.assertRaisesRegex(ReceiptError, "zero outbound"):
+            validate_receipt(
+                receipt,
+                expected_target_sha256=TARGET_SHA256,
+                expected_base_sha=RUN_SHA,
+                now=NOW,
+            )
+
+    def test_nonfinite_restore_metrics_fail(self) -> None:
+        with self.assertRaisesRegex(ReceiptError, "non-standard JSON constant"):
+            strict_json_loads('{"rpo_seconds":NaN}')
+        receipt = valid_receipt()
+        receipt["rto_seconds"] = float("inf")
+        with self.assertRaisesRegex(ReceiptError, "non-negative number"):
             validate_receipt(
                 receipt,
                 expected_target_sha256=TARGET_SHA256,

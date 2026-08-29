@@ -38,7 +38,8 @@ RETAINED_WITH_AUTHORITY. The validator rejects:
 - a target hash or base SHA different from the authorized run;
 - a future, expired, or more-than-seven-day-old receipt;
 - a validity period longer than seven days;
-- RPO above 120 seconds or RTO above 7,200 seconds.
+- non-standard JSON constants, including NaN and Infinity;
+- non-finite RPO/RTO values, RPO above 120 seconds, or RTO above 7,200 seconds.
 
 Validate a sanitized receipt locally:
 
@@ -61,8 +62,9 @@ restore_receipt_sha256 in the mutation authorization manifest.
    aggregate fingerprints. No row values leave the provider.
 5. Record observed RPO/RTO and cleanup disposition.
 6. Validate and hash the receipt locally.
-7. Obtain a new, separately authorized mutation manifest tied to the same
-   target hash, repository SHA, normalized inputs, and receipt hash.
+7. Obtain a new manifest from the pinned independent issuer, HMAC-signed over
+   issuer, repository, workflow, repository SHA, target, normalized inputs,
+   issued_at/expiry, receipt digest, nonce, and receipt_id.
 
 A backup indicator, PITR setting, successful local check, or old restore receipt
 is not a substitute for this drill.

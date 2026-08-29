@@ -22,19 +22,33 @@ ASTROCYTE_SOURCE_RIGHTS_GATE=APPROVED never create authority.
 
 Before the first schema/data write, every workflow requires all predicates:
 
-1. event is exactly workflow_dispatch;
-2. ref is exactly refs/heads/main;
-3. github.sha matches the manifest run_sha;
-4. github.workflow_ref matches the allowlisted workflow file on main;
-5. workflow inputs equal their typed, canonical manifest representation;
-6. controller_ref is present and normalized;
-7. manifest expiry is in the future and no more than 24 hours away;
-8. canonical manifest SHA-256 matches the supplied hash;
-9. target identity is a lowercase SHA-256;
-10. restore receipt hash, target, base SHA, freshness, RPO/RTO, fingerprint,
+1. the exact canonical manifest has a valid HMAC-SHA256 signature from the
+   pinned ASTROCYTE_CONTROL_CENTER_V1 issuer, checked with the protected
+   Production secret ASTROCYTE_AUTHORIZATION_HMAC_KEY;
+2. issuer and repository match the pinned values;
+3. event is exactly workflow_dispatch;
+4. ref is exactly refs/heads/main;
+5. github.sha matches the manifest run_sha;
+6. github.workflow_ref matches the allowlisted workflow file on main;
+7. workflow inputs equal their typed, canonical manifest representation;
+8. controller_ref is present and normalized;
+9. issued_at is not in the future and expiry is after issued_at, in the future,
+   and at most 24 hours after issue;
+10. canonical manifest SHA-256 matches the supplied hash;
+11. target identity is a lowercase SHA-256;
+12. restore receipt hash, target, base SHA, freshness, finite RPO/RTO, fingerprint,
     isolation, side-effect, and cleanup predicates pass;
-11. provider mutation and source-rights kill switches are still open;
-12. blocking prechecks pass before any migration or data write.
+13. nonce and receipt_id match the dispatch inputs and have not been consumed by
+    any workflow run;
+14. the current run has persisted the single 30-day anti-replay artifact for
+    that nonce/receipt_id pair;
+15. provider mutation and source-rights kill switches are still open;
+16. blocking prechecks pass before any migration or data write.
+
+The full signature, freshness, inputs, target, restore receipt, and current-run
+anti-replay predicates are re-evaluated inside each mutative job after its
+Production environment gate and immediately before its first provider access.
+The initial claim is not sufficient if authority expires while setup runs.
 
 All write workflows share portfolio-production-mutation with
 cancel-in-progress: false. A newer run cannot cancel a mutation already in
@@ -45,16 +59,21 @@ progress.
 The manifest uses exact fields and contains no secret:
 
     {
-      "schema_version": "astrocyte_mutation_authorization_v1",
+      "schema_version": "astrocyte_mutation_authorization_v2",
+      "issuer": "ASTROCYTE_CONTROL_CENTER_V1",
+      "repository": "HaliroESG/portfolio-project",
       "workflow": "<allowlisted workflow id>",
       "ref": "refs/heads/main",
       "run_sha": "<exact main sha>",
       "controller_ref": "<normalized controller record>",
+      "issued_at": "YYYY-MM-DDTHH:MM:SSZ",
       "expires_at": "YYYY-MM-DDTHH:MM:SSZ",
       "target_sha256": "<approved target identity hash>",
       "restore_receipt_sha256": "<canonical receipt hash>",
       "restore_receipt": {},
-      "inputs": {}
+      "inputs": {},
+      "nonce": "<32-to-64 lowercase hexadecimal characters>",
+      "receipt_id": "<16-to-64 lowercase letters, digits, or hyphens>"
     }
 
 Workflow IDs and normalized inputs:
@@ -77,7 +96,22 @@ local manifest without dispatching anything:
       --hash-only
 
 Use the canonical JSON line as authorization_manifest and the following digest
-as authorization_manifest_sha256. Recompute both after any field changes.
+as authorization_manifest_sha256. Recompute both after any field changes. A
+protected issuer, independent of the person or process dispatching the workflow,
+must then HMAC-sign that exact canonical JSON. Pass the lowercase signature as
+authorization_signature and pass the manifest nonce/receipt_id separately as
+authorization_nonce and authorization_receipt_id. Never put the HMAC key in the
+manifest, a dispatch input, an artifact, or a log.
+
+The claim phase rejects any existing GitHub artifact named from the validated
+receipt_id/nonce pair, then uploads one current-run marker. Every mutative job
+requires exactly that non-expired marker and verifies its workflow run ID. The
+30-day marker retention exceeds the maximum 24-hour authorization lifetime, so
+an expired authority cannot become replayable after normal marker cleanup.
+
+This repository does not configure ASTROCYTE_AUTHORIZATION_HMAC_KEY or an
+issuer. Until both independent issuance and the protected Production secret are
+configured under separate authority, every Production mutation fails closed.
 
 ## Migration and postconditions
 
@@ -91,8 +125,9 @@ incident, not permission to rerun.
 ## Rollback
 
 1. Close both provider kill switches and do not cancel the running mutation.
-2. Capture the workflow, run ID, exact SHA, manifest hash, receipt hash, first
-   failed step, and any completed postconditions without exposing secrets.
+2. Capture the workflow, run ID, exact SHA, manifest hash, receipt hash,
+   receipt_id, first failed step, and any completed postconditions without
+   exposing secrets or the HMAC key.
 3. For a repository-only defect, prepare a separate revert PR. Do not dispatch
    the reverted workflow automatically.
 4. For a failed SQL transaction, verify that PostgreSQL rolled it back; do not
