@@ -1,0 +1,43 @@
+{
+  "schema_version": "astrocyte_family_office_release_gate_evidence_v1",
+  "status": "PASS_WITH_LOCAL_ENVIRONMENT_LIMITATIONS",
+  "generated_at": "2026-08-29T20:03:00Z",
+  "base_sha": "3828d6d7851958f6e832896ce908c60097f67f90",
+  "code_sha": "ccfc0960812ce90deccfc01434da457e1e6934ce",
+  "candidate_sha": "c01eb33878e4030975144c5b0ae98e9bdf31ea04",
+  "provider_actions": "NONE",
+  "local_restore": {
+    "receipt": "receipts/local-restore-receipt.json",
+    "receipt_sha256": "bd42fac9b3fa14f535e74bc5ef7c2b3dc1574be26336d4755ad4b055e8e77761",
+    "restore_mode": "LOCAL_ISOLATED_DATABASE",
+    "postgres_major": 15,
+    "rpo_seconds": 0.069448,
+    "rto_seconds": 0.977171,
+    "fingerprint_match": true,
+    "cleanup_status": "DELETED",
+    "promotable_to_production": false
+  },
+  "tests": [
+    {"name": "local PostgreSQL backup/restore/migration/isolation/rollback drill", "status": "PASS"},
+    {"name": "Family Office Python tests", "result": "5 passed", "status": "PASS"},
+    {"name": "all .github Python tests", "result": "38 passed", "status": "PASS"},
+    {"name": "workflow contract tests", "result": "15 passed", "status": "PASS"},
+    {"name": "workflow parity", "result": "11 workflows", "status": "PASS"},
+    {"name": "actionlint", "result": "1.7.7", "status": "PASS"},
+    {"name": "backend pytest", "result": "144 passed", "status": "PASS"},
+    {"name": "backend targeted py_compile", "status": "PASS"},
+    {"name": "frontend lint", "status": "PASS"},
+    {"name": "frontend TypeScript strict check", "status": "PASS"},
+    {"name": "frontend critical-flow validation", "result": "28 checks", "status": "PASS"},
+    {"name": "frontend webpack production build with local placeholders", "status": "PASS"},
+    {"name": "canonical Turbopack production build", "status": "BLOCKED", "reason": "local sandbox forbids the internal bind operation"},
+    {"name": "frontend Supabase smoke", "status": "BLOCKED", "reason": "no local Supabase was running at the configured localhost endpoint; no provider fallback was attempted"}
+  ],
+  "security": {
+    "scan_id": "c8be56b6-1fbf-4cbe-87ac-9e23f05defac",
+    "exact_range": "3828d6d7851958f6e832896ce908c60097f67f90..ccfc0960812ce90deccfc01434da457e1e6934ce",
+    "changed_paths_reviewed": 11,
+    "reportable_findings": 0,
+    "coverage": "PARTIAL_WITH_EXPLICIT_MANUAL_FALLBACK"
+  }
+}
