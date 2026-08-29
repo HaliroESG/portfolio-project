@@ -1,0 +1,50 @@
+schema_version: astrocyte_handoff_v2
+run_id: PGA-004-CORRECTION-V2
+status: READY_FOR_INDEPENDENT_REREVIEW
+release_disposition: REREVIEW_REQUIRED
+ready_authorized: false
+merge_authorized: false
+migration_authorized: false
+candidate:
+  repository: HaliroESG/portfolio-project
+  pull_request: 12
+  branch: codex/portfolio-astrocyte-pga-004-correction-v1
+  base_sha: 3828d6d7851958f6e832896ce908c60097f67f90
+  merge_base_sha: 3828d6d7851958f6e832896ce908c60097f67f90
+  code_commit_sha: 3b1d9d75cca4e8880809f047ef5313b5edb0e96c
+  code_tree_sha: f1055ea7745b22487e1b183be199704d377d0115
+  exact_final_pr_head: TO_BE_BOUND_BY_FINAL_PUSH_AND_PR_DESCRIPTION
+  exact_final_pr_head_policy: reviewer must verify refs/pull/12/head equals the final PR description before reviewing
+review_inputs:
+  failed_review_md_sha256: 7fd2eb6653f0a713f74bf0214e140cade94c02be4a19b51a2068098494a51d2f
+  failed_handoff_yaml_sha256: ff5e982c73d2f4c9f766a8140a1a0923c8b8c234fadfca220bb0afaf21233b49
+findings_addressed:
+  P1_01_legacy_reader_contract: IMPLEMENTED_AND_LOCALLY_VALIDATED
+  P1_02_reproducible_pg15_cardinality: IMPLEMENTED_AND_LOCALLY_VALIDATED
+  P2_01_owner_transition_stale_orders: IMPLEMENTED_AND_MOUNTED_TEST_PASS
+  P2_02_explicit_admin_orders_errors: IMPLEMENTED_AND_FRONTEND_VALIDATED
+  P2_03_preflight_and_guarded_rollback: IMPLEMENTED_AND_PG15_VALIDATED
+required_counts:
+  canonical_owner_composite_fks: 27
+  canonical_direct_owner_profile_fks: 22
+  canonical_owner_related_total: 49
+  legacy_private_tables: 16
+  legacy_owner_composite_fks: 13
+production_guard:
+  expected_behavior: all business routes under /v1 remain HTTP 503 in Production independently of configuration
+  preserved: true
+  prior_backend_adversarial_tests_plus_full_pytest: PASS
+github_code_commit_checks:
+  frontend_ci_run: 33255177385
+  workflow_parity_run: 33255177392
+  trident_validate_run: 33255177399
+  result: PASS
+independent_review_requirements:
+  - verify final refs/pull/12/head, origin branch and PR description exact SHA agree
+  - verify PR remains draft and base is main at 3828d6d7851958f6e832896ce908c60097f67f90
+  - rerun backend/tests/sql/run_pga004_pg15.sh on PostgreSQL 15+
+  - inspect all 16 legacy ownership policies and 13 composite edges
+  - rerun mounted owner A to B transition test
+  - verify required checks on the final artifact-bearing head
+  - do not merge or apply any migration as part of review
+next_single_action: independent exact-head rereview of draft PR 12
