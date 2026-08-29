@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import hashlib
 import io
 import os
 import tempfile
@@ -16,12 +17,16 @@ from pydantic import BaseModel, ConfigDict, Field, field_validator, model_valida
 from family_office.commands import (
     add_manual_valuation,
     bootstrap_default_book,
+    command_scope,
     create_account,
     create_manual_holding,
     execute_audited_command,
     import_broker_transactions,
     prepare_monthly_close,
     reconcile_broker_positions,
+    require_order_scope,
+    require_owned_portfolio,
+    require_owned_resource,
     transition_decision,
 )
 from family_office.reporting import monthly_close_csv, monthly_close_pdf, order_csv, order_pdf
@@ -243,6 +248,8 @@ def bootstrap(
         owner_user_id=owner.user_id,
         command_id=command_id,
         command_type="BOOTSTRAP_DEFAULT_BOOK",
+        scope=command_scope({"portfolio_name": request.portfolio_name}),
+        authorize=lambda: repository.require_owner(owner.user_id),
         operation=lambda: bootstrap_default_book(
             repository, owner_user_id=owner.user_id, portfolio_name=request.portfolio_name
         ),
@@ -256,11 +263,27 @@ def add_account(
     command_id: str = Depends(command_idempotency_key),
     repository: FamilyOfficeRepository = Depends(_repository),
 ) -> dict[str, Any]:
+    def authorize() -> None:
+        require_owned_portfolio(
+            repository,
+            owner_user_id=owner.user_id,
+            portfolio_id=request.portfolio_id,
+        )
+        require_owned_resource(
+            repository,
+            owner_user_id=owner.user_id,
+            table="fo_institutions",
+            resource_id=request.institution_id,
+            label="institution",
+        )
+
     return execute_audited_command(
         repository,
         owner_user_id=owner.user_id,
         command_id=command_id,
         command_type="CREATE_ACCOUNT",
+        scope=command_scope(request.model_dump(mode="json")),
+        authorize=authorize,
         operation=lambda: create_account(
             repository,
             owner_user_id=owner.user_id,
@@ -317,12 +340,35 @@ async def import_broker(
                 )
             return {**transaction_result, "reconciliation_result": reconciliation_result}
 
+        def authorize() -> None:
+            require_owned_resource(
+                repository,
+                owner_user_id=owner.user_id,
+                table="fo_accounts",
+                resource_id=account_id,
+                label="account",
+                portfolio_required=True,
+            )
+
         try:
             return execute_audited_command(
                 repository,
                 owner_user_id=owner.user_id,
                 command_id=command_id,
                 command_type="IMPORT_BROKER_TRANSACTIONS",
+                scope=command_scope(
+                    {
+                        "account_id": account_id,
+                        "broker": broker,
+                        "source_sha256": hashlib.sha256(content).hexdigest(),
+                        "positions_sha256": (
+                            hashlib.sha256(positions_content).hexdigest()
+                            if positions_content is not None
+                            else None
+                        ),
+                    }
+                ),
+                authorize=authorize,
                 operation=operation,
             )
         finally:
@@ -343,6 +389,12 @@ def add_holding(
         owner_user_id=owner.user_id,
         command_id=command_id,
         command_type="CREATE_MANUAL_HOLDING",
+        scope=command_scope(payload),
+        authorize=lambda: require_owned_portfolio(
+            repository,
+            owner_user_id=owner.user_id,
+            portfolio_id=request.portfolio_id,
+        ),
         operation=lambda: create_manual_holding(
             repository, owner_user_id=owner.user_id, payload=payload
         ),
@@ -363,6 +415,15 @@ def add_valuation(
         owner_user_id=owner.user_id,
         command_id=command_id,
         command_type="ADD_MANUAL_VALUATION",
+        scope=command_scope({"holding_id": holding_id, **payload}),
+        authorize=lambda: require_owned_resource(
+            repository,
+            owner_user_id=owner.user_id,
+            table="fo_manual_holdings",
+            resource_id=holding_id,
+            label="manual holding",
+            portfolio_required=True,
+        ),
         operation=lambda: add_manual_valuation(
             repository,
             owner_user_id=owner.user_id,
@@ -384,6 +445,12 @@ def recalculate(
         owner_user_id=owner.user_id,
         command_id=command_id,
         command_type="RECALCULATE_PORTFOLIO",
+        scope=command_scope(request.model_dump(mode="json")),
+        authorize=lambda: require_owned_portfolio(
+            repository,
+            owner_user_id=owner.user_id,
+            portfolio_id=request.portfolio_id,
+        ),
         operation=lambda: rebuild_portfolio(
             repository,
             owner_user_id=owner.user_id,
@@ -401,11 +468,11 @@ def create_decision(
     repository: FamilyOfficeRepository = Depends(_repository),
 ) -> dict[str, Any]:
     def operation() -> dict[str, Any]:
-        portfolio = repository.first(
-            "fo_portfolios", filters={"id": request.portfolio_id, "owner_user_id": owner.user_id}
+        require_owned_portfolio(
+            repository,
+            owner_user_id=owner.user_id,
+            portfolio_id=request.portfolio_id,
         )
-        if portfolio is None:
-            raise ValueError("Unknown portfolio")
         decision = repository.insert(
             "fo_decisions",
             {"owner_user_id": owner.user_id, **request.model_dump()},
@@ -417,6 +484,12 @@ def create_decision(
         owner_user_id=owner.user_id,
         command_id=command_id,
         command_type="CREATE_DECISION",
+        scope=command_scope(request.model_dump(mode="json")),
+        authorize=lambda: require_owned_portfolio(
+            repository,
+            owner_user_id=owner.user_id,
+            portfolio_id=request.portfolio_id,
+        ),
         operation=operation,
     )
 
@@ -434,6 +507,15 @@ def update_decision_status(
         owner_user_id=owner.user_id,
         command_id=command_id,
         command_type="TRANSITION_DECISION",
+        scope=command_scope({"decision_id": decision_id, **request.model_dump(mode="json")}),
+        authorize=lambda: require_owned_resource(
+            repository,
+            owner_user_id=owner.user_id,
+            table="fo_decisions",
+            resource_id=decision_id,
+            label="decision",
+            portfolio_required=True,
+        ),
         operation=lambda: transition_decision(
             repository,
             owner_user_id=owner.user_id,
@@ -451,16 +533,14 @@ def create_order(
     repository: FamilyOfficeRepository = Depends(_repository),
 ) -> dict[str, Any]:
     def operation() -> dict[str, Any]:
-        decision = repository.first(
-            "fo_decisions", filters={"id": request.decision_id, "owner_user_id": owner.user_id}
+        decision, account = require_order_scope(
+            repository,
+            owner_user_id=owner.user_id,
+            decision_id=request.decision_id,
+            account_id=request.account_id,
         )
-        account = repository.first(
-            "fo_accounts", filters={"id": request.account_id, "owner_user_id": owner.user_id}
-        )
-        if decision is None or decision["status"] != "VALIDATED":
+        if decision["status"] != "VALIDATED":
             raise ValueError("A validated decision is required")
-        if account is None:
-            raise ValueError("Unknown account")
         gross = sum(abs(line.amount_eur or 0) for line in request.lines)
         order = repository.insert(
             "fo_order_drafts",
@@ -488,6 +568,13 @@ def create_order(
         owner_user_id=owner.user_id,
         command_id=command_id,
         command_type="CREATE_ORDER_DRAFT",
+        scope=command_scope(request.model_dump(mode="json")),
+        authorize=lambda: require_order_scope(
+            repository,
+            owner_user_id=owner.user_id,
+            decision_id=request.decision_id,
+            account_id=request.account_id,
+        ),
         operation=operation,
     )
 
@@ -499,24 +586,38 @@ def export_order(
     owner: AuthenticatedOwner = Depends(authenticated_owner),
     repository: FamilyOfficeRepository = Depends(_repository),
 ) -> Response:
-    order = repository.first(
-        "fo_order_drafts", filters={"id": order_id, "owner_user_id": owner.user_id}
+    try:
+        order = require_owned_resource(
+            repository,
+            owner_user_id=owner.user_id,
+            table="fo_order_drafts",
+            resource_id=order_id,
+            label="order",
+        )
+        require_order_scope(
+            repository,
+            owner_user_id=owner.user_id,
+            decision_id=str(order["decision_id"]),
+            account_id=str(order["account_id"]),
+        )
+    except ValueError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+    lines = repository.select(
+        "fo_order_lines",
+        filters={"order_draft_id": order_id, "owner_user_id": owner.user_id},
     )
-    if order is None:
-        raise HTTPException(status_code=404, detail="Unknown order")
-    lines = repository.select("fo_order_lines", filters={"order_draft_id": order_id})
     instruments = {row["id"]: row for row in repository.select("fo_instruments", "id,instrument_key,ticker")}
     enriched = [{**line, **instruments.get(line["instrument_id"], {})} for line in lines]
     if order["status"] not in {"EXPORTED", "EXECUTED", "RECONCILED"}:
         order = repository.update(
             "fo_order_drafts",
             {"status": "EXPORTED", "export_format": format.upper(), "exported_at": _iso_now(), "updated_at": _iso_now()},
-            filters={"id": order_id},
+            filters={"id": order_id, "owner_user_id": owner.user_id},
         )
         repository.update(
             "fo_decisions",
             {"status": "EXPORTED", "updated_at": _iso_now()},
-            filters={"id": order["decision_id"]},
+            filters={"id": order["decision_id"], "owner_user_id": owner.user_id},
         )
     if format == "pdf":
         return Response(
@@ -543,6 +644,12 @@ def monthly_close(
         owner_user_id=owner.user_id,
         command_id=command_id,
         command_type="MONTHLY_CLOSE",
+        scope=command_scope(request.model_dump(mode="json")),
+        authorize=lambda: require_owned_portfolio(
+            repository,
+            owner_user_id=owner.user_id,
+            portfolio_id=request.portfolio_id,
+        ),
         operation=lambda: prepare_monthly_close(
             repository,
             owner_user_id=owner.user_id,
@@ -560,11 +667,17 @@ def export_monthly_close(
     owner: AuthenticatedOwner = Depends(authenticated_owner),
     repository: FamilyOfficeRepository = Depends(_repository),
 ) -> Response:
-    close = repository.first(
-        "fo_monthly_closes", filters={"id": close_id, "owner_user_id": owner.user_id}
-    )
-    if close is None:
-        raise HTTPException(status_code=404, detail="Unknown monthly close")
+    try:
+        close = require_owned_resource(
+            repository,
+            owner_user_id=owner.user_id,
+            table="fo_monthly_closes",
+            resource_id=close_id,
+            label="monthly close",
+            portfolio_required=True,
+        )
+    except ValueError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
     portfolio = repository.first(
         "fo_portfolios",
         filters={"id": close["portfolio_id"], "owner_user_id": owner.user_id},
@@ -614,7 +727,7 @@ def resolve_exception(
         updated = repository.update(
             "fo_exceptions",
             {"status": request.status, "resolved_at": _iso_now()},
-            filters={"id": exception_id},
+            filters={"id": exception_id, "owner_user_id": owner.user_id},
         )
         return {"resource_type": "exception", "resource_id": exception_id, "exception": updated}
 
@@ -623,5 +736,13 @@ def resolve_exception(
         owner_user_id=owner.user_id,
         command_id=command_id,
         command_type="RESOLVE_EXCEPTION",
+        scope=command_scope({"exception_id": exception_id, **request.model_dump(mode="json")}),
+        authorize=lambda: require_owned_resource(
+            repository,
+            owner_user_id=owner.user_id,
+            table="fo_exceptions",
+            resource_id=exception_id,
+            label="exception",
+        ),
         operation=operation,
     )

@@ -1,10 +1,11 @@
 from __future__ import annotations
 
 import hashlib
+import json
 from datetime import date, datetime, timezone
 from decimal import Decimal
 from pathlib import Path
-from typing import Any, Callable, TypeVar
+from typing import Any, Callable, Mapping, TypeVar
 
 from broker_ingest.fortuneo import parse_fortuneo_csv
 from broker_ingest.ibkr import parse_ibkr_trades_csv
@@ -23,24 +24,129 @@ def _iso_now() -> str:
     return datetime.now(timezone.utc).isoformat()
 
 
+def command_scope(payload: Mapping[str, Any]) -> dict[str, str]:
+    serialized = json.dumps(
+        payload,
+        sort_keys=True,
+        separators=(",", ":"),
+        ensure_ascii=True,
+        default=str,
+    )
+    return {"request_sha256": hashlib.sha256(serialized.encode("utf-8")).hexdigest()}
+
+
+def require_owned_portfolio(
+    repository: FamilyOfficeRepository,
+    *,
+    owner_user_id: str,
+    portfolio_id: str,
+) -> dict[str, Any]:
+    portfolio = repository.first(
+        "fo_portfolios", filters={"id": portfolio_id, "owner_user_id": owner_user_id}
+    )
+    if portfolio is None:
+        raise ValueError("Unknown portfolio")
+    return portfolio
+
+
+def require_owned_resource(
+    repository: FamilyOfficeRepository,
+    *,
+    owner_user_id: str,
+    table: str,
+    resource_id: str,
+    label: str,
+    portfolio_required: bool = False,
+) -> dict[str, Any]:
+    resource = repository.first(
+        table, filters={"id": resource_id, "owner_user_id": owner_user_id}
+    )
+    if resource is None:
+        raise ValueError(f"Unknown {label}")
+    portfolio_id = resource.get("portfolio_id")
+    if portfolio_required and not portfolio_id:
+        raise ValueError(f"Unknown {label} portfolio")
+    if portfolio_id:
+        require_owned_portfolio(
+            repository,
+            owner_user_id=owner_user_id,
+            portfolio_id=str(portfolio_id),
+        )
+    return resource
+
+
+def require_order_scope(
+    repository: FamilyOfficeRepository,
+    *,
+    owner_user_id: str,
+    decision_id: str,
+    account_id: str,
+) -> tuple[dict[str, Any], dict[str, Any]]:
+    decision = require_owned_resource(
+        repository,
+        owner_user_id=owner_user_id,
+        table="fo_decisions",
+        resource_id=decision_id,
+        label="decision",
+        portfolio_required=True,
+    )
+    account = require_owned_resource(
+        repository,
+        owner_user_id=owner_user_id,
+        table="fo_accounts",
+        resource_id=account_id,
+        label="account",
+        portfolio_required=True,
+    )
+    if decision["portfolio_id"] != account["portfolio_id"]:
+        raise ValueError("Decision and account must belong to the same portfolio")
+    return decision, account
+
+
+def _assert_matching_command(
+    record: Mapping[str, Any],
+    *,
+    command_type: str,
+    scope: Mapping[str, str],
+) -> None:
+    before_state = record.get("before_state")
+    recorded_scope = (
+        before_state.get("command_scope") if isinstance(before_state, Mapping) else None
+    )
+    if record.get("command_type") != command_type or recorded_scope != dict(scope):
+        raise ValueError("Idempotency-Key does not match the original command request")
+
+
 def execute_audited_command(
     repository: FamilyOfficeRepository,
     *,
     owner_user_id: str,
     command_id: str,
     command_type: str,
+    scope: Mapping[str, str],
+    authorize: Callable[[], Any],
     operation: Callable[[], dict[str, Any]],
 ) -> dict[str, Any]:
+    authorize()
     existing = repository.existing_command(owner_user_id, command_id)
     if existing is not None:
+        _assert_matching_command(existing, command_type=command_type, scope=scope)
         return dict(existing.get("after_state") or {})
 
-    if repository.existing_audit(owner_user_id, command_id, "ACCEPTED") is None:
+    accepted = repository.existing_audit(owner_user_id, command_id, "ACCEPTED")
+    failed = repository.existing_audit(owner_user_id, command_id, "FAILED")
+    if accepted is not None:
+        _assert_matching_command(accepted, command_type=command_type, scope=scope)
+    if failed is not None:
+        _assert_matching_command(failed, command_type=command_type, scope=scope)
+    audit_scope = {"command_scope": dict(scope)}
+    if accepted is None:
         repository.audit(
             owner_user_id=owner_user_id,
             command_id=command_id,
             command_type=command_type,
             status="ACCEPTED",
+            before_state=audit_scope,
         )
     try:
         result = operation()
@@ -51,24 +157,25 @@ def execute_audited_command(
             status="COMPLETED",
             resource_type=result.get("resource_type"),
             resource_id=result.get("resource_id"),
+            before_state=audit_scope,
             after_state=result,
         )
         return result
     except Exception as exc:
-        failed = repository.existing_audit(owner_user_id, command_id, "FAILED")
         if failed is None:
             repository.audit(
                 owner_user_id=owner_user_id,
                 command_id=command_id,
                 command_type=command_type,
                 status="FAILED",
+                before_state=audit_scope,
                 error=str(exc)[:2000],
             )
         else:
             repository.update(
                 "fo_audit_log",
                 {"error": str(exc)[:2000]},
-                filters={"id": failed["id"]},
+                filters={"id": failed["id"], "owner_user_id": owner_user_id},
             )
         raise
 
@@ -173,16 +280,18 @@ def create_account(
     envelope: str,
     base_currency: str,
 ) -> dict[str, Any]:
-    portfolio = repository.first(
-        "fo_portfolios", filters={"id": portfolio_id, "owner_user_id": owner_user_id}
+    require_owned_portfolio(
+        repository,
+        owner_user_id=owner_user_id,
+        portfolio_id=portfolio_id,
     )
-    if portfolio is None:
-        raise ValueError("Unknown portfolio")
-    institution = repository.first(
-        "fo_institutions", filters={"id": institution_id, "owner_user_id": owner_user_id}
+    require_owned_resource(
+        repository,
+        owner_user_id=owner_user_id,
+        table="fo_institutions",
+        resource_id=institution_id,
+        label="institution",
     )
-    if institution is None:
-        raise ValueError("Unknown institution")
     account = repository.insert(
         "fo_accounts",
         {
@@ -275,11 +384,14 @@ def import_broker_transactions(
     source_path: Path,
     source_name: str | None = None,
 ) -> dict[str, Any]:
-    account = repository.first(
-        "fo_accounts", filters={"id": account_id, "owner_user_id": owner_user_id}
+    account = require_owned_resource(
+        repository,
+        owner_user_id=owner_user_id,
+        table="fo_accounts",
+        resource_id=account_id,
+        label="account",
+        portfolio_required=True,
     )
-    if account is None:
-        raise ValueError("Unknown account")
 
     parser = {"FORTUNEO": parse_fortuneo_csv, "IBKR": parse_ibkr_trades_csv}.get(broker.upper())
     if parser is None:
@@ -425,11 +537,14 @@ def reconcile_broker_positions(
     source_name: str | None = None,
     reconciliation_date: date | None = None,
 ) -> dict[str, Any]:
-    account = repository.first(
-        "fo_accounts", filters={"id": account_id, "owner_user_id": owner_user_id}
+    account = require_owned_resource(
+        repository,
+        owner_user_id=owner_user_id,
+        table="fo_accounts",
+        resource_id=account_id,
+        label="account",
+        portfolio_required=True,
     )
-    if account is None:
-        raise ValueError("Unknown account")
     target_date = reconciliation_date or date.today()
     source_sha256 = hashlib.sha256(source_path.read_bytes()).hexdigest()
     existing_import = repository.first(
@@ -645,6 +760,12 @@ def create_manual_holding(
     owner_user_id: str,
     payload: dict[str, Any],
 ) -> dict[str, Any]:
+    portfolio_id = str(payload.get("portfolio_id") or "")
+    require_owned_portfolio(
+        repository,
+        owner_user_id=owner_user_id,
+        portfolio_id=portfolio_id,
+    )
     holding = repository.insert("fo_manual_holdings", {"owner_user_id": owner_user_id, **payload})
     return {"resource_type": "manual_holding", "resource_id": holding["id"], "holding": holding}
 
@@ -656,11 +777,14 @@ def add_manual_valuation(
     holding_id: str,
     payload: dict[str, Any],
 ) -> dict[str, Any]:
-    holding = repository.first(
-        "fo_manual_holdings", filters={"id": holding_id, "owner_user_id": owner_user_id}
+    require_owned_resource(
+        repository,
+        owner_user_id=owner_user_id,
+        table="fo_manual_holdings",
+        resource_id=holding_id,
+        label="manual holding",
+        portfolio_required=True,
     )
-    if holding is None:
-        raise ValueError("Unknown manual holding")
     valuation = repository.insert(
         "fo_manual_valuations",
         {"owner_user_id": owner_user_id, "holding_id": holding_id, **payload},
@@ -676,9 +800,18 @@ def prepare_monthly_close(
     period_end: date,
     finalize: bool,
 ) -> dict[str, Any]:
+    portfolio = require_owned_portfolio(
+        repository,
+        owner_user_id=owner_user_id,
+        portfolio_id=portfolio_id,
+    )
     existing = repository.first(
         "fo_monthly_closes",
-        filters={"portfolio_id": portfolio_id, "period_end": period_end.isoformat()},
+        filters={
+            "owner_user_id": owner_user_id,
+            "portfolio_id": portfolio_id,
+            "period_end": period_end.isoformat(),
+        },
     )
     if existing and existing["status"] == "CLOSED":
         return {
@@ -686,12 +819,6 @@ def prepare_monthly_close(
             "resource_id": existing["id"],
             "monthly_close": existing,
         }
-
-    portfolio = repository.first(
-        "fo_portfolios", filters={"id": portfolio_id, "owner_user_id": owner_user_id}
-    )
-    if portfolio is None:
-        raise ValueError("Unknown portfolio")
 
     performance_rows = repository.select(
         "fo_performance_daily",
@@ -808,7 +935,11 @@ def prepare_monthly_close(
     repository.upsert_many("fo_monthly_closes", [payload], "portfolio_id,period_end")
     close = repository.first(
         "fo_monthly_closes",
-        filters={"portfolio_id": portfolio_id, "period_end": period_end.isoformat()},
+        filters={
+            "owner_user_id": owner_user_id,
+            "portfolio_id": portfolio_id,
+            "period_end": period_end.isoformat(),
+        },
     )
     if close is None:
         raise RuntimeError("Monthly close upsert returned no row")
@@ -836,11 +967,14 @@ def transition_decision(
     decision_id: str,
     target_status: str,
 ) -> dict[str, Any]:
-    decision = repository.first(
-        "fo_decisions", filters={"id": decision_id, "owner_user_id": owner_user_id}
+    decision = require_owned_resource(
+        repository,
+        owner_user_id=owner_user_id,
+        table="fo_decisions",
+        resource_id=decision_id,
+        label="decision",
+        portfolio_required=True,
     )
-    if decision is None:
-        raise ValueError("Unknown decision")
     current = decision["status"]
     if target_status not in VALID_DECISION_TRANSITIONS.get(current, set()):
         raise ValueError(f"Invalid decision transition {current} -> {target_status}")
@@ -854,6 +988,6 @@ def transition_decision(
     updated = repository.update(
         "fo_decisions",
         {"status": target_status, **timestamps},
-        filters={"id": decision_id},
+        filters={"id": decision_id, "owner_user_id": owner_user_id},
     )
     return {"resource_type": "decision", "resource_id": decision_id, "decision": updated}
