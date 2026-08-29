@@ -2,27 +2,25 @@ name: Workflow Parity
 
 on:
   pull_request:
-    paths:
-      - ".github/scripts/check_workflow_parity.py"
-      - ".github/workflows/**"
   push:
     branches:
       - main
-    paths:
-      - ".github/scripts/check_workflow_parity.py"
-      - ".github/workflows/**"
+  workflow_dispatch:
 
 permissions:
   contents: read
 
 jobs:
-  validate:
+  workflow-contract:
     runs-on: ubuntu-latest
     timeout-minutes: 5
 
     steps:
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
 
       - name: Validate workflow inventory and fail-closed gates
         run: python3 .github/scripts/check_workflow_parity.py
+
+      - name: Run deterministic workflow contract tests
+        run: python3 -m unittest discover -s .github/tests -p 'test_*.py'

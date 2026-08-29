@@ -13,8 +13,24 @@ on:
         required: true
         type: boolean
         default: false
-      authorization_ref:
-        description: "Separate approved change or runbook reference for mutations"
+      authorization_manifest:
+        description: "Canonical JSON authorization bound to main, SHA, inputs, controller and restore receipt"
+        required: false
+        type: string
+      authorization_manifest_sha256:
+        description: "SHA-256 of the canonical authorization manifest"
+        required: false
+        type: string
+      authorization_signature:
+        description: "HMAC-SHA256 signature required for Production mutation"
+        required: false
+        type: string
+      authorization_nonce:
+        description: "One-shot lowercase hexadecimal authorization nonce"
+        required: false
+        type: string
+      authorization_receipt_id:
+        description: "One-shot authorization receipt identifier"
         required: false
         type: string
   pull_request:
@@ -82,6 +98,11 @@ on:
 
 permissions:
   contents: read
+  actions: read
+
+concurrency:
+  group: ${{ github.event_name == 'workflow_dispatch' && (inputs.apply_schema || inputs.run_trident_etl) && 'portfolio-production-mutation' || format('trident-supabase-validation-{0}', github.run_id) }}
+  cancel-in-progress: false
 
 jobs:
   validate:
@@ -89,10 +110,10 @@ jobs:
 
     steps:
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
 
       - name: Set up Python
-        uses: actions/setup-python@v5
+        uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065 # v5
         with:
           python-version: "3.11"
 
@@ -111,7 +132,7 @@ jobs:
         run: python3.11 -m py_compile bridge.py technical_state.py etl_stats.py historical_prices_sync.py trident_screener.py equity_screener.py macro_regime.py api.py family_office/*.py scripts/run_data_refresh.py scripts/update_target_allocations.py scripts/import_target_allocations_excel.py scripts/import_broker_transactions.py scripts/import_broker_positions.py scripts/import_support_universe.py scripts/import_target_model.py scripts/backfill_top_trident_prices.py scripts/sync_trident_stock_insights.py scripts/sync_trident_screener.py scripts/sync_equity_screener.py scripts/sync_macro_regime.py scripts/sync_family_office.py scripts/bootstrap_family_office_owner.py tools/schema_check.py
 
       - name: Setup Node
-        uses: actions/setup-node@v4
+        uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
         with:
           node-version: "22"
           cache: "npm"
@@ -136,21 +157,42 @@ jobs:
           NEXT_PUBLIC_SUPABASE_ANON_KEY: ci-placeholder-anon-key
         run: npm run build
 
-  supabase-gate:
-    if: ${{ github.event_name != 'pull_request' }}
+  prepare-runtime:
+    if: ${{ github.event_name == 'workflow_dispatch' && (inputs.apply_schema || inputs.run_trident_etl) }}
     runs-on: ubuntu-latest
-    needs: validate
+    timeout-minutes: 30
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+      - name: Set up Python
+        uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065 # v5
+        with:
+          python-version: "3.11"
+      - name: Build untrusted dependency artifact without secrets
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install --target "$RUNNER_TEMP/python-deps" -r backend/requirements.txt
+      - name: Upload prepared Python dependencies
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: trident-supabase-python-runtime-${{ github.run_id }}-${{ github.run_attempt }}
+          path: ${{ runner.temp }}/python-deps
+          if-no-files-found: error
+          retention-days: 1
+
+  mutate-production:
+    runs-on: ubuntu-latest
+    needs:
+      - validate
+      - prepare-runtime
+    if: ${{ github.event_name != 'pull_request' && github.event_name == 'workflow_dispatch' && (inputs.apply_schema || inputs.run_trident_etl) }}
     environment: Production
     env:
-      AUTHORIZATION_REF: ${{ inputs.authorization_ref }}
+      AUTHORIZATION_MANIFEST: ${{ inputs.authorization_manifest }}
+      AUTHORIZATION_MANIFEST_SHA256: ${{ inputs.authorization_manifest_sha256 }}
+      PYTHONPATH: ${{ runner.temp }}/python-deps
       MUTATION_GATE: ${{ vars.ASTROCYTE_MUTATION_GATE }}
       SOURCE_RIGHTS_GATE: ${{ vars.ASTROCYTE_SOURCE_RIGHTS_GATE }}
-      SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
-      SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_KEY }}
-      SUPABASE_DB_URL: ${{ secrets.SUPABASE_DB_URL }}
-      DATABASE_URL: ${{ secrets.DATABASE_URL }}
-      SUPABASE_DB_URL_VAR: ${{ vars.SUPABASE_DB_URL }}
-      DATABASE_URL_VAR: ${{ vars.DATABASE_URL }}
       APPLY_SCHEMA: ${{ github.event_name == 'workflow_dispatch' && inputs.apply_schema || false }}
       RUN_TRIDENT_ETL: ${{ github.event_name == 'workflow_dispatch' && inputs.run_trident_etl || false }}
       TRIDENT_PROVIDER: ${{ vars.TRIDENT_PROVIDER || 'global_yahoo' }}
@@ -166,13 +208,78 @@ jobs:
 
     steps:
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
 
-      - name: Verify mutation authority gates
-        if: ${{ env.APPLY_SCHEMA == 'true' || env.RUN_TRIDENT_ETL == 'true' }}
+      - name: Record trusted verifier digest before mutable setup
+        id: trusted-verifier
+        shell: bash
         run: |
-          if [ "$MUTATION_GATE" != "APPROVED" ] || [ -z "$AUTHORIZATION_REF" ]; then
-            echo "::error::Supabase mutations require ASTROCYTE_MUTATION_GATE=APPROVED and authorization_ref."
+          digest_line=$(/usr/bin/sha256sum .github/scripts/check_mutation_contract.py)
+          digest="${digest_line%% *}"
+          if ! [[ "$digest" =~ ^[0-9a-f]{64}$ ]]; then
+            echo "::error::Trusted verifier digest is invalid."
+            exit 2
+          fi
+          echo "sha256=$digest" >> "$GITHUB_OUTPUT"
+
+      - name: Claim one-shot mutation authorization
+        env:
+          AUTHORIZATION_SIGNATURE: ${{ inputs.authorization_signature }}
+          AUTHORIZATION_HMAC_KEY: ${{ secrets.ASTROCYTE_AUTHORIZATION_HMAC_KEY }}
+          AUTHORIZATION_NONCE: ${{ inputs.authorization_nonce }}
+          AUTHORIZATION_RECEIPT_ID: ${{ inputs.authorization_receipt_id }}
+          GITHUB_TOKEN: ${{ github.token }}
+        run: |
+          /usr/bin/python3 -I -S .github/scripts/check_mutation_contract.py \
+            --workflow trident-supabase \
+            --replay-phase claim \
+            --marker-file "$RUNNER_TEMP/mutation-replay-marker.json" \
+            --input "apply_schema=$APPLY_SCHEMA" \
+            --input "run_trident_etl=$RUN_TRIDENT_ETL"
+
+      - name: Persist one-shot anti-replay marker
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: mutation-replay-${{ inputs.authorization_receipt_id }}-${{ inputs.authorization_nonce }}
+          path: ${{ runner.temp }}/mutation-replay-marker.json
+          if-no-files-found: error
+          retention-days: 30
+
+      - name: Set up Python
+        uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065 # v5
+        with:
+          python-version: "3.11"
+
+      - name: Verify trusted verifier integrity after mutable setup
+        env:
+          EXPECTED_VERIFIER_SHA256: ${{ steps.trusted-verifier.outputs.sha256 }}
+        shell: bash
+        run: |
+          digest_line=$(/usr/bin/sha256sum .github/scripts/check_mutation_contract.py)
+          actual="${digest_line%% *}"
+          if [ "$actual" != "$EXPECTED_VERIFIER_SHA256" ]; then
+            echo "::error::Trusted verifier changed during dependency setup."
+            exit 2
+          fi
+
+      - name: Validate one-shot authorization before dependency download
+        env:
+          AUTHORIZATION_SIGNATURE: ${{ inputs.authorization_signature }}
+          AUTHORIZATION_HMAC_KEY: ${{ secrets.ASTROCYTE_AUTHORIZATION_HMAC_KEY }}
+          AUTHORIZATION_NONCE: ${{ inputs.authorization_nonce }}
+          AUTHORIZATION_RECEIPT_ID: ${{ inputs.authorization_receipt_id }}
+          GITHUB_TOKEN: ${{ github.token }}
+        run: |
+          /usr/bin/python3 -I -S .github/scripts/check_mutation_contract.py \
+            --workflow trident-supabase \
+            --replay-phase enforce \
+            --input "apply_schema=$APPLY_SCHEMA" \
+            --input "run_trident_etl=$RUN_TRIDENT_ETL"
+
+      - name: Apply provider kill switches
+        run: |
+          if [ "$MUTATION_GATE" != "APPROVED" ]; then
+            echo "::error::ASTROCYTE_MUTATION_GATE kill switch is closed."
             exit 2
           fi
           if [ "$RUN_TRIDENT_ETL" = "true" ] && [ "$SOURCE_RIGHTS_GATE" != "APPROVED" ]; then
@@ -180,38 +287,45 @@ jobs:
             exit 2
           fi
 
-      - name: Set up Python
-        uses: actions/setup-python@v5
+      - name: Download prepared dependencies after authority
+        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4
         with:
-          python-version: "3.11"
+          name: trident-supabase-python-runtime-${{ github.run_id }}-${{ github.run_attempt }}
+          path: ${{ runner.temp }}/python-deps
 
-      - name: Install backend dependencies
-        working-directory: ./backend
+      - name: Enforce one-shot authorization immediately before provider access
+        env:
+          AUTHORIZATION_SIGNATURE: ${{ inputs.authorization_signature }}
+          AUTHORIZATION_HMAC_KEY: ${{ secrets.ASTROCYTE_AUTHORIZATION_HMAC_KEY }}
+          AUTHORIZATION_NONCE: ${{ inputs.authorization_nonce }}
+          AUTHORIZATION_RECEIPT_ID: ${{ inputs.authorization_receipt_id }}
+          GITHUB_TOKEN: ${{ github.token }}
         run: |
-          python -m pip install --upgrade pip
-          pip install -r requirements.txt
+          /usr/bin/python3 -I -S .github/scripts/check_mutation_contract.py \
+            --workflow trident-supabase \
+            --replay-phase enforce \
+            --input "apply_schema=$APPLY_SCHEMA" \
+            --input "run_trident_etl=$RUN_TRIDENT_ETL"
 
       - name: Pre-migration schema check
         working-directory: ./backend
-        continue-on-error: true
+        env:
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_KEY: ${{ secrets.SUPABASE_SERVICE_KEY }}
         run: python tools/schema_check.py --pretty --output schema-check-before.json
 
       - name: Apply Supabase migrations
         if: ${{ env.APPLY_SCHEMA == 'true' }}
         env:
+          SUPABASE_DB_URL: ${{ secrets.SUPABASE_DB_URL }}
+          DATABASE_URL: ${{ secrets.DATABASE_URL }}
           PGPASSWORD: ""
         run: |
           if [ -z "$SUPABASE_DB_URL" ]; then
             SUPABASE_DB_URL="$DATABASE_URL"
           fi
           if [ -z "$SUPABASE_DB_URL" ]; then
-            SUPABASE_DB_URL="$SUPABASE_DB_URL_VAR"
-          fi
-          if [ -z "$SUPABASE_DB_URL" ]; then
-            SUPABASE_DB_URL="$DATABASE_URL_VAR"
-          fi
-          if [ -z "$SUPABASE_DB_URL" ]; then
-            echo "::error::SUPABASE_DB_URL or DATABASE_URL is required as a GitHub Actions secret or variable to apply SQL migrations."
+            echo "::error::SUPABASE_DB_URL or DATABASE_URL is required as a GitHub Actions secret to apply SQL migrations."
             echo "SUPABASE_URL + SUPABASE_SERVICE_KEY can validate REST schema and write rows, but cannot run DDL SQL."
             exit 2
           fi
@@ -223,6 +337,7 @@ jobs:
           # separate, explicitly approved migration runbook with backup and rollback.
           psql "$SUPABASE_DB_URL" \
             -v ON_ERROR_STOP=1 \
+            --single-transaction \
             -f backend/sql/20260210_market_watch_phase2_technicals.sql \
             -f backend/sql/20260210_portfolio_positions_phase3.sql \
             -f backend/sql/20260213_isin_identifier_map.sql \
@@ -243,13 +358,16 @@ jobs:
 
       - name: Post-migration schema check
         working-directory: ./backend
-        continue-on-error: ${{ env.APPLY_SCHEMA != 'true' }}
+        env:
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_KEY: ${{ secrets.SUPABASE_SERVICE_KEY }}
         run: python tools/schema_check.py --pretty --output schema-check-after.json
 
       - name: Run Trident ETL when configured
         if: ${{ github.event_name == 'workflow_dispatch' && inputs.run_trident_etl }}
         working-directory: ./backend
         env:
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
           SUPABASE_KEY: ${{ secrets.SUPABASE_SERVICE_KEY }}
         run: |
           if [ "$TRIDENT_PROVIDER" = "csv" ] && { [ -z "$TRIDENT_UNIVERSE_CSV" ] || [ -z "$TRIDENT_FINANCIALS_CSV" ]; }; then
@@ -278,7 +396,7 @@ jobs:
           python scripts/sync_equity_screener.py --enforce-quality-gate
 
       - name: Setup Node for Supabase smoke
-        uses: actions/setup-node@v4
+        uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
         with:
           node-version: "22"
           cache: "npm"
@@ -305,7 +423,7 @@ jobs:
 
       - name: Upload Supabase reports
         if: always()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
         with:
           name: trident-supabase-reports
           path: |
