@@ -107,3 +107,105 @@ risks:
 
 blocked: []
 next_single_action: Review draft pull request 10 and keep it draft until controller acceptance.
+
+correction_v1:
+  appended_at_utc: "2026-08-29T09:55:42Z"
+  prior_handoff_sha256: "f2b3490280db0fb6aabce432846aecb625d5942e0ad820e0c71f772c4480bd00"
+  prior_evidence_preserved: true
+  status: LOCAL_GATES_AND_CODE_COMMIT_CI_GREEN_PR_DRAFT
+  lease:
+    workstream: portfolio-astrocyte-security-pga-005-039-correction-v1
+    owner_thread_id: "01a04cb9-b119-7150-8a8f-909285412554"
+    registry: /Users/oliviersoudee/.codex/haliro-execution-governor/portfolio-project-workstreams.json
+    profile: normal-pr
+    decision_at_handoff: CONTINUE
+    terminal_result_planned: complete
+  git:
+    required_remote_base_sha: "f91bbb85df77c36dde7150bb0261d0bdd95ed515"
+    verified_remote_base_sha: "f91bbb85df77c36dde7150bb0261d0bdd95ed515"
+    branch: codex/astrocyte-security-pga-005-039-v1
+    code_commit: "e14338d6dae71a00de8288a9c59f61cd654092fb"
+    code_tree: "826523fba5bae9d9d6d66516306157ed472bca6f"
+    correction_diff_sha256: "f96363c4ba4aa6bc0cca77b44f7bd662957e4084117022343d5e0dbe3dca1a3b"
+    diff_summary:
+      files_changed: 3
+      insertions: 102
+      deletions: 1
+    pull_request:
+      number: 10
+      url: https://github.com/HaliroESG/portfolio-project/pull/10
+      state: OPEN_DRAFT
+      ready: false
+      merged: false
+  finding:
+    id: PGA-005-INDETERMINATE-REPLAY
+    baseline_reproduction:
+      business_effects_for_one_idempotency_key: 2
+      persisted_audit_statuses: [ACCEPTED, FAILED]
+    resolution: COMPATIBLE_ACCEPTED_OR_FAILED_WITHOUT_COMPLETED_BLOCKS_REEXECUTION
+  security_property:
+    completed_replay: RETURNS_RECORDED_RESULT_AFTER_OWNER_AND_SCOPE_REVALIDATION
+    incomplete_replay: RETURNS_EXPLICIT_409_WITHOUT_CALLING_OPERATION
+    accepted_only_state: IN_PROGRESS_OR_INDETERMINATE
+    failed_state: INDETERMINATE
+    atomic_claim: EXISTING_UNIQUE_OWNER_COMMAND_STATUS_CONSTRAINT
+    second_business_effect_after_completed_audit_failure: FORBIDDEN_AND_TESTED
+  impact:
+    backend_writes: CODE_ONLY_NO_RUNTIME_WRITE
+    supabase_schema_or_data: UNCHANGED
+    frontend_typed_reads: UNCHANGED
+    frontend_ui_states: UNCHANGED
+    vercel_configuration: UNCHANGED
+    migration_required: false
+  tests:
+    summary_sha256: "39c2eeeef3fe1d22b58baf3428f0901ba505b6717e33e2ac83e786a8d8de4370"
+    backend_pytest:
+      status: PASS
+      command: python3.11 -m pytest -q
+      result: 144 passed
+    backend_py_compile:
+      status: PASS
+      command: python3.11 -m py_compile api.py family_office/*.py equity_screener.py bridge.py technical_state.py etl_stats.py
+    frontend_lint:
+      status: PASS
+      command: npm run lint
+    frontend_typescript:
+      status: PASS
+      command: npx tsc --noEmit
+    frontend_build:
+      status: PASS
+      command: npm run build
+    frontend_tests:
+      status: PASS
+      command: npm run test:frontend
+    frontend_contract:
+      status: PASS
+      command: npm run contract-check
+    critical_flows:
+      status: PASS
+      command: node scripts/validate-critical-flows.mjs
+      result: 28 checks
+    workflow_parity:
+      status: PASS
+      command: python3 .github/scripts/check_workflow_parity.py
+      result: 10 workflow files
+    workflow_yaml_parse:
+      status: PASS
+      result: 10 workflow files
+    git_diff_check:
+      status: PASS
+    supabase_smoke:
+      status: NOT_RUN
+      reason: No Supabase read or schema contract changed; provider/runtime access remained outside authority.
+    automatic_ci_at_code_commit:
+      frontend_contract_check: PASS
+      workflow_parity_validate: PASS
+      trident_supabase_validate: PASS
+      supabase_gate: SKIPPED_AS_DESIGNED_ON_PULL_REQUEST
+      vercel_previews: PASS_AUTOMATIC_NOT_INVOKED_BY_WORKSTREAM
+  file_hashes_sha256:
+    backend/api.py: "00b7f3afbda19edc6786cd614ac83da568fdad32c78f094992017c31db82b38f"
+    backend/family_office/commands.py: "1addf62cd4a50233e1b7ff8ed56cf7ae7fd7e8f963b84dfea11e70258d203053"
+    backend/tests/test_security_golden.py: "84e604b0acc34b080ccacf0c787ddc5369846a588fc71600615f8c19939d6e8b"
+  blocked: []
+  next_single_action: Review draft pull request 10; do not mark ready or merge before controller acceptance.
