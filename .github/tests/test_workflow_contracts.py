@@ -47,6 +47,18 @@ class WorkflowContractTests(unittest.TestCase):
         with self.assertRaisesRegex(AssertionError, "portfolio-production-mutation"):
             validate_workflow_contract(contents)
 
+    def test_runner_context_in_job_environment_fails(self) -> None:
+        contents = workflow_contents()
+        contents["trident-price-backfill.yml"] = contents[
+            "trident-price-backfill.yml"
+        ].replace(
+            "${{ github.workspace }}/.python-deps",
+            "${{ runner.temp }}/.python-deps",
+            1,
+        )
+        with self.assertRaisesRegex(AssertionError, "runner context is unavailable"):
+            validate_workflow_contract(contents)
+
     def test_failed_precheck_cannot_be_ignored(self) -> None:
         contents = workflow_contents()
         contents["trident-supabase.yml"] = contents["trident-supabase.yml"].replace(

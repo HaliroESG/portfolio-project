@@ -187,6 +187,21 @@ def _parse_workflow_document(name: str, text: str) -> dict[str, object]:
     return parsed
 
 
+def _check_job_environment_contexts(name: str, text: str) -> None:
+    document = _parse_workflow_document(name, text)
+    jobs = document.get("jobs")
+    if not isinstance(jobs, dict):
+        raise AssertionError(f"{name}: jobs must be a mapping")
+    for job_name, job in jobs.items():
+        if not isinstance(job, dict):
+            raise AssertionError(f"{name}: job {job_name} must be a mapping")
+        encoded_environment = json.dumps(job.get("env", {}), sort_keys=True)
+        if "${{ runner." in encoded_environment:
+            raise AssertionError(
+                f"{name} {job_name}: runner context is unavailable in job env"
+            )
+
+
 def _check_trust_boundaries(name: str, text: str) -> None:
     document = _parse_workflow_document(name, text)
     jobs = document.get("jobs")
@@ -330,6 +345,7 @@ def validate_workflow_contract(contents: dict[str, str]) -> None:
         raise AssertionError("workflow inventory mismatch")
     for name, text in contents.items():
         require(text, "permissions:\n  contents: read", name)
+        _check_job_environment_contexts(name, text)
 
     bootstrap = contents["bootstrap-private-owner.yml"]
     digest = hashlib.sha256(bootstrap.encode("utf-8")).hexdigest()
