@@ -1,5 +1,5 @@
 diff --git a/.github/scripts/check_workflow_parity.py b/.github/scripts/check_workflow_parity.py
-index bd3b4e9..978550d 100644
+index bd3b4e9..d013ace 100644
 --- a/.github/scripts/check_workflow_parity.py
 +++ b/.github/scripts/check_workflow_parity.py
 @@ -85,6 +85,14 @@ PINNED_ACTIONS = {
@@ -90,7 +90,7 @@ index bd3b4e9..978550d 100644
 +            ACTIONLINT_ARCHIVE_URL,
 +            "sha256sum --check --strict",
 +            'reported_version=$("$install_dir/actionlint" -version)',
-+            'test "${reported_version%%$\'\\n\'*}" = "v$ACTIONLINT_VERSION"',
++            'test "${reported_version%%$\'\\n\'*}" = "$ACTIONLINT_VERSION"',
 +        )
 +    ):
 +        raise AssertionError(
@@ -192,7 +192,7 @@ index b2f1926..5ed7d69 100644
      def test_failed_precheck_cannot_be_ignored(self) -> None:
          contents = workflow_contents()
 diff --git a/.github/workflows/workflow-parity.yml b/.github/workflows/workflow-parity.yml
-index 11ec536..57ccc58 100644
+index 11ec536..415ad41 100644
 --- a/.github/workflows/workflow-parity.yml
 +++ b/.github/workflows/workflow-parity.yml
 @@ -19,6 +19,30 @@ jobs:
@@ -217,7 +217,7 @@ index 11ec536..57ccc58 100644
 +          mkdir -p "$install_dir"
 +          tar -xzf "$archive" -C "$install_dir" actionlint
 +          reported_version=$("$install_dir/actionlint" -version)
-+          test "${reported_version%%$'\n'*}" = "v$ACTIONLINT_VERSION"
++          test "${reported_version%%$'\n'*}" = "$ACTIONLINT_VERSION"
 +          printf '%s\n' "$install_dir" >> "$GITHUB_PATH"
 +
 +      - name: Validate every workflow with Actionlint
