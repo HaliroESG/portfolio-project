@@ -1,61 +1,62 @@
-schema_version: astrocyte_workflow_parse_incident_handoff_v1
-workstream: portfolio-pr11-postmerge-workflow-parse-v1
+schema_version: astrocyte_workflow_parse_incident_handoff_v2
+workstream: portfolio-pr13-required-actionlint-v1
 owner_thread_id: 01a04cc7-807e-7720-b53e-011f4e5dacfd
 controller_thread_id: 01a048fb-6d82-7363-be6a-781ed87229b0
-updated_at_utc: 2026-08-29T11:57:33Z
-status: READY_FOR_INDEPENDENT_REVIEW
+updated_at_utc: 2026-08-29T12:27:28Z
+status: READY_FOR_INDEPENDENT_REREVIEW_AFTER_FINAL_HEAD_CI
 route: solo
 lease:
   registry: /Users/oliviersoudee/.codex/haliro-execution-governor/portfolio-project-workstreams.json
   profile: high-risk-train
-  base_sha: 994a9e530275627667b23de64c375804ecec94a9
-  authority_id: incident-postmerge-pr11-2026-08-29
-  authority_scope_sha256: 6cb78c9af217f87635e9acc01854e071daf21830ab51406743ef08de3d2e13e4
+  base_sha: f190d31a3f3fb68cad8a36477e000af2f9c04b04
+  authority_id: pr13-actionlint-required-correction-2026-08-29
+  authority_scope_sha256: 8f2e9825bca72dfaa2f9c8f3201dfa322cfda36231e0d3777a3439e665261202
   allowed_actions:
     - commit
     - push
+    - draft-pr
     - automatic-ci
     - fix-push
-incident:
-  merged_pr: 11
+prior_review:
+  verdict: FAIL
+  reviewed_head: f190d31a3f3fb68cad8a36477e000af2f9c04b04
+  review_md_sha256: b897eabbe9693005d7d7d0f7fd4a41e04bc8645976affa0e2f80cdfd7debdf1f
+  review_handoff_sha256: e93ac98ed56b972bd248f0ca50ae5fd9cb7f57a0a8f26cae1415c44e24a78c98
+  finding: P2_WHITESPACE_SENSITIVE_RUNNER_CONTEXT_GUARD_WITHOUT_REQUIRED_ACTIONLINT
+refs:
   exact_main: 994a9e530275627667b23de64c375804ecec94a9
-  symptom: FIVE_PUSH_RUNS_COMPLETED_FAILURE_WITH_ZERO_JOBS_AND_NO_LOGS
-  affected_runs:
-    trident_supabase: 33250950667
-    production_data_remediation: 33250951014
-    schedule: 33250951414
-    trident_price_backfill: 33250951928
-    trident_stock_insights: 33250952353
-  unaffected_runs:
-    workflow_parity: 33250952940
-    frontend_ci: 33250952987
-diagnosis:
-  reproducer: ACTIONLINT_V1_7_7_PINNED_GO_MODULE
-  command: go_run_github_com_rhysd_actionlint_cmd_actionlint_at_v1_7_7
-  pre_fix_errors: 10
-  exact_error: RUNNER_CONTEXT_NOT_ALLOWED_IN_JOBS_JOB_ENV
-  invalid_expression: PYTHONPATH_RUNNER_TEMP_AT_JOB_ENV
-  permitted_replacement_context: GITHUB_WORKSPACE
+  exact_rejected_pr_head: f190d31a3f3fb68cad8a36477e000af2f9c04b04
+  refs_verified_before_mutation: true
 git:
   branch: codex/pr11-postmerge-workflow-parse-v1
   pr_number: 13
   pr_state: OPEN_DRAFT
-  base_sha: 994a9e530275627667b23de64c375804ecec94a9
-  code_commit: dec1acfdc59854f1ec72f360e2920415296c4e06
-  code_tree: a5a4793d2dca2d4e486cd6c4752d936b24c52b32
-  seal_commit: GIT_OBJECT_CONTAINING_THIS_HANDOFF
-  mergeability_at_code_head: MERGEABLE_CLEAN
+  correction_code_commit: f36d20ede981da539737ad1fc1e05ee270a8b0d5
+  correction_code_tree: c3ca5429f87bc0a35fb6e228783a6fe3e3b3a9ae
+  final_seal_commit: GIT_OBJECT_CONTAINING_THIS_HANDOFF
+  push_policy: TARGETED_FORCE_WITH_LEASE_EXPECTING_F190D31
 impact:
   backend_writes: NO_PAYLOAD_OR_ETL_CHANGE
   supabase_schema_data: NO_SCHEMA_DATA_OR_PROVIDER_ACCESS
   frontend_reads_ui: NO_TYPED_READ_OR_UI_CHANGE
-fix:
-  protected_jobs: 10
-  workflow_files: 5
-  job_env_pythonpath: GITHUB_WORKSPACE_DOT_PYTHON_DEPS
-  dependency_download_path: GITHUB_WORKSPACE_DOT_PYTHON_DEPS
-  new_contract: SEMANTICALLY_REJECT_RUNNER_CONTEXT_IN_ANY_JOB_LEVEL_ENV
-  new_negative_test: REINTRODUCE_RUNNER_TEMP_JOB_ENV_AND_REQUIRE_FAILURE
+correction:
+  required_check: Workflow_Parity_workflow_contract
+  actionlint_version: 1.7.7
+  actionlint_archive: actionlint_1.7.7_linux_amd64.tar.gz
+  actionlint_archive_url: https://github.com/rhysd/actionlint/releases/download/v1.7.7/actionlint_1.7.7_linux_amd64.tar.gz
+  actionlint_archive_sha256: 023070a287cd8cccd71515fedc843f1985bf96c436b7effaecce67290e7e0757
+  acquisition: VERSION_PINNED_HTTPS_AND_EMBEDDED_SHA256_VERIFIED_FAIL_CLOSED
+  checksum_command: sha256sum_--check_--strict
+  binary_version_check: REQUIRED_EQUALS_1_7_7
+  workflow_scan: ALL_DOT_GITHUB_WORKFLOWS_YML
+  scan_order: ACTIONLINT_BEFORE_PYTHON_CONTRACTS
+  checker_guard: SEMANTIC_YAML_JOB_ENV_ONLY_AND_WHITESPACE_INSENSITIVE
+  adversarial_variants:
+    - RUNNER_CONTEXT_SPACED
+    - RUNNER_CONTEXT_COMPACT
+    - RUNNER_CONTEXT_TABS
+    - RUNNER_CONTEXT_NEWLINES
+  positive_control: RUNNER_CONTEXT_ALLOWED_IN_STEP_ENV
 security_properties:
   production_mutation_trigger: WORKFLOW_DISPATCH_ONLY
   production_environment_gate: PRESERVED
@@ -73,12 +74,19 @@ security_properties:
   migrations: BLOCKING_PRECHECK_SINGLE_TRANSACTION_BLOCKING_POSTCHECK
   scheduler_heartbeat: NON_MUTATING_NO_SECRETS
   bootstrap_private_owner: FAIL_CLOSED_UNCHANGED
+  required_parity_job_secrets: NONE
+  required_parity_job_provider_access: NONE
   provider_protection_and_pitr_restore_evidence: SEPARATE_UNCHANGED_GATES
 tests:
+  pre_fix_checker_compact_variant: UNEXPECTED_PASS_REPRODUCED
+  pre_fix_actionlint_compact_variant: EXPECTED_REJECTION_REPRODUCED
   actionlint_all_ten_workflows: PASS_ZERO_ERRORS
   workflow_parity: PASS_10_FILES
-  workflow_contract_unittest: PASS_28_TOTAL
-  exact_runner_context_negative: PASS
+  workflow_contract_unittest: PASS_30_TOTAL
+  whitespace_variant_subtests: PASS_4_NEGATIVE
+  legitimate_step_runner_control: PASS
+  actionlint_required_scan_and_checksum_tamper: PASS_2_NEGATIVE
+  workflow_install_shell_syntax: PASS
   backend_pytest: PASS_144
   backend_py_compile: PASS
   frontend_lint: PASS
@@ -86,36 +94,28 @@ tests:
   frontend_build: PASS
   frontend_critical_flows: PASS_28
   frontend_smoke_supabase: NOT_RUN_NO_CONTRACT_CHANGE_AND_PROVIDER_ACCESS_FORBIDDEN
-  remote_workflow_parity_run: 33251234689
-  remote_frontend_ci_run: 33251234705
-  remote_trident_validation_run: 33251234687
-  remote_trident_validate_job: PASS
-  remote_prepare_runtime_job: SKIPPED_ON_PULL_REQUEST
-  remote_mutate_production_job: SKIPPED_ON_PULL_REQUEST
-  remote_exact_code_head: dec1acfdc59854f1ec72f360e2920415296c4e06
+  remote_ci: PENDING_FINAL_SEAL_HEAD
 review_payload:
-  definition: BINARY_DIFF_EXACT_MAIN_TO_CODE_COMMIT_EXCLUDING_SEAL_ARTIFACTS
+  definition: BINARY_DIFF_REJECTED_PR_HEAD_TO_CORRECTION_CODE_COMMIT_EXCLUDING_SEAL_ARTIFACTS
+  base_sha: f190d31a3f3fb68cad8a36477e000af2f9c04b04
+  target_sha: f36d20ede981da539737ad1fc1e05ee270a8b0d5
   file: review.diff
   sidecar: review.diff.sha256
-  sha256: 06b61851e1f91982926fae1e5f0734a448460beb62947412c40a7b7fc865142f
-  changed_files: 7
+  sha256: fea9e1d4e1090abe2130147649e11f420f3d2926532bb12a793b00955b544e77
+  changed_files: 3
   file_sha256:
-    .github/scripts/check_workflow_parity.py: e51681c140d2995ff3d4c0f5fa002506ba5eca112f842b76c00c588e03e1ed8c
-    .github/tests/test_workflow_contracts.py: e9658b44251102fed7fb84812d6334ef9bcf63d9b9cf5a0a1cc520e2e3ad61ee
-    .github/workflows/production-data-remediation.yml: f7d278634e712b63ea50e5eca8942011ea3d2642b1287bdef3edac9868f5027a
-    .github/workflows/schedule.yml: 613dd562d0f7a5027c55a64703b3ad4f74387734f63479b408c122e0c1183d6a
-    .github/workflows/trident-price-backfill.yml: c7d19464012d692caff8ac41e183f07175bd87ba129b8153250f07cb8b5b40e2
-    .github/workflows/trident-stock-insights.yml: 1c37517a7d01a27135d3922834e5ebb68c905186aea7a69d78f1ade2fb1bc7a7
-    .github/workflows/trident-supabase.yml: 19b0e36dbe05508ad73d91fe4d66af9d86930b11a85ee3a5c0c6900338946b26
+    .github/scripts/check_workflow_parity.py: 595a7d4621c38f8b7d91d042b82cd3fda02fa2a17bbeadfa933489aa73ef3e69
+    .github/tests/test_workflow_contracts.py: 3f759c8fe4cb7fa4f65758bdb1bebf64cf43372561ec2f20f3a37a4fe36b8a3e
+    .github/workflows/workflow-parity.yml: db00c24784d5df344f0a8f7bdf08b30d0f1362998f665a027868613b4fd0e491
 risks:
-  - PYTHON_DEPENDENCIES_REMAIN_NOT_HASH_LOCKED_INHERITED_AND_NOT_EXPANDED_BY_THIS_FIX
-  - INTERNAL_CONTRACT_COVERS_THE_EXACT_RUNNER_JOB_ENV_REJECTION_NOT_ALL_FUTURE_GITHUB_EXPRESSION_RULES
-  - VERCEL_PREVIEW_STATUS_AND_DEPLOYMENT_WERE_AUTOMATIC_AFTER_PR_OPEN_NO_MANUAL_PROVIDER_ACCESS
+  - RELEASE_ASSET_URL_IS_VERSIONED_AND_BYTES_ARE_CRYPTOGRAPHICALLY_PINNED_REPLACEMENT_FAILS_CLOSED
+  - REQUIRED_CHECK_DEPENDS_ON_GITHUB_HOSTED_RUNNER_CURL_TAR_SHA256SUM_BASELINE
+  - PYTHON_PROVIDER_DEPENDENCIES_REMAIN_NOT_HASH_LOCKED_INHERITED_AND_OUT_OF_SCOPE
   - PRODUCTION_SECRETS_PROVIDER_GATES_PITR_AND_RESTORE_CAPABILITY_REMAIN_UNCONFIGURED_OR_UNVERIFIED
 blocked:
   - NO_READY_TRANSITION_AUTHORIZED
   - NO_MERGE_AUTHORIZED
   - NO_WORKFLOW_DISPATCH_AUTHORIZED
   - NO_PRODUCTION_OR_PROVIDER_ACCESS_AUTHORIZED
-next_single_action: INDEPENDENT_REVIEW_OF_EXACT_FINAL_PR13_HEAD_USING_SEALED_REVIEW_DIFF
+next_single_action: INDEPENDENT_REREVIEW_OF_EXACT_FINAL_PR13_HEAD_USING_SEALED_REVIEW_DIFF
 handoff_sidecar: handoff.yaml.sha256
