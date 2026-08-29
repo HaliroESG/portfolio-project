@@ -1,16 +1,16 @@
-schema_version: astrocyte_workflow_hardening_handoff_v2
-workstream: portfolio-pr11-preinstall-auth-v1
+schema_version: astrocyte_workflow_hardening_handoff_v3
+workstream: portfolio-pr11-postdownload-auth-dbsecret-v1
 owner_thread_id: 01a04cc7-807e-7720-b53e-011f4e5dacfd
 controller_thread_id: 01a048fb-6d82-7363-be6a-781ed87229b0
-updated_at_utc: 2026-08-29T10:53:46Z
+updated_at_utc: 2026-08-29T11:28:35Z
 status: READY_FOR_INDEPENDENT_REREVIEW
 route: solo
 lease:
   registry: /Users/oliviersoudee/.codex/haliro-execution-governor/portfolio-project-workstreams.json
   profile: high-risk-train
-  base_sha: 65d0b6c756dfc243d3eedbc92e52f6e9efbc3bab
-  authority_id: astrocyte-pr11-preinstall-auth-correction-github-delivery
-  authority_scope_sha256: 4bc0cacc18f1fffc9c2921f2b82f34b439092989774f6766c57ffafb0d6e5fef
+  base_sha: 5b2a7c446584d722aca9f972f8debf338fa9ad46
+  authority_id: astrocyte-pr11-postdownload-auth-dbsecret-correction
+  authority_scope_sha256: 1f80b748b382335a17e45c8e7b7c4e63279dbc12bbf2271b73195d7027ac8e06
   allowed_actions:
     - commit
     - push
@@ -20,54 +20,55 @@ git:
   branch: codex/astrocyte-workflow-hardening-v1
   pr_number: 11
   pr_state: OPEN_DRAFT
-  previous_reviewed_head: 65d0b6c756dfc243d3eedbc92e52f6e9efbc3bab
-  observed_remote_head_before_rebase: 65d0b6c756dfc243d3eedbc92e52f6e9efbc3bab
-  rebased_onto_origin_main: 00c88d220fc7a99ff642d4423193fcd6b58a1656
+  previous_reviewed_head: 5b2a7c446584d722aca9f972f8debf338fa9ad46
+  observed_remote_head_before_correction: 5b2a7c446584d722aca9f972f8debf338fa9ad46
+  origin_main: 00c88d220fc7a99ff642d4423193fcd6b58a1656
   merge_base: 00c88d220fc7a99ff642d4423193fcd6b58a1656
-  correction_code_commit: 8bbaca2f199f1ddf793532cf76c014974357a51f
-  correction_code_tree: 7aff176c88ff03fea0f19441378acab88cf738ad
+  correction_code_commit: 8d6891e44498153f20e8221c67b883d738bc39a3
+  correction_code_tree: 89dae4cebb46582eb87e9ec64ed5a54cb5f6d554
   final_handoff_commit: GIT_OBJECT_CONTAINING_THIS_HANDOFF
-  force_update_reason: REBASE_REQUIRED_TO_RESOLVE_PR10_OVERLAP
+  pr_body: TO_UPDATE_WITH_FINAL_HANDOFF_HASH_AFTER_FINAL_HEAD_CI
 prior_review:
   verdict: FAIL
-  finding: P2_PREAUTH_MUTABLE_PYTHON_DEPENDENCY_SITECUSTOMIZE_HMAC_OBSERVATION
-  review_md_sha256: 97bc85ec09e784288624cc48fed01617c877246d4244666170b1308b52395592
-  handoff_yaml_sha256: 029a3990cc1d8bd3ef7a32887de5f1ee0d0b0b5ea94949e57013f096708c1c1b
+  review_md_sha256: 08750c505ff59d60fa926a3af82c33552c3eab029320c32fb30421ef20220d97
+  handoff_yaml_sha256: e793e6a7557b1ff2f23a620537fdbfdbbd34c692c0a30c374ef8bbed26c8fd46
+findings:
+  P2_PROVIDER_DB_CREDENTIALS_FROM_VARS_JOB_SCOPED: FIXED_SECRET_ONLY_EXACT_MIGRATION_STEP
+  P2_POST_DOWNLOAD_AUTHORITY_EXPIRY_TOCTOU: FIXED_TEN_POST_DOWNLOAD_FULL_REVALIDATIONS
+  P3_PR_BODY_STALE_HANDOFF_HASH: PENDING_FINAL_METADATA_UPDATE
 impact:
   backend_writes: NO_PAYLOAD_OR_ETL_CHANGE_WORKFLOW_GUARDS_ONLY
   supabase_schema_data: NO_PROVIDER_MUTATION_NO_SCHEMA_CHANGE
   frontend_reads_ui: NO_CONTRACT_OR_UI_CHANGE
-findings:
-  PREAUTH_MUTABLE_DEPENDENCY: FIXED_FRESH_PROTECTED_RUNNER_STDLIB_ISOLATED_VERIFIER
-  AUTHORITY_FORGEABLE: PRESERVED_HMAC_AUTHENTICATED_ISSUER_AND_ONE_SHOT_REPLAY_MARKER
-  EXPIRY_TOCTOU: PRESERVED_FULL_REVALIDATION_IN_EVERY_MUTATIVE_JOB_BEFORE_PROVIDER
-  ACTION_PIN_CI_BYPASS: PRESERVED_SEMANTIC_YAML_USES_PARSER
-  NONFINITE_RESTORE_METRICS: PRESERVED_STRICT_JSON_AND_FINITE_NUMERIC_CHECKS
-  PR10_OVERLAP: RESOLVED_PULL_REQUEST_VALIDATION_CANNOT_ENTER_PRODUCTION_JOB
 security_properties:
+  database_credentials: PRODUCTION_SECRETS_ONLY_STEP_SCOPED_EXACT_MIGRATION_STEP
+  database_credential_variables: FORBIDDEN_SEMANTICALLY
+  authorization_order: INITIAL_THEN_PRE_DOWNLOAD_THEN_DOWNLOAD_THEN_FINAL_THEN_PROVIDER
+  post_download_revalidation_jobs: 10
+  post_download_revalidation: FULL_HMAC_FRESHNESS_INPUT_TARGET_RECEIPT_NONCE_CURRENT_RUN_REPLAY
+  first_provider_secret: IMMEDIATELY_AFTER_FINAL_REVALIDATION
   bootstrap_verifier: STANDALONE_PYTHON_STDLIB_ONLY
   bootstrap_command: /usr/bin/python3 -I -S
-  sitecustomize_and_user_site: DISABLED_DURING_HMAC_VERIFICATION
   dependency_preparation: SEPARATE_JOB_NO_PRODUCTION_ENVIRONMENT_NO_SECRETS
-  protected_runner: FRESH_RUNNER_DOES_NOT_DOWNLOAD_DEPENDENCIES_BEFORE_FINAL_AUTHORITY
   provider_secrets: STEP_SCOPED_ONLY_AFTER_FINAL_AUTHORITY
   authenticated_issuer: ASTROCYTE_CONTROL_CENTER_V1
-  signature: HMAC_SHA256_OVER_CANONICAL_FULL_MANIFEST
-  signature_bindings: ISSUER_REPOSITORY_WORKFLOW_REF_SHA_CONTROLLER_TARGET_INPUTS_ISSUED_EXPIRY_RECEIPT_NONCE_ID
   anti_replay: REPOSITORY_ARTIFACT_RECEIPT_ID_NONCE_ONE_SHOT_CURRENT_RUN_BOUND
-  replay_retention_days: 30
-  authorization_max_hours: 24
   scheduler: AUTOMATIC_HEARTBEAT_NON_MUTATING_NO_PROVIDER_SECRET
   push_validation: SEPARATE_FROM_PRODUCTION_MUTATION
   production_concurrency: portfolio-production-mutation
   cancel_in_progress: false
-  provider_variables: KILL_SWITCHES_ONLY_NOT_AUTHORITY
+  provider_variables: KILL_SWITCHES_ONLY_NOT_CREDENTIALS_OR_AUTHORITY
   restore_receipt: STRICT_JSON_FINITE_METRICS_FRESH_TARGET_AND_SHA_BOUND
   migrations: BLOCKING_PRECHECK_SINGLE_TRANSACTION_BLOCKING_POSTCHECK
   bootstrap_private_owner_sha256: 77c9966f7a0d40efa2abd56cac0801a11437a34efec35145a69e1bb35729ae0d
+dependency_risk:
+  status: JUSTIFIED_RESIDUAL_FAIL_CLOSED
+  detail: BACKEND_RANGES_NOT_HASH_LOCKED_PREPARATION_HAS_NO_SECRETS_FINAL_ISOLATED_AUTH_RUNS_AFTER_DOWNLOAD
+  required_before_activation: SEPARATE_CROSS_PLATFORM_HASH_LOCK_QUALIFICATION
 tests:
-  workflow_contract_unittest: PASS_25_TOTAL_22_NEGATIVE
-  sitecustomize_reproduction: PASS_SYSTEM_PYTHON_DID_NOT_OBSERVE_HMAC_KEY
+  workflow_contract_unittest: PASS_27_TOTAL_24_NEGATIVE
+  download_expiry_adversarial: PASS_VALID_BEFORE_DOWNLOAD_EXPIRED_AFTER_DOWNLOAD_REJECTED
+  credential_injection_adversarial: PASS_VARS_AND_JOB_SCOPE_REJECTED
   workflow_parity: PASS_10_FILES_SEMANTIC_YAML
   workflow_scripts_py_compile: PASS
   backend_pytest: PASS_144
@@ -77,32 +78,32 @@ tests:
   frontend_critical_flows: PASS_28
   frontend_build: PASS
   frontend_smoke_supabase: NOT_RUN_NO_READ_CONTRACT_CHANGE_AND_PROVIDER_ACCESS_FORBIDDEN
-  remote_ci: PASS_EXACT_PRESEAL_HEAD_WILL_RERUN_AFTER_SEAL_AMEND
-  workflow_parity_run: 33248833726
-  frontend_ci_run: 33248833728
+  remote_ci: PASS_PRESEAL_HEAD_WILL_RERUN_AFTER_SEAL_AMEND
+  workflow_parity_run: 33250185357
+  frontend_ci_run: 33250185323
 review_payload:
   definition: BINARY_DIFF_ORIGIN_MAIN_TO_CORRECTION_CODE_COMMIT_EXCLUDING_HANDOFF_AND_SIDECAR
-  sha256: 0faea67a2bc3e3821ccda41943c3811a026d4a929e2127a627d66763303b842b
+  sha256: a1fa73a7c9235cadba8ec5ec799022ccbf3c46c14963e3e51a9adb5c67071448
   changed_files: 13
   file_sha256:
     .github/scripts/check_mutation_contract.py: 3795fa1992e35bf6f8442a8bf46deba35444097389d70be1bb24035b5fb7166b
-    .github/scripts/check_workflow_parity.py: 86ade508961bae17c208232dbdf2f9ba1a6a70d66b8d4afb449f50b1c10120de
+    .github/scripts/check_workflow_parity.py: a0c9d5a2ec32bbf755127eb980d1296550b5353ebb7fa8aad2be37f455297b8a
     .github/scripts/verify_backup_restore_receipt.py: 9e72751ace6d85dfa6a71abefd8171bf4137502396d9c5883f529bbe8ee8e974
-    .github/tests/test_mutation_contract.py: b34154472334e3cd503543f47dbd9c4a0d4daae57ab3ab9aa0a747642220837d
-    .github/tests/test_workflow_contracts.py: 844d08de743b3314cc3478be99ca34b9a7e32ff768edbd3fa2b7e3e461e1a876
-    .github/workflows/production-data-remediation.yml: 5667cfe3ada8a2f8f47b1d460a9ade7bfda7185d4a1c78945fe30d7f15157481
-    .github/workflows/schedule.yml: 0155321d63b5259d2157b3bddeaa5f8ed1b982ebd463abff92f5079e78a16594
-    .github/workflows/trident-price-backfill.yml: c4d1c81aeaeede26f3a1804f42cb0afa903fe0849da6ee242924b3d7ff83a693
-    .github/workflows/trident-stock-insights.yml: b11bed8762a2c3103e65c48cd73c5749f7032d273d049c3fce8d1d5aed21cdb2
-    .github/workflows/trident-supabase.yml: 7b0c67dcf58727ea5fb7280d99fcec873d3b87467e961f34dc88283f330fe9ca
+    .github/tests/test_mutation_contract.py: 636f1591e33e69bb355b0e6f4dadbff8917fc4031bd4224785ebf41a93c2e666
+    .github/tests/test_workflow_contracts.py: 4c265be24e26fae9b1fa95929c1118bdf44b3a7b7aff8da69cc52f773628c349
+    .github/workflows/production-data-remediation.yml: 52ea38ea1ee713754f90b406f1bd916ef70c8df6794758c7c4eb08f5e1b59808
+    .github/workflows/schedule.yml: e8f62ea0ad9986da0da7da942b52f64206a1bc8c364a5cbc79bc86c85ab9e63e
+    .github/workflows/trident-price-backfill.yml: a20806995e42c4ec83b71c36ef0a28cf160290db71b8f3e1f6a9fd62ba7d714e
+    .github/workflows/trident-stock-insights.yml: bb28d35ceb62cfbf0a282f1c92eb72423feb0845bd02fc4460471981c25ea49e
+    .github/workflows/trident-supabase.yml: 359921700e5603c089d93151e0662aaabd57d3f5d1770f5e167a34d4b97fda8b
     .github/workflows/workflow-parity.yml: 87d53e3e66cdd174bfa0092fd06f1f645b91734c3e3c91f2dca2719c28b66469
-    docs/production-mutation-runbook.md: e61a5dc4ee87d229e2973c048fa6af2330e6bdfd5ccabf83dd2a41cec62b0fca
+    docs/production-mutation-runbook.md: 01e381b381c0501c9a1c6f9d9a944b9f276a63207dd637dd3344fcd477bac402
     docs/supabase-backup-restore.md: f2e2a752e420781103242144dc559d876c75eb66e66df02cec2e4f8139de9176
 risks:
   - HMAC_SECRET_AND_INDEPENDENT_ISSUER_NOT_CONFIGURED_FAIL_CLOSED
   - PROVIDER_KILL_SWITCHES_REMAIN_CLOSED_OR_UNVERIFIED
   - GITHUB_ENVIRONMENT_AND_RULESET_PROTECTIONS_UNVERIFIED
-  - BACKEND_REQUIREMENTS_ARE_NOT_HASH_LOCKED_BUT_ARE_NEVER_PRESENT_WHILE_HMAC_KEY_IS_EXPOSED
+  - PYTHON_DEPENDENCIES_NOT_HASH_LOCKED_JUSTIFIED_ABOVE
   - ANTI_REPLAY_ARTIFACT_DELETION_REQUIRES_SEPARATE_GITHUB_PROVIDER_AUTHORITY
   - SUPABASE_BACKUP_PITR_AND_RESTORE_CAPABILITY_UNVERIFIED
 blocked:
