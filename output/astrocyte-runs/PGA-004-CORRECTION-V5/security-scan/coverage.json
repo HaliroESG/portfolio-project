@@ -1,0 +1,124 @@
+{
+  "completeness": "complete",
+  "deferred": [],
+  "documentType": "codex-security.coverage",
+  "excludePaths": [],
+  "explicitExclusions": [
+    {
+      "pattern": "Supabase/Vercel/Production runtime",
+      "reason": "Explicitly forbidden"
+    },
+    {
+      "pattern": "Unchanged unrelated source and dependencies",
+      "reason": "Diff scan bounded to exact main...V5 code commit"
+    },
+    {
+      "pattern": "node_modules and build output",
+      "reason": "Not source-controlled review targets"
+    }
+  ],
+  "includePaths": [
+    "."
+  ],
+  "inventoryStrategy": "diff",
+  "mode": "branch_diff",
+  "openQuestions": [
+    {
+      "question": "Provider schema contents and deployed configuration remain intentionally unverified."
+    }
+  ],
+  "scanId": "510fddba-19f5-4189-9b0c-36cd706a6eab",
+  "schemaVersion": "1.0",
+  "surfaces": [
+    {
+      "disposition": "no_issue_found",
+      "evidence": [
+        "backend/api.py",
+        "backend/tests/test_security_golden.py"
+      ],
+      "id": "surface_backend-production-guard",
+      "label": "Backend Production guard",
+      "receiptRefs": []
+    },
+    {
+      "disposition": "no_issue_found",
+      "evidence": [
+        "backend/owner_scope.py",
+        "backend/broker_ingest/sync_transactions.py",
+        "backend/broker_ingest/sync_reconciliation.py",
+        "backend/scripts/import_target_model.py"
+      ],
+      "id": "surface_owner-scoped-active-writers",
+      "label": "Owner-scoped active writers",
+      "receiptRefs": []
+    },
+    {
+      "disposition": "no_issue_found",
+      "evidence": [
+        "backend/sql/20260829_family_office_owner_isolation.sql",
+        "backend/sql/20260829_family_office_owner_isolation_preflight.sql",
+        "backend/sql/20260829_family_office_owner_isolation_rollback.sql"
+      ],
+      "id": "surface_postgresql-owner-graph-and-rls",
+      "label": "PostgreSQL owner graph and RLS",
+      "receiptRefs": []
+    },
+    {
+      "disposition": "no_issue_found",
+      "evidence": [
+        "frontend/lib/useOwnerIdentity.ts",
+        "frontend/lib/useOwnerScopedSWR.ts",
+        "frontend/lib/useOwnerBoundState.ts",
+        "frontend/lib/useOwnerScopedRows.ts"
+      ],
+      "id": "surface_frontend-owner-identity-and-caches",
+      "label": "Frontend owner identity and caches",
+      "receiptRefs": []
+    },
+    {
+      "disposition": "no_issue_found",
+      "evidence": [
+        "frontend/lib/targetsOwnerReader.ts",
+        "frontend/lib/arbitrageOwnerReader.ts",
+        "frontend/lib/governanceOwnerReader.ts",
+        "frontend/lib/dataHealthOwnerReader.ts",
+        "frontend/lib/portfolioAggregationOwnerReader.ts"
+      ],
+      "id": "surface_five-production-readers",
+      "label": "Five production readers",
+      "receiptRefs": []
+    },
+    {
+      "disposition": "no_issue_found",
+      "evidence": [
+        "frontend/scripts/test-owner-surface-transition.cjs",
+        "frontend/scripts/validate-critical-flows.mjs"
+      ],
+      "id": "surface_mounted-a-to-b-late-success-and-error",
+      "label": "Mounted A-to-B late success and error",
+      "receiptRefs": []
+    },
+    {
+      "disposition": "no_issue_found",
+      "evidence": [
+        ".github/workflows",
+        "changed-file secret-pattern scan"
+      ],
+      "id": "surface_workflow-and-secret-boundaries",
+      "label": "Workflow and secret boundaries",
+      "receiptRefs": []
+    },
+    {
+      "disposition": "no_issue_found",
+      "evidence": [
+        "backend/tests",
+        "frontend/scripts",
+        "output/astrocyte-runs/PGA-004-CORRECTION-V1",
+        "output/astrocyte-runs/PGA-004-CORRECTION-V4"
+      ],
+      "id": "surface_documentary-evidence-and-tests",
+      "label": "Documentary evidence and tests",
+      "receiptRefs": []
+    }
+  ]
+}

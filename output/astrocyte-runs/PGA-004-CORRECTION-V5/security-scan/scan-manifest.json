@@ -1,0 +1,98 @@
+{
+  "documentType": "codex-security.scan-manifest",
+  "scan": {
+    "artifacts": [
+      {
+        "mediaType": "application/json",
+        "path": "findings.json",
+        "sha256": "05859654e61e2e77b3885c0dbeb8b58ccf93bcdd1c4c571bf4d73a68304ef4fa"
+      },
+      {
+        "mediaType": "application/json",
+        "path": "coverage.json",
+        "sha256": "138caee6518936ce3cc27d35ed1ab864f2ae27d9b746b4110bedfe4c14dcc9c7"
+      }
+    ],
+    "completedAt": "2026-08-29T15:58:02.810355Z",
+    "coverageRef": "coverage.json",
+    "findingsRef": "findings.json",
+    "id": "510fddba-19f5-4189-9b0c-36cd706a6eab",
+    "preservedSources": {
+      "checkpoints/0a97e9222da1544974d43871b748bb5dc7998406d9a2e43cb82c1451f0a2900b.json": "2403a4bbd663249320d9e95d4084409611ec88f3b56f3dd68962e445f8953d6a",
+      "checkpoints/2020082534d08b055112ea8e4c8fddf67f51bb7f0d09fbb2a79a17b84290a5a0.json": "2020082534d08b055112ea8e4c8fddf67f51bb7f0d09fbb2a79a17b84290a5a0"
+    },
+    "producer": {
+      "name": "codex-security-plugin",
+      "version": "0.1.22"
+    },
+    "scope": {
+      "artifactsReviewed": [
+        "Full changed-path inventory",
+        "Backend guard and writers",
+        "SQL migration/preflight/rollback",
+        "Frontend identity/caches/readers",
+        "Mounted late-success/error proof and static contract",
+        "Workflow and secret boundaries",
+        "V1-V4 evidence lineage"
+      ],
+      "context": "PGA-004 owner isolation, Production 503 guard, migration safety and CI hardening.",
+      "excludePaths": [],
+      "includePaths": [
+        "."
+      ],
+      "limitations": [
+        "No deployed DAST",
+        "No provider or Production runtime access"
+      ],
+      "runtimeStatus": "provider and Production runtime excluded",
+      "summary": "Security diff review of origin/main 3828d6d7851958f6e832896ce908c60097f67f90 through exact V5 code commit a496b33d538b61a31b6591bf1f633c73cc0cc10f.",
+      "validationMode": "manual diff review, changed-file secret scan and deterministic local checks"
+    },
+    "sealedAt": "2026-08-29T15:58:02.810355Z",
+    "startedAt": "2026-08-29T15:56:29.353081Z",
+    "status": "completed",
+    "target": {
+      "baseRevision": "3828d6d7851958f6e832896ce908c60097f67f90",
+      "displayName": "Portfolio-Project",
+      "headRevision": "a496b33d538b61a31b6591bf1f633c73cc0cc10f",
+      "kind": "git_diff",
+      "snapshotDigest": "codex-security-snapshot/v1:sha256:0ffb153c859caf8dba08edb8783ce5cb7c778f94165d545b6f6c194b742ade2a",
+      "targetId": "target_sha256_1423a99bbbc7d744ad60818f23f3a0068675973bfa7faef598d313c602b89a68"
+    },
+    "threatModel": {
+      "assets": [
+        "Owner-private portfolio and operational data",
+        "Authenticated owner identity and graph integrity",
+        "Service-role credentials and workflow gates",
+        "Production command fail-closed behavior"
+      ],
+      "assumptions": [
+        "No provider/runtime/Production access",
+        "PG15 fixtures are synthetic",
+        "Solo parent-only review"
+      ],
+      "attackerCapabilities": [
+        "Authenticated owner controls own ordinary inputs",
+        "Stale A request may resolve or reject under B",
+        "Contaminated fixtures may contain invalid owner edges",
+        "PR code may influence CI"
+      ],
+      "securityObjectives": [
+        "No cross-owner reads, renders, caches or stale reinjection",
+        "Explicit valid owner and scoped conflict identity on private writes",
+        "Contamination rejected before migration and rollback remains atomic",
+        "Production commands reject before auth/network",
+        "Secrets unavailable without authorization"
+      ],
+      "summary": "PR12 establishes explicit owner-scoped backend writes, PostgreSQL composed-owner constraints and RLS-backed frontend reads; V5 adds mounted stale-success and stale-error coverage for A-to-B transitions.",
+      "trustBoundaries": [
+        "Browser session to owner-scoped reads and caches",
+        "Mounted A-to-B transition with stale async completion",
+        "Backend writer inputs to privileged mutations",
+        "Existing graph to migration preflight and DDL",
+        "Pull-request CI to provider mutation"
+      ]
+    }
+  },
+  "schemaVersion": "1.0"
+}

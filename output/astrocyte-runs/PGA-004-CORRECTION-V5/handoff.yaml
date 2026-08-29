@@ -1,0 +1,31 @@
+schema_version: pga004_correction_handoff_v5
+run_id: PGA-004-CORRECTION-V5
+status: READY_FOR_INDEPENDENT_REVIEW
+base_sha: 3828d6d7851958f6e832896ce908c60097f67f90
+candidate_code_commit: a496b33d538b61a31b6591bf1f633c73cc0cc10f
+candidate_code_tree: 932b3d6e02d0064af47f119cc0db102e9e4a051f
+branch: codex/portfolio-astrocyte-pga-004-correction-v1
+pull_request: 12
+pull_request_state_required: DRAFT
+merge_authorized: false
+review_requirement:
+  independent: true
+  exact_head_binding_required: true
+  rebase_invalidates_prior_review: true
+assertions:
+  exact_main_rebase: PASS_NO_OP
+  conflicts: NONE
+  product_behavior_delta_from_v4: NONE
+  late_A_success_five_real_readers: PASS
+  late_A_error_five_real_readers: PASS
+  postgresql_15_full_matrix: PASS
+  backend_149: PASS
+  frontend_full_matrix: PASS
+  workflow_parity_actionlint: PASS
+  security_scan_findings: 0
+  prepare_runtime: SKIPPED
+  mutate_production: SKIPPED
+limitations:
+  - This handoff binds the exact code candidate and tree. The later artifact-bearing commit cannot self-contain its own SHA; the PR description must bind the exact final PR head.
+  - Provider and Production state remain intentionally unverified.
+next_single_action: independent_review_of_exact_final_pr_head

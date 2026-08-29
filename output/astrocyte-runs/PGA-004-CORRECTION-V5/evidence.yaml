@@ -1,0 +1,64 @@
+schema_version: pga004_correction_evidence_v5
+run_id: PGA-004-CORRECTION-V5
+governor:
+  slug: portfolio-astrocyte-pga-004-correction-v5
+  owner_thread_id: 01a04d1b-f815-7731-9d15-2449bfa7bb0a
+  profile: high-risk-train
+  registry: /Users/oliviersoudee/.codex/haliro-execution-governor/portfolio-project-workstreams.json
+git:
+  base_sha: 3828d6d7851958f6e832896ce908c60097f67f90
+  v4_head_before_rebase: 29ce45049ce352f1b295e48f9306a3aa6f3a2396
+  rebase_result: ALREADY_UP_TO_DATE_NO_CONFLICT
+  candidate_code_commit: a496b33d538b61a31b6591bf1f633c73cc0cc10f
+  candidate_code_tree: 932b3d6e02d0064af47f119cc0db102e9e4a051f
+  force_with_lease_expected_remote: 29ce45049ce352f1b295e48f9306a3aa6f3a2396
+  force_with_lease_result: PASS
+v5_delta:
+  product_code_changed: false
+  mounted_production_readers:
+    - Targets
+    - Arbitrage
+    - GovernanceWidget
+    - DataHealthPanel
+    - Geo/portfolioData
+  each_reader_late_success: PASS
+  each_reader_late_error: PASS
+  mounted_transition_without_unmount: PASS
+  owner_A_rows_filters_errors_cache_absent_after_B: PASS
+validation:
+  postgres_15_19_clean_legacy_writers_preflight_rollback: PASS
+  backend_pytest: "PASS: 149"
+  backend_compile: PASS
+  frontend_lint: PASS
+  frontend_tsc: PASS
+  frontend_tests: PASS
+  frontend_build: PASS
+  frontend_contract: PASS
+  frontend_perf_budgets: "PASS: 8"
+  frontend_critical_flows: PASS
+  supabase_smoke: "EXPECTED_FAIL_CLOSED_EXIT_2_NO_NETWORK"
+  workflow_parity: "PASS: 10"
+  workflow_tests: "PASS: 30"
+  actionlint: PASS
+  secret_pattern_scan: PASS_NO_MATCH
+  security_scan:
+    id: 510fddba-19f5-4189-9b0c-36cd706a6eab
+    target_head: a496b33d538b61a31b6591bf1f633c73cc0cc10f
+    completeness: complete
+    findings: 0
+ci_code_head:
+  frontend_contract_check_run: 33261739249
+  workflow_parity_run: 33261739257
+  trident_supabase_run: 33261739268
+  frontend_contract_check: PASS
+  workflow_contract: PASS
+  validate: PASS
+  prepare_runtime: SKIPPED
+  mutate_production: SKIPPED
+restrictions:
+  provider_runtime_accessed: false
+  provider_ui_or_url_opened: false
+  production_read_or_write: false
+  remote_migration_applied: false
+  business_command_activated: false
+  spend_authorized_or_incurred: false
