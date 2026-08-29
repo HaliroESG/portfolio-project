@@ -1,0 +1,137 @@
+name: Trident Price Backfill
+
+on:
+  workflow_dispatch:
+    inputs:
+      top_n:
+        description: "Top Trident scored rows to backfill before full sync"
+        required: true
+        type: string
+        default: "50"
+      start_date:
+        description: "Historical price start date"
+        required: true
+        type: string
+        default: "1999-01-01"
+      end_date:
+        description: "Optional historical price end date"
+        required: false
+        type: string
+      dry_run:
+        description: "Resolve tickers and report without writing prices"
+        required: true
+        type: boolean
+        default: true
+      authorization_ref:
+        description: "Separate approved change or runbook reference for writes"
+        required: false
+        type: string
+
+permissions:
+  contents: read
+
+concurrency:
+  group: trident-price-backfill-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  top-backfill:
+    runs-on: ubuntu-latest
+    timeout-minutes: 180
+    environment: Production
+
+    env:
+      AUTHORIZATION_REF: ${{ inputs.authorization_ref }}
+      MUTATION_GATE: ${{ vars.ASTROCYTE_MUTATION_GATE }}
+      SOURCE_RIGHTS_GATE: ${{ vars.ASTROCYTE_SOURCE_RIGHTS_GATE }}
+      SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+      SUPABASE_SERVICE_KEY: ${{ secrets.SUPABASE_SERVICE_KEY }}
+      TOP_N: ${{ inputs.top_n }}
+      START_DATE: ${{ inputs.start_date }}
+      END_DATE: ${{ inputs.end_date }}
+      DRY_RUN: ${{ inputs.dry_run }}
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Verify required configuration
+        run: |
+          if [ "$SOURCE_RIGHTS_GATE" != "APPROVED" ]; then
+            echo "::error::Price backfill is disabled until ASTROCYTE_SOURCE_RIGHTS_GATE is APPROVED."
+            exit 2
+          fi
+          if [ "$DRY_RUN" != "true" ] && { [ "$MUTATION_GATE" != "APPROVED" ] || [ -z "$AUTHORIZATION_REF" ]; }; then
+            echo "::error::Writes require ASTROCYTE_MUTATION_GATE=APPROVED and authorization_ref."
+            exit 2
+          fi
+          missing=()
+          for name in SUPABASE_URL SUPABASE_SERVICE_KEY TOP_N START_DATE; do
+            if [ -z "${!name}" ]; then
+              missing+=("$name")
+            fi
+          done
+          if [ "${#missing[@]}" -gt 0 ]; then
+            printf '::error::Missing required configuration: %s\n' "${missing[*]}"
+            exit 2
+          fi
+          if ! [[ "$TOP_N" =~ ^[0-9]+$ ]] || [ "$TOP_N" -lt 1 ]; then
+            echo "::error::top_n must be a positive integer."
+            exit 2
+          fi
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Install backend dependencies
+        working-directory: ./backend
+        run: |
+          python -m pip install --upgrade pip
+          pip install wheel
+          pip install scipy==1.15.1 statsmodels==0.14.4
+          pip install -r requirements.txt
+
+      - name: Preflight schema check
+        working-directory: ./backend
+        env:
+          SUPABASE_KEY: ${{ secrets.SUPABASE_SERVICE_KEY }}
+        run: python tools/schema_check.py --pretty --output schema-check-before-top-backfill.json
+
+      - name: Backfill top Trident prices
+        working-directory: ./backend
+        env:
+          SUPABASE_KEY: ${{ secrets.SUPABASE_SERVICE_KEY }}
+        run: |
+          cmd=(
+            python scripts/backfill_top_trident_prices.py
+            --top-n "$TOP_N"
+            --start-date "$START_DATE"
+            --output top-trident-price-backfill.json
+          )
+          if [ -n "$END_DATE" ]; then
+            cmd+=(--end-date "$END_DATE")
+          fi
+          if [ "$DRY_RUN" = "true" ]; then
+            cmd+=(--dry-run)
+          fi
+          "${cmd[@]}"
+
+      - name: Trident freshness check
+        if: ${{ always() && inputs.dry_run == false }}
+        working-directory: ./backend
+        env:
+          SUPABASE_KEY: ${{ secrets.SUPABASE_SERVICE_KEY }}
+        run: python scripts/check_refresh_freshness.py --scope trident --output freshness-trident-top-backfill.json
+
+      - name: Upload backfill reports
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: trident-price-backfill-reports
+          path: |
+            backend/schema-check-before-top-backfill.json
+            backend/top-trident-price-backfill.json
+            backend/freshness-trident-top-backfill.json
+          if-no-files-found: warn

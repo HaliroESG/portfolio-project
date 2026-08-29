@@ -2,13 +2,13 @@
 
 import React, { useEffect, useMemo, useState } from 'react'
 import { supabase } from '../../lib/supabase'
-import { Sidebar } from '../../components/Sidebar'
-import { Header } from '../../components/Header'
+import { AppShell } from '../../components/AppShell'
 import { BacktestChart, LineSeries } from '../../components/BacktestChart'
 import { DrawdownChart } from '../../components/DrawdownChart'
 import { KpiComparisonTable } from '../../components/KpiComparisonTable'
 import { PortfolioSelectGrid, PortfolioCard } from '../../components/PortfolioSelectGrid'
 import { DataStateBadge, DataState } from '../../components/DataStateBadge'
+import { EmptyState } from '../../components/EmptyState'
 import { BacktestKpi, BacktestPortfolio, BacktestResult, BacktestRun } from '../../types'
 
 const CHART_COLORS = [
@@ -52,6 +52,11 @@ function parseNumeric(value: unknown): number | null {
     return Number.isFinite(parsed) ? parsed : null
   }
   return null
+}
+
+function isMissingBacktestContract(error: unknown): boolean {
+  const message = error instanceof Error ? error.message : String(error ?? '')
+  return message.includes('backtest_') && message.includes('schema cache')
 }
 
 async function fetchResultsForPortfolio(runId: string, portfolioKey: string): Promise<BacktestResult[]> {
@@ -148,7 +153,11 @@ export default function BacktestPage() {
         }
       } catch (err) {
         console.error('Backtest runs fetch error', err)
-        setError('Unable to load backtest runs.')
+        setError(
+          isMissingBacktestContract(err)
+            ? 'Backtest contract is not deployed. Apply the backtest Supabase migration before using this screen.'
+            : 'Unable to load backtest runs.'
+        )
       } finally {
         setLoading(false)
       }
@@ -208,7 +217,11 @@ export default function BacktestPage() {
         setSelectedKeys(portfolioList.map((portfolio) => portfolio.portfolio_key))
       } catch (err) {
         console.error('Backtest run fetch error', err)
-        setError('Unable to load backtest run data.')
+        setError(
+          isMissingBacktestContract(err)
+            ? 'Backtest contract is not deployed. Apply the backtest Supabase migration before using this screen.'
+            : 'Unable to load backtest run data.'
+        )
       } finally {
         setLoading(false)
       }
@@ -235,6 +248,7 @@ export default function BacktestPage() {
     () => computeDataState(loading, runs, selectedRun),
     [loading, runs, selectedRun]
   )
+  const badgeState: DataState = error ? 'ERROR' : dataState
 
   const portfoliosWithCoverage = useMemo(() => {
     if (!selectedRun) return []
@@ -313,13 +327,11 @@ export default function BacktestPage() {
   const lastSync = selectedRun?.created_at
     ? new Date(selectedRun.created_at).toLocaleTimeString('fr-FR')
     : undefined
+  const lastSyncIso = selectedRun?.created_at ?? null
 
   return (
-    <div className="flex h-screen bg-slate-50 dark:bg-[#080A0F] transition-colors duration-500">
-      <Sidebar />
-      <div className="flex-1 flex flex-col">
-        <Header lastSync={lastSync} />
-        <main className="flex-1 p-10 overflow-y-auto">
+    <AppShell lastSync={lastSync} lastSyncIso={lastSyncIso} className="bg-slate-50">
+        <main className="p-4 sm:p-6 lg:p-10">
           <div className="max-w-6xl mx-auto space-y-6">
             <div className="flex items-center justify-between gap-4">
               <div>
@@ -330,13 +342,19 @@ export default function BacktestPage() {
                   Simulations target/current + presets · EUR base
                 </p>
               </div>
-              <DataStateBadge state={dataState} />
+              <DataStateBadge state={badgeState} />
             </div>
 
             {error && (
-              <div className="rounded-2xl border border-red-300 bg-red-50 p-3 text-sm font-mono text-red-700 dark:border-red-800/60 dark:bg-red-950/30 dark:text-red-300">
-                {error}
-              </div>
+              <EmptyState tone="error" title="Backtest unavailable" message={error} />
+            )}
+
+            {!error && !loading && runs.length === 0 && (
+              <EmptyState
+                tone="warning"
+                title="No backtest runs yet"
+                message="The backtest tables are readable, but no simulation has been generated. Run backend/scripts/run_backtest.py after historical prices are available."
+              />
             )}
 
             <div className="flex flex-wrap items-center justify-between gap-4">
@@ -403,9 +421,10 @@ export default function BacktestPage() {
             )}
 
             {chartPayload.dates.length === 0 ? (
-              <div className="rounded-3xl border-2 border-slate-200 dark:border-white/5 bg-white dark:bg-[#0D1117]/50 shadow-2xl p-6 text-sm font-mono text-slate-500 dark:text-gray-400">
-                No backtest results for this run.
-              </div>
+              <EmptyState
+                title="No backtest results for this run"
+                message="The run exists but has no NAV series for the selected portfolios. Regenerate the run after checking historical price coverage."
+              />
             ) : (
               <div className="space-y-6">
                 <BacktestChart dates={chartPayload.dates} series={chartPayload.navSeries} />
@@ -466,7 +485,6 @@ export default function BacktestPage() {
             </div>
           </div>
         </main>
-      </div>
-    </div>
+    </AppShell>
   )
 }

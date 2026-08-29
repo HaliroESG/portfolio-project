@@ -1,0 +1,1154 @@
+from __future__ import annotations
+
+import argparse
+import json
+import os
+import sys
+import time
+import unicodedata
+from datetime import date, datetime, timezone
+from pathlib import Path
+from typing import Any, Iterable, Mapping
+
+from etl_stats import build_etl_stats
+
+
+BACKEND_DIR = Path(__file__).resolve().parent
+if str(BACKEND_DIR) not in sys.path:
+    sys.path.insert(0, str(BACKEND_DIR))
+
+JOB_NAME = "equity_screener_sync"
+PAGE_SIZE = 1000
+BASE_FX_CURRENCY = "EUR"
+USD_FX_CURRENCY = "USD"
+FX_MAX_AGE_DAYS = 4
+MARKET_QUALITY_CRITICAL_THRESHOLDS = {
+    "unresolved_duplicate_groups": 0,
+    "financials_coverage_pct": 90.0,
+}
+MARKET_QUALITY_WARNING_THRESHOLDS = {
+    "fx_coverage_pct": 95.0,
+    "price_history_coverage_pct": 95.0,
+    "insights_coverage_pct": 90.0,
+}
+
+
+class EquityScreenerQualityGateError(RuntimeError):
+    def __init__(self, message: str, stats: Mapping[str, Any]):
+        super().__init__(message)
+        self.stats = dict(stats)
+
+
+THEME_RULES: tuple[tuple[str, tuple[str, ...]], ...] = (
+    (
+        "IT_SERVICES",
+        (
+            "information technology services",
+            "it services",
+            "it consulting",
+            "technology consulting",
+            "digital services",
+            "systems integrator",
+            "business consulting",
+            "outsourcing",
+            "consulting services",
+            "computer services",
+        ),
+    ),
+    (
+        "SOFTWARE",
+        (
+            "software",
+            "application software",
+            "systems software",
+            "cloud",
+            "saas",
+        ),
+    ),
+    (
+        "SEMICONDUCTOR",
+        (
+            "semiconductor",
+            "semiconductors",
+            "chip",
+            "integrated circuit",
+        ),
+    ),
+)
+
+BOOMING_SECTOR_NEEDLES = (
+    "ai",
+    "artificial intelligence",
+    "cloud",
+    "cybersecurity",
+    "data center",
+    "semiconductor",
+    "software",
+    "automation",
+    "electrification",
+    "renewable",
+    "robotics",
+)
+
+KNOWN_IT_SERVICES_NAMES = (
+    "accenture",
+    "capgemini",
+    "sopra steria",
+    "wavestone",
+    "atos",
+    "cgi",
+    "infosys",
+    "wipro",
+    "tata consultancy",
+    "tcs",
+    "hcl technologies",
+    "cognizant",
+    "epam",
+    "globant",
+    "endava",
+    "reply",
+    "aubay",
+    "infotel",
+    "alten",
+)
+
+
+def clean_string(value: Any) -> str | None:
+    if value is None:
+        return None
+    text = str(value).strip()
+    return text or None
+
+
+def safe_float(value: Any) -> float | None:
+    if value is None:
+        return None
+    if isinstance(value, bool):
+        return None
+    if isinstance(value, (int, float)) and value == value:
+        return float(value)
+    text = str(value).strip().replace(",", "")
+    if not text:
+        return None
+    try:
+        parsed = float(text)
+    except ValueError:
+        return None
+    return parsed if parsed == parsed else None
+
+
+def safe_int(value: Any) -> int | None:
+    parsed = safe_float(value)
+    return int(parsed) if parsed is not None else None
+
+
+def normalize_currency(value: Any) -> str | None:
+    text = clean_string(value)
+    if not text:
+        return None
+    normalized = text.upper()
+    return normalized if len(normalized) == 3 else None
+
+
+def parse_datetime(value: Any) -> datetime | None:
+    text = clean_string(value)
+    if not text:
+        return None
+    try:
+        normalized = text.replace("Z", "+00:00")
+        parsed = datetime.fromisoformat(normalized)
+    except ValueError:
+        return None
+    if parsed.tzinfo is None:
+        return parsed.replace(tzinfo=timezone.utc)
+    return parsed.astimezone(timezone.utc)
+
+
+def normalize_text(*values: Any) -> str:
+    joined = " ".join(str(value) for value in values if value is not None)
+    stripped = unicodedata.normalize("NFKD", joined).encode("ascii", "ignore").decode("ascii")
+    return " ".join(stripped.lower().split())
+
+
+def ratio(numerator: float | None, denominator: float | None) -> float | None:
+    if numerator is None or denominator is None or denominator == 0:
+        return None
+    return numerator / denominator
+
+
+def build_fx_context(currency_rows: Iterable[Mapping[str, Any]]) -> tuple[dict[str, float], dict[str, str]]:
+    rates: dict[str, float] = {BASE_FX_CURRENCY: 1.0}
+    updated_at: dict[str, str] = {}
+    for row in currency_rows:
+        currency = normalize_currency(row.get("id"))
+        rate = safe_float(row.get("rate_to_eur"))
+        if not currency or rate is None or rate <= 0:
+            continue
+        rates[currency] = rate
+        update_time = clean_string(row.get("last_update"))
+        if update_time:
+            updated_at[currency] = update_time
+    return rates, updated_at
+
+
+def fx_timestamp_for_conversion(
+    source_currency: str,
+    fx_updated_at: Mapping[str, str],
+) -> str | None:
+    candidates: list[datetime] = []
+    for currency in {source_currency, USD_FX_CURRENCY}:
+        if currency == BASE_FX_CURRENCY:
+            continue
+        parsed = parse_datetime(fx_updated_at.get(currency))
+        if parsed is not None:
+            candidates.append(parsed)
+    if not candidates:
+        return None
+    return min(candidates).isoformat()
+
+
+def fx_is_stale(value: str | None, now: datetime | None = None) -> bool:
+    parsed = parse_datetime(value)
+    if parsed is None:
+        return False
+    reference = now or datetime.now(timezone.utc)
+    return (reference - parsed).total_seconds() > FX_MAX_AGE_DAYS * 86_400
+
+
+def convert_market_cap_to_usd(
+    market_cap: float | None,
+    valuation_currency: str | None,
+    fx_rates_to_eur: Mapping[str, float],
+    fx_updated_at: Mapping[str, str],
+    *,
+    reference_time: datetime | None = None,
+) -> tuple[float | None, float | None, str | None, set[str]]:
+    states: set[str] = set()
+    if market_cap is None:
+        states.add("MARKET_CAP_USD_UNAVAILABLE")
+        return None, None, None, states
+    if not valuation_currency:
+        states.add("FX_RATE_UNAVAILABLE")
+        states.add("MARKET_CAP_USD_UNAVAILABLE")
+        return None, None, None, states
+
+    currency = valuation_currency.upper()
+    if currency == USD_FX_CURRENCY:
+        return market_cap, 1.0, fx_updated_at.get(USD_FX_CURRENCY), states
+
+    usd_rate_to_eur = fx_rates_to_eur.get(USD_FX_CURRENCY)
+    source_rate_to_eur = 1.0 if currency == BASE_FX_CURRENCY else fx_rates_to_eur.get(currency)
+    if usd_rate_to_eur is None or usd_rate_to_eur <= 0 or source_rate_to_eur is None or source_rate_to_eur <= 0:
+        states.add("FX_RATE_UNAVAILABLE")
+        states.add("MARKET_CAP_USD_UNAVAILABLE")
+        return None, None, None, states
+
+    fx_rate = source_rate_to_eur / usd_rate_to_eur
+    as_of = fx_timestamp_for_conversion(currency, fx_updated_at)
+    if fx_is_stale(as_of, now=reference_time):
+        states.add("FX_RATE_STALE")
+    return market_cap * fx_rate, fx_rate, as_of, states
+
+
+def annualized_growth(start_value: float | None, end_value: float | None, years: int) -> float | None:
+    if years <= 0 or start_value is None or end_value is None or start_value <= 0 or end_value <= 0:
+        return None
+    return (end_value / start_value) ** (1 / years) - 1
+
+
+def extract_themes(universe_row: Mapping[str, Any]) -> list[str]:
+    haystack = normalize_text(
+        universe_row.get("name"),
+        universe_row.get("sector"),
+        universe_row.get("industry"),
+    )
+    themes: set[str] = set()
+    for theme, needles in THEME_RULES:
+        if any(needle in haystack for needle in needles):
+            themes.add(theme)
+    if any(name in haystack for name in KNOWN_IT_SERVICES_NAMES):
+        themes.add("IT_SERVICES")
+    return sorted(themes)
+
+
+def record_year(row: Mapping[str, Any]) -> int | None:
+    return safe_int(row.get("fiscal_year"))
+
+
+def latest_financial(records: list[Mapping[str, Any]]) -> Mapping[str, Any] | None:
+    dated = [(record_year(record), record) for record in records]
+    dated = [(year, record) for year, record in dated if year is not None]
+    if not dated:
+        return None
+    return max(dated, key=lambda item: item[0])[1]
+
+
+def cagr_for_years(records: list[Mapping[str, Any]], field: str, years: int) -> float | None:
+    latest = latest_financial(records)
+    latest_year = record_year(latest or {})
+    if latest is None or latest_year is None:
+        return None
+    candidates = [
+        (record_year(record), record)
+        for record in records
+        if record_year(record) is not None and record_year(record) <= latest_year - years
+    ]
+    if not candidates:
+        return None
+    start_year, start = max(candidates, key=lambda item: item[0])
+    return annualized_growth(
+        safe_float(start.get(field)),
+        safe_float(latest.get(field)),
+        latest_year - start_year,
+    )
+
+
+def market_cap_segment(market_cap: float | None) -> str | None:
+    if market_cap is None:
+        return None
+    if market_cap >= 200_000_000_000:
+        return "MEGA"
+    if market_cap >= 10_000_000_000:
+        return "LARGE"
+    if market_cap >= 2_000_000_000:
+        return "MID"
+    if market_cap >= 300_000_000:
+        return "SMALL"
+    return "MICRO"
+
+
+def score_band(value: float | None, bands: tuple[tuple[float, int], ...]) -> int:
+    if value is None:
+        return 0
+    for threshold, points in bands:
+        if value >= threshold:
+            return points
+    return 0
+
+
+def inverse_score_band(value: float | None, bands: tuple[tuple[float, int], ...]) -> int:
+    if value is None or value <= 0:
+        return 0
+    for threshold, points in bands:
+        if value <= threshold:
+            return points
+    return 0
+
+
+def quality_value_score(
+    *,
+    trailing_pe: float | None,
+    forward_pe: float | None,
+    fcf_yield: float | None,
+    fcf_margin: float | None,
+    revenue_cagr_3y: float | None,
+    roic: float | None,
+    net_debt_to_ebitda: float | None,
+) -> tuple[float, dict[str, Any]]:
+    valuation_points = max(
+        inverse_score_band(trailing_pe, ((12, 20), (18, 16), (25, 10), (35, 4))),
+        inverse_score_band(forward_pe, ((12, 20), (18, 16), (25, 10), (35, 4))),
+    )
+    fcf_points = score_band(fcf_yield, ((0.08, 25), (0.05, 18), (0.03, 10), (0.01, 4)))
+    quality_points = (
+        score_band(roic, ((0.20, 12), (0.15, 9), (0.10, 5)))
+        + score_band(fcf_margin, ((0.15, 8), (0.10, 6), (0.05, 3)))
+    )
+    growth_points = score_band(revenue_cagr_3y, ((0.10, 15), (0.06, 11), (0.03, 6), (0.0, 2)))
+    if net_debt_to_ebitda is None:
+        health_points = 0
+    elif net_debt_to_ebitda < 1.5:
+        health_points = 20
+    elif net_debt_to_ebitda < 2.5:
+        health_points = 14
+    elif net_debt_to_ebitda < 3.5:
+        health_points = 7
+    else:
+        health_points = 0
+
+    score = valuation_points + fcf_points + quality_points + growth_points + health_points
+    details = {
+        "valuation_points": valuation_points,
+        "fcf_points": fcf_points,
+        "quality_points": quality_points,
+        "growth_points": growth_points,
+        "health_points": health_points,
+    }
+    return float(min(max(score, 0), 100)), details
+
+
+def compounder_score(
+    *,
+    fcf_yield: float | None,
+    fcf_margin: float | None,
+    revenue_cagr_3y: float | None,
+    revenue_cagr_5y: float | None,
+    roic: float | None,
+    net_debt_to_ebitda: float | None,
+) -> float:
+    score = (
+        score_band(fcf_margin, ((0.20, 25), (0.15, 20), (0.10, 14), (0.05, 6)))
+        + score_band(fcf_yield, ((0.08, 20), (0.05, 15), (0.03, 9), (0.01, 3)))
+        + score_band(max(revenue_cagr_3y or -1, revenue_cagr_5y or -1), ((0.12, 20), (0.08, 15), (0.05, 10), (0.02, 4)))
+        + score_band(roic, ((0.25, 20), (0.18, 15), (0.12, 9), (0.08, 4)))
+    )
+    if net_debt_to_ebitda is not None:
+        if net_debt_to_ebitda < 1.0:
+            score += 15
+        elif net_debt_to_ebitda < 2.0:
+            score += 10
+        elif net_debt_to_ebitda < 3.0:
+            score += 4
+    return float(min(max(score, 0), 100))
+
+
+def momentum_score(
+    *,
+    regression_slope_pct: float | None,
+    regression_z_score: float | None,
+    ma200_state: str | None,
+    momentum_3m_pct: float | None,
+    momentum_12m_pct: float | None,
+    price_coverage_pct: float | None,
+) -> float:
+    score = (
+        score_band(regression_slope_pct, ((20, 25), (10, 18), (5, 11), (0, 5)))
+        + score_band(momentum_3m_pct, ((20, 15), (10, 12), (0, 6)))
+        + score_band(momentum_12m_pct, ((40, 20), (20, 15), (0, 8)))
+    )
+    if ma200_state == "ABOVE":
+        score += 25
+    elif ma200_state == "BELOW":
+        score -= 10
+    if regression_z_score is not None:
+        if -1.0 <= regression_z_score <= 2.5:
+            score += 15
+        elif 2.5 < regression_z_score <= 3.5:
+            score += 5
+        elif regression_z_score < -2.0:
+            score -= 5
+    if price_coverage_pct is not None and price_coverage_pct < 20:
+        score = min(score, 35)
+    return float(min(max(score, 0), 100))
+
+
+def sector_boom_score(
+    *,
+    themes: list[str],
+    universe_row: Mapping[str, Any],
+    revenue_cagr_3y: float | None,
+    fcf_margin: float | None,
+    momentum: float,
+) -> float:
+    haystack = normalize_text(
+        universe_row.get("name"),
+        universe_row.get("sector"),
+        universe_row.get("industry"),
+    )
+    sector_points = 0
+    if any(theme in {"SOFTWARE", "SEMICONDUCTOR"} for theme in themes):
+        sector_points += 25
+    if any(needle in haystack for needle in BOOMING_SECTOR_NEEDLES):
+        sector_points += 20
+    if "IT_SERVICES" in themes:
+        sector_points += 8
+    score = (
+        min(sector_points, 35)
+        + score_band(revenue_cagr_3y, ((0.20, 25), (0.12, 18), (0.08, 12), (0.04, 6)))
+        + score_band(fcf_margin, ((0.20, 15), (0.12, 10), (0.06, 5)))
+        + min(momentum * 0.25, 25)
+    )
+    return float(min(max(score, 0), 100))
+
+
+def strategy_tags(
+    *,
+    quality_value: float,
+    compounder: float,
+    momentum: float,
+    sector_boom: float,
+    valuation: str,
+) -> list[str]:
+    tags: set[str] = set()
+    if quality_value >= 55 and valuation != "EXPENSIVE":
+        tags.add("QUALITY_VALUE")
+    if compounder >= 60:
+        tags.add("FCF_COMPOUNDER")
+    if momentum >= 60:
+        tags.add("MOMENTUM_TREND")
+    if sector_boom >= 60:
+        tags.add("SECTOR_BOOM")
+    return sorted(tags)
+
+
+def valuation_tag(
+    *,
+    score: float,
+    trailing_pe: float | None,
+    forward_pe: float | None,
+    fcf_yield: float | None,
+    fcf_margin: float | None,
+    revenue_cagr_3y: float | None,
+) -> str:
+    pe_values = [value for value in (forward_pe, trailing_pe) if value is not None and value > 0]
+    best_pe = min(pe_values) if pe_values else None
+    if best_pe is None and fcf_yield is None:
+        return "INSUFFICIENT_DATA"
+    if score >= 55 and (fcf_yield or 0) >= 0.04 and (best_pe is None or best_pe <= 25):
+        return "POTENTIAL_VALUE"
+    if best_pe is not None and best_pe >= 40:
+        return "EXPENSIVE"
+    if best_pe is not None and best_pe >= 35 and fcf_yield is not None and fcf_yield < 0.03:
+        return "EXPENSIVE"
+    if fcf_yield is not None and fcf_yield < 0.01 and (fcf_margin or 0) < 0.05 and (revenue_cagr_3y or 0) < 0.03:
+        return "EXPENSIVE"
+    return "FAIR"
+
+
+def build_screener_rows(
+    universe_rows: Iterable[Mapping[str, Any]],
+    financial_rows: Iterable[Mapping[str, Any]],
+    trident_rows: Iterable[Mapping[str, Any]],
+    insight_rows: Iterable[Mapping[str, Any]],
+    coverage_rows: Iterable[Mapping[str, Any]] = (),
+    currency_rows: Iterable[Mapping[str, Any]] = (),
+    *,
+    as_of_date: date | None = None,
+) -> list[dict[str, Any]]:
+    as_of = as_of_date or datetime.now(timezone.utc).date()
+    fx_rates_to_eur, fx_updated_at = build_fx_context(currency_rows)
+    financials_by_key: dict[str, list[Mapping[str, Any]]] = {}
+    for row in financial_rows:
+        key = clean_string(row.get("instrument_key"))
+        if key:
+            financials_by_key.setdefault(key, []).append(row)
+
+    trident_by_key = {
+        clean_string(row.get("instrument_key")): row
+        for row in trident_rows
+        if clean_string(row.get("instrument_key"))
+    }
+    insight_by_key = {
+        clean_string(row.get("instrument_key")): row
+        for row in insight_rows
+        if clean_string(row.get("instrument_key"))
+    }
+    coverage_by_ticker = {
+        str(row.get("ticker")).strip().upper(): row
+        for row in coverage_rows
+        if clean_string(row.get("ticker"))
+    }
+
+    output: list[dict[str, Any]] = []
+    for universe in universe_rows:
+        if universe.get("is_active") is False:
+            continue
+        instrument_key = clean_string(universe.get("instrument_key"))
+        ticker = clean_string(universe.get("ticker"))
+        provider = clean_string(universe.get("provider"))
+        if not instrument_key or not ticker or not provider:
+            continue
+
+        financials = financials_by_key.get(instrument_key, [])
+        latest = latest_financial(financials)
+        trident = trident_by_key.get(instrument_key, {})
+        insight = insight_by_key.get(instrument_key, {})
+
+        financial_currency = normalize_currency((latest or {}).get("currency"))
+        valuation_currency = normalize_currency(insight.get("price_currency")) or normalize_currency(universe.get("currency"))
+        currency = normalize_currency(universe.get("currency"))
+        market_cap = safe_float(insight.get("market_cap"))
+        market_cap_usd, market_cap_fx_rate, market_cap_fx_as_of, market_cap_fx_states = convert_market_cap_to_usd(
+            market_cap,
+            valuation_currency,
+            fx_rates_to_eur,
+            fx_updated_at,
+            reference_time=datetime(
+                as_of.year, as_of.month, as_of.day, 23, 59, 59, tzinfo=timezone.utc
+            ),
+        )
+        revenue = safe_float((latest or {}).get("revenue"))
+        free_cash_flow = safe_float((latest or {}).get("free_cash_flow"))
+        fcf_margin = ratio(free_cash_flow, revenue)
+        currencies_match = (
+            financial_currency is not None
+            and valuation_currency is not None
+            and financial_currency == valuation_currency
+        )
+        fcf_yield = ratio(free_cash_flow, market_cap) if currencies_match else None
+        revenue_cagr_3y = cagr_for_years(financials, "revenue", 3)
+        revenue_cagr_5y = cagr_for_years(financials, "revenue", 5)
+        trailing_pe = safe_float(insight.get("trailing_pe"))
+        forward_pe = safe_float(insight.get("forward_pe"))
+        roic = safe_float(trident.get("latest_roic"))
+        net_debt_to_ebitda = safe_float(trident.get("latest_net_debt_to_ebitda"))
+        regression_slope_pct = safe_float(insight.get("regression_slope_pct"))
+        regression_z_score = safe_float(insight.get("regression_z_score"))
+        ma200_state = clean_string(insight.get("ma200_state"))
+        momentum_3m_pct = safe_float(insight.get("momentum_3m_pct"))
+        momentum_12m_pct = safe_float(insight.get("momentum_12m_pct"))
+        coverage = coverage_by_ticker.get(ticker.upper())
+        price_coverage_pct = safe_float((coverage or {}).get("coverage_pct"))
+        price_earliest_date = clean_string((coverage or {}).get("earliest_date"))
+        target_mean_price = safe_float(insight.get("target_mean_price"))
+        latest_price = safe_float(insight.get("latest_price"))
+        target_upside = ratio(target_mean_price, latest_price)
+        if target_upside is not None:
+            target_upside -= 1
+
+        score, details = quality_value_score(
+            trailing_pe=trailing_pe,
+            forward_pe=forward_pe,
+            fcf_yield=fcf_yield,
+            fcf_margin=fcf_margin,
+            revenue_cagr_3y=revenue_cagr_3y,
+            roic=roic,
+            net_debt_to_ebitda=net_debt_to_ebitda,
+        )
+        row_themes = extract_themes(universe)
+        valuation = valuation_tag(
+            score=score,
+            trailing_pe=trailing_pe,
+            forward_pe=forward_pe,
+            fcf_yield=fcf_yield,
+            fcf_margin=fcf_margin,
+            revenue_cagr_3y=revenue_cagr_3y,
+        )
+        compounder = compounder_score(
+            fcf_yield=fcf_yield,
+            fcf_margin=fcf_margin,
+            revenue_cagr_3y=revenue_cagr_3y,
+            revenue_cagr_5y=revenue_cagr_5y,
+            roic=roic,
+            net_debt_to_ebitda=net_debt_to_ebitda,
+        )
+        momentum = momentum_score(
+            regression_slope_pct=regression_slope_pct,
+            regression_z_score=regression_z_score,
+            ma200_state=ma200_state,
+            momentum_3m_pct=momentum_3m_pct,
+            momentum_12m_pct=momentum_12m_pct,
+            price_coverage_pct=price_coverage_pct,
+        )
+        boom = sector_boom_score(
+            themes=row_themes,
+            universe_row=universe,
+            revenue_cagr_3y=revenue_cagr_3y,
+            fcf_margin=fcf_margin,
+            momentum=momentum,
+        )
+        details["market_cap_segment"] = market_cap_segment(market_cap)
+        details["strategy_scores"] = {
+            "QUALITY_VALUE": score,
+            "FCF_COMPOUNDER": compounder,
+            "MOMENTUM_TREND": momentum,
+            "SECTOR_BOOM": boom,
+        }
+        details["strategy_tags"] = strategy_tags(
+            quality_value=score,
+            compounder=compounder,
+            momentum=momentum,
+            sector_boom=boom,
+            valuation=valuation,
+        )
+
+        data_state: set[str] = set()
+        if latest is None:
+            data_state.add("FINANCIALS_UNAVAILABLE")
+        if not insight:
+            data_state.add("INSIGHTS_UNAVAILABLE")
+        if market_cap is None:
+            data_state.add("MARKET_CAP_UNAVAILABLE")
+        data_state.update(market_cap_fx_states)
+        if free_cash_flow is None:
+            data_state.add("FCF_UNAVAILABLE")
+        if revenue_cagr_3y is None:
+            data_state.add("GROWTH_HISTORY_UNAVAILABLE")
+        if forward_pe is None:
+            data_state.add("FORWARD_PE_UNAVAILABLE")
+        data_state.add("FORECAST_UNAVAILABLE")
+        if financial_currency and valuation_currency and financial_currency != valuation_currency:
+            data_state.add("CURRENCY_MISMATCH")
+        if fcf_yield is None:
+            data_state.add("FCF_YIELD_UNAVAILABLE")
+        if not coverage or price_earliest_date is None:
+            data_state.add("PRICE_HISTORY_UNAVAILABLE")
+        elif price_coverage_pct is not None and price_coverage_pct < 20:
+            data_state.add("PRICE_HISTORY_SHORT")
+        if not data_state:
+            data_state.add("READY")
+
+        output.append({
+            "instrument_key": instrument_key,
+            "as_of_date": as_of.isoformat(),
+            "ticker": ticker,
+            "name": clean_string(universe.get("name")),
+            "exchange": clean_string(universe.get("exchange")),
+            "country": clean_string(universe.get("country")),
+            "sector": clean_string(universe.get("sector")),
+            "industry": clean_string(universe.get("industry")),
+            "currency": currency,
+            "provider": provider,
+            "provider_symbol": clean_string(universe.get("provider_symbol")),
+            "source_index": clean_string(universe.get("source_index")),
+            "themes": row_themes,
+            "latest_fiscal_year": record_year(latest or {}),
+            "financial_currency": financial_currency,
+            "valuation_currency": valuation_currency,
+            "market_cap": market_cap,
+            "market_cap_usd": market_cap_usd,
+            "market_cap_fx_rate": market_cap_fx_rate,
+            "market_cap_fx_as_of": market_cap_fx_as_of,
+            "revenue": revenue,
+            "free_cash_flow": free_cash_flow,
+            "fcf_margin": fcf_margin,
+            "fcf_yield": fcf_yield,
+            "revenue_cagr_3y": revenue_cagr_3y,
+            "revenue_cagr_5y": revenue_cagr_5y,
+            "forecast_revenue_growth": None,
+            "trailing_pe": trailing_pe,
+            "forward_pe": forward_pe,
+            "latest_roic": roic,
+            "latest_net_debt_to_ebitda": net_debt_to_ebitda,
+            "target_upside": target_upside,
+            "recommendation_key": clean_string(insight.get("recommendation_key")),
+            "analyst_count": safe_int(insight.get("number_of_analyst_opinions")),
+            "trident_score": safe_float(trident.get("score")),
+            "trident_state": clean_string(trident.get("overall_state")),
+            "regression_slope_pct": regression_slope_pct,
+            "regression_z_score": regression_z_score,
+            "ma200_state": ma200_state,
+            "momentum_3m_pct": momentum_3m_pct,
+            "momentum_12m_pct": momentum_12m_pct,
+            "price_coverage_pct": price_coverage_pct,
+            "quality_value_score": score,
+            "valuation_tag": valuation,
+            "score_details": details,
+            "data_state": sorted(data_state),
+            "updated_at": datetime.now(timezone.utc).isoformat(),
+        })
+    return output
+
+
+def get_env(name: str) -> str:
+    value = os.environ.get(name)
+    if not value:
+        raise RuntimeError(f"{name} is required")
+    return value
+
+
+def get_supabase_client() -> Any:
+    from supabase import create_client
+
+    api_key = os.environ.get("SUPABASE_KEY") or os.environ.get("SUPABASE_SERVICE_ROLE_KEY")
+    if not api_key:
+        raise RuntimeError("SUPABASE_KEY or SUPABASE_SERVICE_ROLE_KEY is required")
+    return create_client(get_env("SUPABASE_URL"), api_key)
+
+
+def fetch_all_rows(supabase: Any, table: str, selector: str) -> list[dict[str, Any]]:
+    rows: list[dict[str, Any]] = []
+    for offset in range(0, 1_000_000, PAGE_SIZE):
+        response = (
+            supabase
+            .table(table)
+            .select(selector)
+            .range(offset, offset + PAGE_SIZE - 1)
+            .execute()
+        )
+        batch = list(response.data or [])
+        rows.extend(batch)
+        if len(batch) < PAGE_SIZE:
+            break
+    return rows
+
+
+def row_completeness(row: Mapping[str, Any]) -> tuple[int, int, int, float, int]:
+    data_state = set(row.get("data_state") or [])
+    provider = clean_string(row.get("provider")) or ""
+    source_index = clean_string(row.get("source_index")) or ""
+    has_financials = 0 if "FINANCIALS_UNAVAILABLE" in data_state else 1
+    has_insights = 0 if "INSIGHTS_UNAVAILABLE" in data_state else 1
+    has_market_cap = 1 if safe_float(row.get("market_cap")) is not None else 0
+    quality = safe_float(row.get("quality_value_score")) or 0
+    provider_rank = 2 if provider == "global_yahoo" else 1 if provider != "portfolio_seed" else 0
+    source_rank = 0 if source_index == "portfolio" else 1
+    missing_penalty = -len(data_state)
+    return (
+        has_financials + has_insights + has_market_cap,
+        missing_penalty,
+        source_rank + provider_rank,
+        quality,
+        len(clean_string(row.get("name")) or ""),
+    )
+
+
+def deduplicate_screener_rows(rows: list[dict[str, Any]]) -> tuple[list[dict[str, Any]], dict[str, Any]]:
+    grouped: dict[str, list[dict[str, Any]]] = {}
+    for row in rows:
+        ticker = clean_string(row.get("ticker"))
+        if not ticker:
+            continue
+        grouped.setdefault(ticker.upper(), []).append(row)
+
+    canonical: list[dict[str, Any]] = []
+    suppressed: list[dict[str, Any]] = []
+    for ticker, bucket in grouped.items():
+        ranked = sorted(bucket, key=row_completeness, reverse=True)
+        winner = ranked[0]
+        canonical.append(winner)
+        for loser in ranked[1:]:
+            suppressed.append({
+                "ticker": ticker,
+                "instrument_key": loser.get("instrument_key"),
+                "kept_instrument_key": winner.get("instrument_key"),
+                "provider": loser.get("provider"),
+                "source_index": loser.get("source_index"),
+            })
+
+    return canonical, {
+        "duplicates_suppressed": len(suppressed),
+        "duplicate_groups": sum(1 for bucket in grouped.values() if len(bucket) > 1),
+        "suppressed_rows": suppressed[:50],
+    }
+
+
+def count_duplicate_ticker_groups(rows: Iterable[Mapping[str, Any]]) -> int:
+    counts: dict[str, int] = {}
+    for row in rows:
+        ticker = clean_string(row.get("ticker"))
+        if not ticker:
+            continue
+        key = ticker.upper()
+        counts[key] = counts.get(key, 0) + 1
+    return sum(1 for count in counts.values() if count > 1)
+
+
+def upsert_rows(supabase: Any, rows: list[dict[str, Any]], *, dry_run: bool) -> int:
+    if dry_run or not rows:
+        return 0
+    total = 0
+    for index in range(0, len(rows), 500):
+        batch = rows[index:index + 500]
+        response = (
+            supabase
+            .table("equity_screener_results")
+            .upsert(batch, on_conflict="instrument_key")
+            .execute()
+        )
+        total += len(response.data or batch)
+    return total
+
+
+def delete_rows(supabase: Any, instrument_keys: list[str], *, dry_run: bool) -> int:
+    if dry_run or not instrument_keys:
+        return 0
+    deleted = 0
+    for index in range(0, len(instrument_keys), 500):
+        batch = instrument_keys[index:index + 500]
+        response = (
+            supabase
+            .table("equity_screener_results")
+            .delete()
+            .in_("instrument_key", batch)
+            .execute()
+        )
+        deleted += len(response.data or batch)
+    return deleted
+
+
+def run_equity_screener_sync(
+    supabase: Any,
+    *,
+    dry_run: bool = False,
+    limit: int | None = None,
+    enforce_quality_gate: bool = False,
+    as_of_date: date | None = None,
+) -> dict[str, Any]:
+    universe = fetch_all_rows(
+        supabase,
+        "trident_equity_universe",
+        "instrument_key,ticker,name,exchange,country,sector,industry,currency,provider,provider_symbol,source_index,is_active",
+    )
+    financials = fetch_all_rows(
+        supabase,
+        "trident_financial_annual",
+        "instrument_key,fiscal_year,currency,revenue,free_cash_flow",
+    )
+    trident = fetch_all_rows(
+        supabase,
+        "trident_results",
+        "instrument_key,overall_state,score,latest_roic,latest_net_debt_to_ebitda",
+    )
+    insights = fetch_all_rows(
+        supabase,
+        "trident_stock_insights",
+        "instrument_key,market_cap,trailing_pe,forward_pe,target_mean_price,latest_price,price_currency,recommendation_key,number_of_analyst_opinions,regression_slope_pct,regression_z_score,ma200_state,momentum_3m_pct,momentum_12m_pct,price_history_state",
+    )
+    coverage = fetch_all_rows(
+        supabase,
+        "historical_price_coverage",
+        "ticker,earliest_date,coverage_pct,updated_at",
+    )
+    currencies = fetch_all_rows(
+        supabase,
+        "currencies",
+        "id,rate_to_eur,last_update",
+    )
+    existing_results = fetch_all_rows(
+        supabase,
+        "equity_screener_results",
+        "instrument_key",
+    )
+    active_universe = [row for row in universe if row.get("is_active") is not False]
+    if limit is not None:
+        active_universe = active_universe[:limit]
+
+    raw_rows = build_screener_rows(
+        active_universe,
+        financials,
+        trident,
+        insights,
+        coverage,
+        currencies,
+        as_of_date=as_of_date,
+    )
+    rows, dedupe_stats = deduplicate_screener_rows(raw_rows)
+    upserted = upsert_rows(supabase, rows, dry_run=dry_run)
+    current_keys = {str(row["instrument_key"]) for row in rows}
+    existing_keys = {
+        str(row.get("instrument_key"))
+        for row in existing_results
+        if clean_string(row.get("instrument_key"))
+    }
+    stale_keys = sorted(existing_keys - current_keys)
+    deleted_stale_rows = delete_rows(supabase, stale_keys, dry_run=dry_run)
+    theme_counts: dict[str, int] = {}
+    tag_counts: dict[str, int] = {}
+    state_counts: dict[str, int] = {}
+    country_counts: dict[str, int] = {}
+    strategy_counts: dict[str, int] = {}
+    total_rows = len(rows)
+    financials_ready = 0
+    insights_ready = 0
+    price_history_ready = 0
+    fx_ready = 0
+    stale_rows = 0
+    for row in rows:
+        for theme in row["themes"]:
+            theme_counts[theme] = theme_counts.get(theme, 0) + 1
+        for strategy in (row.get("score_details") or {}).get("strategy_tags", []):
+            strategy_counts[strategy] = strategy_counts.get(strategy, 0) + 1
+        tag = str(row["valuation_tag"])
+        tag_counts[tag] = tag_counts.get(tag, 0) + 1
+        country = str(row.get("country") or "UNKNOWN")
+        country_counts[country] = country_counts.get(country, 0) + 1
+        for state in row["data_state"]:
+            state_counts[state] = state_counts.get(state, 0) + 1
+        data_state = set(row["data_state"])
+        if "FINANCIALS_UNAVAILABLE" not in data_state:
+            financials_ready += 1
+        if "INSIGHTS_UNAVAILABLE" not in data_state:
+            insights_ready += 1
+        if "PRICE_HISTORY_UNAVAILABLE" not in data_state and "PRICE_HISTORY_SHORT" not in data_state:
+            price_history_ready += 1
+        if (
+            "FX_RATE_UNAVAILABLE" not in data_state
+            and "FX_RATE_STALE" not in data_state
+            and "MARKET_CAP_USD_UNAVAILABLE" not in data_state
+        ):
+            fx_ready += 1
+        updated_at = parse_datetime(row.get("updated_at"))
+        if updated_at and (datetime.now(timezone.utc) - updated_at).total_seconds() > 8 * 86_400:
+            stale_rows += 1
+    if dedupe_stats["duplicates_suppressed"]:
+        state_counts["DUPLICATE_SUPPRESSED"] = dedupe_stats["duplicates_suppressed"]
+
+    def coverage_pct(count: int) -> float | None:
+        return round((count / total_rows) * 100, 2) if total_rows > 0 else None
+
+    financials_coverage_pct = coverage_pct(financials_ready)
+    insights_coverage_pct = coverage_pct(insights_ready)
+    price_history_coverage_pct = coverage_pct(price_history_ready)
+    fx_coverage_pct = coverage_pct(fx_ready)
+    coverage_values = [
+        value
+        for value in (
+            financials_coverage_pct,
+            insights_coverage_pct,
+            price_history_coverage_pct,
+            fx_coverage_pct,
+        )
+        if value is not None
+    ]
+    unresolved_duplicate_groups = count_duplicate_ticker_groups(rows)
+    quality_gate_failures: list[str] = []
+    quality_gate_warnings: list[str] = []
+    if unresolved_duplicate_groups > MARKET_QUALITY_CRITICAL_THRESHOLDS["unresolved_duplicate_groups"]:
+        quality_gate_failures.append(
+            f"unresolved_duplicate_groups={unresolved_duplicate_groups} > {MARKET_QUALITY_CRITICAL_THRESHOLDS['unresolved_duplicate_groups']}"
+        )
+    financials_threshold = MARKET_QUALITY_CRITICAL_THRESHOLDS["financials_coverage_pct"]
+    if financials_coverage_pct is not None and financials_coverage_pct < financials_threshold:
+        quality_gate_failures.append(
+            f"financials_coverage_pct={financials_coverage_pct:.2f}% < {financials_threshold:.2f}%"
+        )
+    for key, value in [
+        ("insights_coverage_pct", insights_coverage_pct),
+        ("price_history_coverage_pct", price_history_coverage_pct),
+        ("fx_coverage_pct", fx_coverage_pct),
+    ]:
+        threshold = MARKET_QUALITY_WARNING_THRESHOLDS[key]
+        if value is not None and value < threshold:
+            quality_gate_warnings.append(f"{key}={value:.2f}% < {threshold:.2f}%")
+
+    stats = {
+        "source_universe_rows": len(universe),
+        "active_universe_rows": len(active_universe),
+        "financial_rows": len(financials),
+        "trident_rows": len(trident),
+        "insight_rows": len(insights),
+        "coverage_rows": len(coverage),
+        "currency_rows": len(currencies),
+        "raw_screener_rows": len(raw_rows),
+        "screener_rows": len(rows),
+        "upserted_rows": upserted,
+        "deleted_stale_rows": deleted_stale_rows,
+        "coverage_pct": round(min(coverage_values), 2) if coverage_values else None,
+        "financials_coverage_pct": financials_coverage_pct,
+        "insights_coverage_pct": insights_coverage_pct,
+        "price_history_coverage_pct": price_history_coverage_pct,
+        "fx_coverage_pct": fx_coverage_pct,
+        "financials_ready": financials_ready,
+        "insights_ready": insights_ready,
+        "price_history_ready": price_history_ready,
+        "fx_ready": fx_ready,
+        "stale_row_count": stale_rows,
+        "unresolved_duplicate_groups": unresolved_duplicate_groups,
+        "quality_gate_failures": quality_gate_failures,
+        "quality_gate_warnings": quality_gate_warnings,
+        "quality_gate_status": "FAILED" if quality_gate_failures else "WARN" if quality_gate_warnings else "PASS",
+        "critical_thresholds": MARKET_QUALITY_CRITICAL_THRESHOLDS,
+        "warning_thresholds": MARKET_QUALITY_WARNING_THRESHOLDS,
+        "theme_counts": dict(sorted(theme_counts.items())),
+        "strategy_counts": dict(sorted(strategy_counts.items())),
+        "valuation_tag_counts": dict(sorted(tag_counts.items())),
+        "state_counts": dict(sorted(state_counts.items())),
+        "country_counts": dict(sorted(country_counts.items())),
+        "items_total": len(active_universe),
+        "items_success": len(rows),
+        "items_failed": max(len(active_universe) - len(rows), 0),
+        **dedupe_stats,
+    }
+    if dry_run:
+        stats["dry_run"] = True
+        stats["sample_rows"] = rows[:5]
+    if enforce_quality_gate and quality_gate_failures:
+        raise EquityScreenerQualityGateError(
+            "Equity screener quality gate failed: " + "; ".join(quality_gate_failures),
+            stats,
+        )
+    return stats
+
+
+def start_etl_run(supabase: Any) -> str | None:
+    try:
+        response = (
+            supabase
+            .table("etl_runs")
+            .insert({
+                "job_name": JOB_NAME,
+                "status": "RUNNING",
+                "started_at": datetime.now(timezone.utc).isoformat(),
+                "updated_at": datetime.now(timezone.utc).isoformat(),
+            })
+            .execute()
+        )
+        if response.data:
+            return response.data[0].get("id")
+    except Exception as exc:
+        print(f"Could not start etl_runs for {JOB_NAME}: {exc}", flush=True)
+    return None
+
+
+def finish_etl_run(
+    supabase: Any,
+    run_id: str | None,
+    status: str,
+    duration_sec: float,
+    *,
+    stats: dict[str, Any] | None = None,
+    error: str | None = None,
+) -> None:
+    if not run_id:
+        return
+    payload: dict[str, Any] = {
+        "status": status,
+        "finished_at": datetime.now(timezone.utc).isoformat(),
+        "duration_sec": round(duration_sec, 2),
+        "updated_at": datetime.now(timezone.utc).isoformat(),
+    }
+    if stats is not None:
+        payload["stats"] = stats
+    if error:
+        payload["error"] = error
+    try:
+        supabase.table("etl_runs").update(payload).eq("id", run_id).execute()
+    except Exception as exc:
+        print(f"Could not finish etl_runs for {JOB_NAME}: {exc}", flush=True)
+
+
+def main() -> None:
+    parser = argparse.ArgumentParser(description="Sync open equity screener read model")
+    parser.add_argument("--limit", type=int, default=None)
+    parser.add_argument("--dry-run", action="store_true")
+    parser.add_argument("--enforce-quality-gate", action="store_true")
+    parser.add_argument("--output", default=None)
+    args = parser.parse_args()
+
+    supabase = get_supabase_client()
+    run_id = None if args.dry_run else start_etl_run(supabase)
+    started = time.time()
+    try:
+        stats = run_equity_screener_sync(
+            supabase,
+            dry_run=args.dry_run,
+            limit=args.limit,
+            enforce_quality_gate=args.enforce_quality_gate,
+        )
+        normalized = build_etl_stats(
+            JOB_NAME,
+            stats,
+            items_total=stats.get("items_total"),
+            items_success=stats.get("items_success"),
+            items_failed=stats.get("items_failed"),
+        )
+        if not args.dry_run:
+            finish_etl_run(supabase, run_id, "SUCCESS", time.time() - started, stats=normalized)
+        text = json.dumps(normalized, indent=2, sort_keys=True)
+        print(text)
+        if args.output:
+            Path(args.output).write_text(text, encoding="utf-8")
+    except Exception as exc:
+        raw_stats = getattr(exc, "stats", None)
+        normalized_stats = None
+        if isinstance(raw_stats, Mapping):
+            normalized_stats = build_etl_stats(
+                JOB_NAME,
+                raw_stats,
+                items_total=raw_stats.get("items_total"),
+                items_success=raw_stats.get("items_success"),
+                items_failed=raw_stats.get("items_failed"),
+            )
+        if not args.dry_run:
+            finish_etl_run(supabase, run_id, "FAILED", time.time() - started, stats=normalized_stats, error=str(exc))
+        if normalized_stats is not None:
+            text = json.dumps(normalized_stats, indent=2, sort_keys=True)
+            print(text)
+            if args.output:
+                Path(args.output).write_text(text, encoding="utf-8")
+        raise
+
+
+if __name__ == "__main__":
+    main()

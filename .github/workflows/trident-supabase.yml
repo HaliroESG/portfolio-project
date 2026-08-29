@@ -1,0 +1,313 @@
+name: Trident Supabase Deploy Gate
+
+on:
+  workflow_dispatch:
+    inputs:
+      apply_schema:
+        description: "Apply additive Supabase SQL migrations when SUPABASE_DB_URL is configured"
+        required: true
+        type: boolean
+        default: false
+      run_trident_etl:
+        description: "Run Trident ETL after schema validation when CSV provider env is configured"
+        required: true
+        type: boolean
+        default: false
+      authorization_ref:
+        description: "Separate approved change or runbook reference for mutations"
+        required: false
+        type: string
+  push:
+    branches:
+      - main
+    paths:
+      - "backend/sql/**"
+      - "backend/trident_screener.py"
+      - "backend/historical_prices_sync.py"
+      - "backend/equity_screener.py"
+      - "backend/api.py"
+      - "backend/family_office/**"
+      - "backend/macro_regime.py"
+      - "backend/supabase_key_guard.py"
+      - "backend/scripts/run_data_refresh.py"
+      - "backend/scripts/update_target_allocations.py"
+      - "backend/scripts/import_target_allocations_excel.py"
+      - "backend/scripts/import_broker_transactions.py"
+      - "backend/scripts/import_broker_positions.py"
+      - "backend/scripts/import_support_universe.py"
+      - "backend/scripts/import_target_model.py"
+      - "backend/scripts/backfill_top_trident_prices.py"
+      - "backend/scripts/sync_trident_stock_insights.py"
+      - "backend/scripts/sync_trident_screener.py"
+      - "backend/scripts/sync_equity_screener.py"
+      - "backend/scripts/bootstrap_family_office_owner.py"
+      - "backend/scripts/sync_family_office.py"
+      - "backend/scripts/sync_macro_regime.py"
+      - "backend/tests/test_trident_stock_insights.py"
+      - "backend/tests/test_trident_screener.py"
+      - "backend/tests/test_equity_screener.py"
+      - "backend/tests/test_refresh_ops.py"
+      - "backend/tests/test_target_excel_import.py"
+      - "backend/tests/test_support_universe_import.py"
+      - "backend/tests/test_target_model_import.py"
+      - "backend/tests/test_backfill_top_trident_prices.py"
+      - "backend/tests/broker_ingest/**"
+      - "backend/tools/schema_check.py"
+      - "frontend/app/trident/**"
+      - "frontend/app/screener/**"
+      - "frontend/app/arbitrage/**"
+      - "frontend/app/supports/**"
+      - "frontend/app/targets/**"
+      - "frontend/app/admin/**"
+      - "frontend/app/auth/**"
+      - "frontend/app/decisions/**"
+      - "frontend/app/login/**"
+      - "frontend/app/operations/**"
+      - "frontend/app/portfolios/**"
+      - "frontend/app/page.tsx"
+      - "frontend/lib/tridentData.ts"
+      - "frontend/lib/equityScreenerData.ts"
+      - "frontend/lib/equityScreenerDefinitions.ts"
+      - "frontend/components/AssetPriceChart.tsx"
+      - "frontend/components/DataHealthPanel.tsx"
+      - "frontend/types.ts"
+      - "frontend/scripts/smoke-supabase.mjs"
+      - "frontend/scripts/validate-critical-flows.mjs"
+      - ".github/workflows/trident-supabase.yml"
+      - ".github/workflows/trident-price-backfill.yml"
+      - ".github/workflows/trident-stock-insights.yml"
+      - ".github/workflows/production-data-remediation.yml"
+      - ".github/workflows/schedule.yml"
+
+permissions:
+  contents: read
+
+jobs:
+  validate:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Install backend dependencies
+        working-directory: ./backend
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+
+      - name: Backend tests
+        working-directory: ./backend
+        run: python3.11 -m pytest -q
+
+      - name: Backend compile check
+        working-directory: ./backend
+        run: python3.11 -m py_compile bridge.py technical_state.py etl_stats.py historical_prices_sync.py trident_screener.py equity_screener.py macro_regime.py api.py family_office/*.py scripts/run_data_refresh.py scripts/update_target_allocations.py scripts/import_target_allocations_excel.py scripts/import_broker_transactions.py scripts/import_broker_positions.py scripts/import_support_universe.py scripts/import_target_model.py scripts/backfill_top_trident_prices.py scripts/sync_trident_stock_insights.py scripts/sync_trident_screener.py scripts/sync_equity_screener.py scripts/sync_macro_regime.py scripts/sync_family_office.py scripts/bootstrap_family_office_owner.py tools/schema_check.py
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: "npm"
+          cache-dependency-path: frontend/package-lock.json
+
+      - name: Install frontend dependencies
+        working-directory: ./frontend
+        run: npm ci
+
+      - name: Frontend lint
+        working-directory: ./frontend
+        run: npm run lint
+
+      - name: Frontend TypeScript
+        working-directory: ./frontend
+        run: npx tsc --noEmit
+
+      - name: Frontend build
+        working-directory: ./frontend
+        env:
+          NEXT_PUBLIC_SUPABASE_URL: http://localhost:54321
+          NEXT_PUBLIC_SUPABASE_ANON_KEY: ci-placeholder-anon-key
+        run: npm run build
+
+  supabase-gate:
+    runs-on: ubuntu-latest
+    needs: validate
+    environment: Production
+    env:
+      AUTHORIZATION_REF: ${{ inputs.authorization_ref }}
+      MUTATION_GATE: ${{ vars.ASTROCYTE_MUTATION_GATE }}
+      SOURCE_RIGHTS_GATE: ${{ vars.ASTROCYTE_SOURCE_RIGHTS_GATE }}
+      SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+      SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_KEY }}
+      SUPABASE_DB_URL: ${{ secrets.SUPABASE_DB_URL }}
+      DATABASE_URL: ${{ secrets.DATABASE_URL }}
+      SUPABASE_DB_URL_VAR: ${{ vars.SUPABASE_DB_URL }}
+      DATABASE_URL_VAR: ${{ vars.DATABASE_URL }}
+      APPLY_SCHEMA: ${{ github.event_name == 'workflow_dispatch' && inputs.apply_schema || false }}
+      RUN_TRIDENT_ETL: ${{ github.event_name == 'workflow_dispatch' && inputs.run_trident_etl || false }}
+      TRIDENT_PROVIDER: ${{ vars.TRIDENT_PROVIDER || 'global_yahoo' }}
+      TRIDENT_INDEXES: ${{ vars.TRIDENT_INDEXES }}
+      TRIDENT_LIMIT: ${{ vars.TRIDENT_LIMIT }}
+      TRIDENT_PER_INDEX_LIMIT: ${{ vars.TRIDENT_PER_INDEX_LIMIT }}
+      TRIDENT_YAHOO_SLEEP_SEC: ${{ vars.TRIDENT_YAHOO_SLEEP_SEC || '0.15' }}
+      TRIDENT_UNIVERSE_CSV: ${{ vars.TRIDENT_UNIVERSE_CSV }}
+      TRIDENT_FINANCIALS_CSV: ${{ vars.TRIDENT_FINANCIALS_CSV }}
+      TRIDENT_SOURCE_LICENSE_NOTE: ${{ vars.TRIDENT_SOURCE_LICENSE_NOTE }}
+      YFINANCE_PROFILE_TIMEOUT_SEC: ${{ vars.YFINANCE_PROFILE_TIMEOUT_SEC || '30' }}
+      TRIDENT_STOCK_INSIGHTS_BATCH_SIZE: ${{ vars.TRIDENT_STOCK_INSIGHTS_BATCH_SIZE || '25' }}
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Verify mutation authority gates
+        if: ${{ env.APPLY_SCHEMA == 'true' || env.RUN_TRIDENT_ETL == 'true' }}
+        run: |
+          if [ "$MUTATION_GATE" != "APPROVED" ] || [ -z "$AUTHORIZATION_REF" ]; then
+            echo "::error::Supabase mutations require ASTROCYTE_MUTATION_GATE=APPROVED and authorization_ref."
+            exit 2
+          fi
+          if [ "$RUN_TRIDENT_ETL" = "true" ] && [ "$SOURCE_RIGHTS_GATE" != "APPROVED" ]; then
+            echo "::error::Trident ETL requires ASTROCYTE_SOURCE_RIGHTS_GATE=APPROVED."
+            exit 2
+          fi
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Install backend dependencies
+        working-directory: ./backend
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+
+      - name: Pre-migration schema check
+        working-directory: ./backend
+        continue-on-error: true
+        run: python tools/schema_check.py --pretty --output schema-check-before.json
+
+      - name: Apply Supabase migrations
+        if: ${{ env.APPLY_SCHEMA == 'true' }}
+        env:
+          PGPASSWORD: ""
+        run: |
+          if [ -z "$SUPABASE_DB_URL" ]; then
+            SUPABASE_DB_URL="$DATABASE_URL"
+          fi
+          if [ -z "$SUPABASE_DB_URL" ]; then
+            SUPABASE_DB_URL="$SUPABASE_DB_URL_VAR"
+          fi
+          if [ -z "$SUPABASE_DB_URL" ]; then
+            SUPABASE_DB_URL="$DATABASE_URL_VAR"
+          fi
+          if [ -z "$SUPABASE_DB_URL" ]; then
+            echo "::error::SUPABASE_DB_URL or DATABASE_URL is required as a GitHub Actions secret or variable to apply SQL migrations."
+            echo "SUPABASE_URL + SUPABASE_SERVICE_KEY can validate REST schema and write rows, but cannot run DDL SQL."
+            exit 2
+          fi
+          echo "::add-mask::$SUPABASE_DB_URL"
+          sudo apt-get update
+          sudo apt-get install -y postgresql-client
+          # The Family Office bundle is intentionally excluded from this generic gate.
+          # It contains archive/delete and global RLS/policy changes and requires a
+          # separate, explicitly approved migration runbook with backup and rollback.
+          psql "$SUPABASE_DB_URL" \
+            -v ON_ERROR_STOP=1 \
+            -f backend/sql/20260210_market_watch_phase2_technicals.sql \
+            -f backend/sql/20260210_portfolio_positions_phase3.sql \
+            -f backend/sql/20260213_isin_identifier_map.sql \
+            -f backend/sql/20260222_historical_prices.sql \
+            -f backend/sql/20260524_historical_price_local_columns.sql \
+            -f backend/sql/20260222_backtest_model.sql \
+            -f backend/sql/20260222_backtest_common_start.sql \
+            -f backend/sql/20260222_backtest_portfolio_key_relax.sql \
+            -f backend/sql/20260222_backtest_config_hash_idx.sql \
+            -f backend/sql/20260511_broker_transactions.sql \
+            -f backend/sql/20260525_broker_position_snapshots.sql \
+            -f backend/sql/20260524_trident_screener.sql \
+            -f backend/sql/20260525_portfolio_decision_items.sql \
+            -f backend/sql/20260526_supports_targets_advice.sql \
+            -f backend/sql/20260527_trident_stock_insights.sql \
+            -f backend/sql/20260528_equity_screener.sql \
+            -f backend/sql/20260705_macro_strategy_pilotage.sql
+
+      - name: Post-migration schema check
+        working-directory: ./backend
+        continue-on-error: ${{ env.APPLY_SCHEMA != 'true' }}
+        run: python tools/schema_check.py --pretty --output schema-check-after.json
+
+      - name: Run Trident ETL when configured
+        if: ${{ github.event_name == 'workflow_dispatch' && inputs.run_trident_etl }}
+        working-directory: ./backend
+        env:
+          SUPABASE_KEY: ${{ secrets.SUPABASE_SERVICE_KEY }}
+        run: |
+          if [ "$TRIDENT_PROVIDER" = "csv" ] && { [ -z "$TRIDENT_UNIVERSE_CSV" ] || [ -z "$TRIDENT_FINANCIALS_CSV" ]; }; then
+            echo "::error::TRIDENT_UNIVERSE_CSV and TRIDENT_FINANCIALS_CSV repository variables are required for CSV provider."
+            exit 2
+          fi
+          cmd=(python scripts/sync_trident_screener.py)
+          if [ -n "$TRIDENT_LIMIT" ]; then
+            cmd+=(--limit "$TRIDENT_LIMIT")
+          fi
+          if [ -n "$TRIDENT_PER_INDEX_LIMIT" ]; then
+            cmd+=(--per-index-limit "$TRIDENT_PER_INDEX_LIMIT")
+          fi
+          "${cmd[@]}"
+          python historical_prices_sync.py \
+            --trident-only \
+            --source-index "Curated IT Services" \
+            --only-missing \
+            --start-date "1999-01-01"
+          python scripts/sync_trident_stock_insights.py \
+            --curated-it-services \
+            --batch-size "$TRIDENT_STOCK_INSIGHTS_BATCH_SIZE" \
+            --force \
+            --no-ai \
+            --output curated-it-services-insights.json
+          python scripts/sync_equity_screener.py --enforce-quality-gate
+
+      - name: Setup Node for Supabase smoke
+        uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: "npm"
+          cache-dependency-path: frontend/package-lock.json
+
+      - name: Install frontend dependencies
+        working-directory: ./frontend
+        run: npm ci
+
+      - name: Supabase contract smoke with service key
+        working-directory: ./frontend
+        env:
+          NEXT_PUBLIC_SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          NEXT_PUBLIC_SUPABASE_ANON_KEY: ${{ secrets.SUPABASE_ANON_KEY }}
+          SUPABASE_SMOKE_KEY: ${{ secrets.SUPABASE_SERVICE_KEY }}
+          REQUIRE_TRIDENT_ROWS: ${{ github.event_name == 'workflow_dispatch' && inputs.run_trident_etl || false }}
+          REQUIRE_EQUITY_SCREENER_ROWS: ${{ github.event_name == 'workflow_dispatch' && inputs.run_trident_etl || false }}
+        run: |
+          if [ -z "$NEXT_PUBLIC_SUPABASE_URL" ] || [ -z "$NEXT_PUBLIC_SUPABASE_ANON_KEY" ]; then
+            echo "::error::Supabase smoke requires SUPABASE_URL and SUPABASE_ANON_KEY."
+            exit 2
+          fi
+          npm run smoke:supabase -- --output=smoke-supabase-report.json
+
+      - name: Upload Supabase reports
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: trident-supabase-reports
+          path: |
+            backend/schema-check-before.json
+            backend/schema-check-after.json
+            frontend/smoke-supabase-report.json
+          if-no-files-found: warn
