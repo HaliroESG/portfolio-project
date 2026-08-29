@@ -47,17 +47,62 @@ class WorkflowContractTests(unittest.TestCase):
         with self.assertRaisesRegex(AssertionError, "portfolio-production-mutation"):
             validate_workflow_contract(contents)
 
-    def test_runner_context_in_job_environment_fails(self) -> None:
+    def test_runner_context_in_job_environment_fails_for_whitespace_variants(self) -> None:
+        variants = {
+            "spaced": "      PYTHONPATH: ${{ runner.temp }}/python-deps\n",
+            "compact": "      PYTHONPATH: ${{runner.temp}}/python-deps\n",
+            "tabs": '      PYTHONPATH: "${{\\trunner.temp\\t}}/python-deps"\n',
+            "newlines": (
+                "      PYTHONPATH: >-\n"
+                "        ${{\n"
+                "        runner.temp\n"
+                "        }}/python-deps\n"
+            ),
+        }
+        original = "      PYTHONPATH: ${{ github.workspace }}/.python-deps\n"
+        for label, replacement in variants.items():
+            with self.subTest(label=label):
+                contents = workflow_contents()
+                contents["trident-price-backfill.yml"] = contents[
+                    "trident-price-backfill.yml"
+                ].replace(original, replacement, 1)
+                with self.assertRaisesRegex(
+                    AssertionError, "runner context is unavailable"
+                ):
+                    validate_workflow_contract(contents)
+
+    def test_runner_context_in_step_environment_is_allowed(self) -> None:
         contents = workflow_contents()
-        contents["trident-price-backfill.yml"] = contents[
-            "trident-price-backfill.yml"
-        ].replace(
-            "${{ github.workspace }}/.python-deps",
-            "${{ runner.temp }}/.python-deps",
+        contents["workflow-parity.yml"] = contents["workflow-parity.yml"].replace(
+            "      - name: Validate workflow inventory and fail-closed gates\n",
+            "      - name: Exercise legitimate runner step context\n"
+            "        env:\n"
+            "          LEGITIMATE_RUNNER_TEMP: ${{runner.temp}}\n"
+            "        run: test -n \"$LEGITIMATE_RUNNER_TEMP\"\n\n"
+            "      - name: Validate workflow inventory and fail-closed gates\n",
             1,
         )
-        with self.assertRaisesRegex(AssertionError, "runner context is unavailable"):
-            validate_workflow_contract(contents)
+        validate_workflow_contract(contents)
+
+    def test_required_actionlint_scan_and_checksum_cannot_be_weakened(self) -> None:
+        mutations = {
+            "missing_scan": (
+                "actionlint .github/workflows/*.yml",
+                "actionlint .github/workflows/workflow-parity.yml",
+            ),
+            "checksum_drift": (
+                "023070a287cd8cccd71515fedc843f1985bf96c436b7effaecce67290e7e0757",
+                "123070a287cd8cccd71515fedc843f1985bf96c436b7effaecce67290e7e0757",
+            ),
+        }
+        for label, (before, after) in mutations.items():
+            with self.subTest(label=label):
+                contents = workflow_contents()
+                contents["workflow-parity.yml"] = contents[
+                    "workflow-parity.yml"
+                ].replace(before, after, 1)
+                with self.assertRaisesRegex(AssertionError, "Actionlint"):
+                    validate_workflow_contract(contents)
 
     def test_failed_precheck_cannot_be_ignored(self) -> None:
         contents = workflow_contents()
