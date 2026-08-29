@@ -1,23 +1,20 @@
 name: Financial Data Sync
 
 on:
-  schedule:
-    - cron: '37 22 * * 1-5' # Core/history/backtest after US market close.
-    - cron: '17 7 * * 0' # Weekly full Trident refresh.
   workflow_dispatch:
     inputs:
       scope:
         description: "Refresh scope to run"
         required: true
         type: choice
-        default: all
+        default: validate
         options:
+          - validate
           - all
           - core
           - history
           - trident
           - backtest
-          - validate
       trident_mode:
         description: "Trident mode for scope=all or scope=trident"
         required: true
@@ -28,6 +25,10 @@ on:
           - full
       trident_price_start_date:
         description: "Optional Trident price sync start date, for example 1999-01-01 for full backfill"
+        required: false
+        type: string
+      authorization_ref:
+        description: "Separate approved change or runbook reference for mutating scopes"
         required: false
         type: string
 
@@ -42,6 +43,10 @@ jobs:
   preflight:
     runs-on: ubuntu-latest
     timeout-minutes: 15
+    env:
+      AUTHORIZATION_REF: ${{ inputs.authorization_ref }}
+      MUTATION_GATE: ${{ vars.ASTROCYTE_MUTATION_GATE }}
+      SOURCE_RIGHTS_GATE: ${{ vars.ASTROCYTE_SOURCE_RIGHTS_GATE }}
     outputs:
       scope: ${{ steps.plan.outputs.scope }}
       trident_mode: ${{ steps.plan.outputs.trident_mode }}
@@ -61,18 +66,8 @@ jobs:
           scope="${{ github.event.inputs.scope }}"
           trident_mode="${{ github.event.inputs.trident_mode }}"
 
-          if [ "${{ github.event_name }}" = "schedule" ]; then
-            if [ "${{ github.event.schedule }}" = "17 7 * * 0" ]; then
-              scope="trident"
-              trident_mode="full"
-            else
-              scope="all"
-              trident_mode="daily"
-            fi
-          fi
-
           if [ -z "$scope" ]; then
-            scope="all"
+            scope="validate"
           fi
           if [ -z "$trident_mode" ]; then
             trident_mode="daily"
@@ -112,6 +107,17 @@ jobs:
               exit 2
               ;;
           esac
+
+          if [ "$scope" != "validate" ]; then
+            if [ "$SOURCE_RIGHTS_GATE" != "APPROVED" ] || [ "$MUTATION_GATE" != "APPROVED" ]; then
+              echo "::error::Mutating refresh scopes require approved source-rights and mutation gates."
+              exit 2
+            fi
+            if [ -z "$AUTHORIZATION_REF" ]; then
+              echo "::error::authorization_ref is required for mutating refresh scopes."
+              exit 2
+            fi
+          fi
 
           {
             echo "scope=$scope"
@@ -184,6 +190,7 @@ jobs:
 
   refresh-core:
     runs-on: ubuntu-latest
+    environment: Production
     needs: preflight
     if: ${{ needs.preflight.outputs.run_core == 'true' }}
     timeout-minutes: 90
@@ -225,6 +232,7 @@ jobs:
 
   refresh-market-history:
     runs-on: ubuntu-latest
+    environment: Production
     needs:
       - preflight
       - refresh-core
@@ -265,6 +273,7 @@ jobs:
 
   refresh-trident:
     runs-on: ubuntu-latest
+    environment: Production
     needs:
       - preflight
       - refresh-core
@@ -322,6 +331,7 @@ jobs:
 
   refresh-backtest:
     runs-on: ubuntu-latest
+    environment: Production
     needs:
       - preflight
       - refresh-core

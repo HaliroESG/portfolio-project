@@ -21,7 +21,11 @@ on:
         description: "Resolve tickers and report without writing prices"
         required: true
         type: boolean
-        default: false
+        default: true
+      authorization_ref:
+        description: "Separate approved change or runbook reference for writes"
+        required: false
+        type: string
 
 permissions:
   contents: read
@@ -34,8 +38,12 @@ jobs:
   top-backfill:
     runs-on: ubuntu-latest
     timeout-minutes: 180
+    environment: Production
 
     env:
+      AUTHORIZATION_REF: ${{ inputs.authorization_ref }}
+      MUTATION_GATE: ${{ vars.ASTROCYTE_MUTATION_GATE }}
+      SOURCE_RIGHTS_GATE: ${{ vars.ASTROCYTE_SOURCE_RIGHTS_GATE }}
       SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
       SUPABASE_SERVICE_KEY: ${{ secrets.SUPABASE_SERVICE_KEY }}
       TOP_N: ${{ inputs.top_n }}
@@ -49,6 +57,14 @@ jobs:
 
       - name: Verify required configuration
         run: |
+          if [ "$SOURCE_RIGHTS_GATE" != "APPROVED" ]; then
+            echo "::error::Price backfill is disabled until ASTROCYTE_SOURCE_RIGHTS_GATE is APPROVED."
+            exit 2
+          fi
+          if [ "$DRY_RUN" != "true" ] && { [ "$MUTATION_GATE" != "APPROVED" ] || [ -z "$AUTHORIZATION_REF" ]; }; then
+            echo "::error::Writes require ASTROCYTE_MUTATION_GATE=APPROVED and authorization_ref."
+            exit 2
+          fi
           missing=()
           for name in SUPABASE_URL SUPABASE_SERVICE_KEY TOP_N START_DATE; do
             if [ -z "${!name}" ]; then

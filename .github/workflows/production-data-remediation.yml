@@ -1,20 +1,13 @@
 name: Production Data Remediation
 
 on:
-  push:
-    branches:
-      - "codex/trident-screener"
-    paths:
-      - ".github/workflows/production-data-remediation.yml"
-      - "backend/sql/**/*.sql"
-      - "backend/scripts/run_data_refresh.py"
   workflow_dispatch:
     inputs:
       apply_schema:
         description: "Apply additive Supabase SQL migrations"
         required: true
         type: boolean
-        default: true
+        default: false
       top_n:
         description: "Top Trident scored rows to backfill first"
         required: true
@@ -29,7 +22,11 @@ on:
         description: "Run full Trident sync after top-score backfill"
         required: true
         type: boolean
-        default: true
+        default: false
+      authorization_ref:
+        description: "Separate approved change or runbook reference"
+        required: true
+        type: string
 
 permissions:
   contents: read
@@ -42,8 +39,12 @@ jobs:
   remediate-data:
     runs-on: ubuntu-latest
     timeout-minutes: 360
+    environment: Production
 
     env:
+      AUTHORIZATION_REF: ${{ inputs.authorization_ref }}
+      MUTATION_GATE: ${{ vars.ASTROCYTE_MUTATION_GATE }}
+      SOURCE_RIGHTS_GATE: ${{ vars.ASTROCYTE_SOURCE_RIGHTS_GATE }}
       SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
       SUPABASE_SERVICE_KEY: ${{ secrets.SUPABASE_SERVICE_KEY }}
       SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_KEY }}
@@ -64,8 +65,8 @@ jobs:
       TRIDENT_STOCK_INSIGHTS_BATCH_SIZE: ${{ vars.TRIDENT_STOCK_INSIGHTS_BATCH_SIZE || '25' }}
       TOP_N: ${{ github.event_name == 'workflow_dispatch' && inputs.top_n || '200' }}
       START_DATE: ${{ github.event_name == 'workflow_dispatch' && inputs.start_date || '1999-01-01' }}
-      APPLY_SCHEMA: ${{ github.event_name == 'push' || inputs.apply_schema }}
-      RUN_FULL_AFTER_TOP: ${{ github.event_name == 'push' || inputs.run_full_after_top }}
+      APPLY_SCHEMA: ${{ inputs.apply_schema }}
+      RUN_FULL_AFTER_TOP: ${{ inputs.run_full_after_top }}
 
     steps:
       - name: Checkout code
@@ -73,6 +74,14 @@ jobs:
 
       - name: Verify required configuration
         run: |
+          if [ "$MUTATION_GATE" != "APPROVED" ] || [ "$SOURCE_RIGHTS_GATE" != "APPROVED" ]; then
+            echo "::error::Production remediation is disabled until mutation and source-rights gates are separately approved."
+            exit 2
+          fi
+          if [ -z "$AUTHORIZATION_REF" ]; then
+            echo "::error::authorization_ref is required."
+            exit 2
+          fi
           missing=()
           for name in SUPABASE_URL SUPABASE_SERVICE_KEY TOP_N START_DATE; do
             if [ -z "${!name}" ]; then
