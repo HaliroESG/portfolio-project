@@ -18,7 +18,7 @@ Adds a separate, fail-closed Family Office release gate without modifying or mer
 - Frontend lint/TypeScript/critical flows: PASS
 - Frontend production build: webpack PASS; canonical Turbopack BLOCKED by local bind restriction
 - Supabase smoke: BLOCKED because no local Supabase was running; no provider fallback
-- Exact diff security scan: 0 reportable findings, with the native inventory gap explicitly documented
+- Exact release-gate and supplemental CI-correction security scans: 0 reportable findings, with the native inventory gaps explicitly documented
 
 ## Boundaries
 

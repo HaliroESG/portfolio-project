@@ -4,7 +4,8 @@
 
 - Branch: `codex/astrocyte-family-office-release-gate-v1`
 - Required base: `3828d6d7851958f6e832896ce908c60097f67f90`
-- Code commit: `ccfc0960812ce90deccfc01434da457e1e6934ce`
+- Receipt-bound release-gate code commit: `ccfc0960812ce90deccfc01434da457e1e6934ce`
+- Reviewed source head including the bounded CI correction: `bc1d9f6eacbbe28dccd4b4bb19fe0987ed7ac91b`
 - Evidence commit: to be the draft PR head containing this sealed directory
 - Candidate consumed read-only: `c01eb33878e4030975144c5b0ae98e9bdf31ea04`
 - Local receipt: `receipts/local-restore-receipt.json`

@@ -7,7 +7,8 @@ Date: 2026-08-29
 - Controller thread: `01a048fb-6d82-7363-be6a-781ed87229b0`
 - Workstream: `portfolio-astrocyte-family-office-release-gate-v1-01a04e52`
 - Required base: `3828d6d7851958f6e832896ce908c60097f67f90`
-- Code commit: `ccfc0960812ce90deccfc01434da457e1e6934ce`
+- Release-gate code commit bound to the local receipt: `ccfc0960812ce90deccfc01434da457e1e6934ce`
+- Reviewed source head after the bounded CI correction: `bc1d9f6eacbbe28dccd4b4bb19fe0987ed7ac91b`
 - PR12 candidate: `c01eb33878e4030975144c5b0ae98e9bdf31ea04`
 - PR12 was read through pinned Git objects only; it was not modified, merged, or copied into this branch.
 
@@ -25,6 +26,7 @@ Date: 2026-08-29
 - Verify source/restore fingerprints, two-owner read isolation, authenticated write refusal, composite constraints, RLS/grants/views, unsafe rollback refusal, and safe rollback.
 - Emit and strictly validate a non-promotable `LOCAL_ISOLATED_DATABASE` receipt.
 - Add workflow parity and negative tests preserving the `ISOLATED_PROJECT` Production boundary.
+- Require full read-only Git history in the transversal contract workflow so the exact pinned PR12 object is available; no fetched object is executed without the existing commit/blob/content checks.
 - Document the absent HMAC key, independent issuer, and Production gates without inventing configuration.
 
 ## Explicit non-delta
