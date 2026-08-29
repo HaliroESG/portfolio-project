@@ -68,6 +68,7 @@ class MockSupabaseClient {
     this.heldTable = heldTable
     this.ownerTableCalls = new Map()
     this.held = null
+    this.lateErrorReleased = false
   }
   from(table) { return new MockQuery(this, table) }
   ownerFor(query) {
@@ -82,7 +83,15 @@ class MockSupabaseClient {
     const count = (this.ownerTableCalls.get(counterKey) ?? 0) + 1
     this.ownerTableCalls.set(counterKey, count)
     if (query.table === this.heldTable && owner === 'owner-a' && count === 2) {
-      return new Promise((resolve) => { this.held = () => resolve(this.response(query, owner)) })
+      return new Promise((resolve, reject) => {
+        this.held = {
+          success: () => resolve(this.response(query, owner)),
+          error: () => {
+            this.lateErrorReleased = true
+            reject(new Error('ERROR-A'))
+          },
+        }
+      })
     }
     return this.response(query, owner)
   }
@@ -134,11 +143,11 @@ class MockSupabaseClient {
     }[query.table] ?? []
     return Promise.resolve({ data: query.single ? (rows[0] ?? null) : rows, error: null })
   }
-  releaseHeldA() {
+  releaseHeldA(outcome) {
     assert.ok(this.held, `expected an owner A request to ${this.heldTable} to remain in flight`)
     const release = this.held
     this.held = null
-    release()
+    release[outcome]()
   }
 }
 
@@ -150,7 +159,16 @@ async function waitFor(renderer, pattern) {
   assert.match(JSON.stringify(renderer.toJSON()), pattern)
 }
 
-async function exerciseMountedProductionReader({ name, heldTable, Harness, aPattern, bPattern, setAFilter, defaultFilter }) {
+async function exerciseMountedProductionReader({
+  name,
+  heldTable,
+  Harness,
+  aPattern,
+  bPattern,
+  setAFilter,
+  defaultFilter,
+  lateOutcome,
+}) {
   const client = new MockSupabaseClient(heldTable)
   const controls = { current: null }
   const cache = new Map()
@@ -180,9 +198,15 @@ async function exerciseMountedProductionReader({ name, heldTable, Harness, aPatt
   await waitFor(renderer, bPattern)
 
   await act(async () => {
-    client.releaseHeldA()
-    await heldPromise
+    client.releaseHeldA(lateOutcome)
+    try {
+      await heldPromise
+    } catch (error) {
+      if (lateOutcome !== 'error') throw error
+      assert.match(String(error), /ERROR-A/)
+    }
   })
+  assert.equal(client.lateErrorReleased, lateOutcome === 'error')
   const afterLateA = JSON.stringify(renderer.toJSON())
   assert.match(afterLateA, bPattern)
   assert.doesNotMatch(afterLateA, aPattern)
@@ -244,28 +268,52 @@ async function main() {
 await exerciseMountedProductionReader({
   name: 'Targets page reader', heldTable: 'portfolio_positions', Harness: TargetsHarness,
   aPattern: /POSITION-A/, bPattern: /POSITION-B/,
-  setAFilter: (controls) => controls.setFilter('A-FILTER'), defaultFilter: /PERSO/,
+  setAFilter: (controls) => controls.setFilter('A-FILTER'), defaultFilter: /PERSO/, lateOutcome: 'success',
 })
 await exerciseMountedProductionReader({
   name: 'Arbitrage page reader', heldTable: 'portfolio_decision_items_latest', Harness: ArbitrageHarness,
   aPattern: /DECISION-A/, bPattern: /DECISION-B/,
-  setAFilter: (controls) => controls.setFilter('A-FILTER'), defaultFilter: /ALL/,
+  setAFilter: (controls) => controls.setFilter('A-FILTER'), defaultFilter: /ALL/, lateOutcome: 'success',
 })
 await exerciseMountedProductionReader({
   name: 'GovernanceWidget reader', heldTable: 'governance_targets', Harness: GovernanceHarness,
-  aPattern: /CLASS-A/, bPattern: /CLASS-B/,
+  aPattern: /CLASS-A/, bPattern: /CLASS-B/, lateOutcome: 'success',
 })
 await exerciseMountedProductionReader({
   name: 'DataHealthPanel reader', heldTable: 'valuation_snapshots', Harness: DataHealthHarness,
-  aPattern: /COVERAGE-81/, bPattern: /COVERAGE-92/,
+  aPattern: /COVERAGE-81/, bPattern: /COVERAGE-92/, lateOutcome: 'success',
 })
 await exerciseMountedProductionReader({
   name: 'Geo portfolioData reader', heldTable: 'portfolio_positions', Harness: GeoHarness,
   aPattern: /POSITION-A/, bPattern: /POSITION-B/,
-  setAFilter: (controls) => controls.setFilter('A-FILTER'), defaultFilter: /ALL/,
+  setAFilter: (controls) => controls.setFilter('A-FILTER'), defaultFilter: /ALL/, lateOutcome: 'success',
 })
 
-console.log('mounted production readers A -> B with late A responses: Targets, Arbitrage, GovernanceWidget, DataHealthPanel, Geo/portfolioData: PASS')
+await exerciseMountedProductionReader({
+  name: 'Targets page reader', heldTable: 'portfolio_positions', Harness: TargetsHarness,
+  aPattern: /POSITION-A/, bPattern: /POSITION-B/,
+  setAFilter: (controls) => controls.setFilter('A-FILTER'), defaultFilter: /PERSO/, lateOutcome: 'error',
+})
+await exerciseMountedProductionReader({
+  name: 'Arbitrage page reader', heldTable: 'portfolio_decision_items_latest', Harness: ArbitrageHarness,
+  aPattern: /DECISION-A/, bPattern: /DECISION-B/,
+  setAFilter: (controls) => controls.setFilter('A-FILTER'), defaultFilter: /ALL/, lateOutcome: 'error',
+})
+await exerciseMountedProductionReader({
+  name: 'GovernanceWidget reader', heldTable: 'governance_targets', Harness: GovernanceHarness,
+  aPattern: /CLASS-A/, bPattern: /CLASS-B/, lateOutcome: 'error',
+})
+await exerciseMountedProductionReader({
+  name: 'DataHealthPanel reader', heldTable: 'valuation_snapshots', Harness: DataHealthHarness,
+  aPattern: /COVERAGE-81/, bPattern: /COVERAGE-92/, lateOutcome: 'error',
+})
+await exerciseMountedProductionReader({
+  name: 'Geo portfolioData reader', heldTable: 'portfolio_positions', Harness: GeoHarness,
+  aPattern: /POSITION-A/, bPattern: /POSITION-B/,
+  setAFilter: (controls) => controls.setFilter('A-FILTER'), defaultFilter: /ALL/, lateOutcome: 'error',
+})
+
+console.log('mounted production readers A -> B with late A success and error: Targets, Arbitrage, GovernanceWidget, DataHealthPanel, Geo/portfolioData: PASS')
 }
 
 main().catch((error) => {

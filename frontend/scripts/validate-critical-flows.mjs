@@ -364,7 +364,9 @@ try {
         'useDataHealthOwnerReader',
         'usePortfolioAggregationOwnerReader',
         "client.auth.transition('owner-b')",
-        'client.releaseHeldA()',
+        'client.releaseHeldA(lateOutcome)',
+        "lateOutcome: 'success'",
+        "lateOutcome: 'error'",
       ]),
     'Every private legacy surface must use the shared owner identity, an owner-keyed request, and synchronous owner-change rendering guards.'
   )
