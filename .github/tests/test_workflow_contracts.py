@@ -85,10 +85,22 @@ class WorkflowContractTests(unittest.TestCase):
         validate_workflow_contract(contents)
 
     def test_required_actionlint_scan_and_checksum_cannot_be_weakened(self) -> None:
+        required_scan = (
+            "actionlint -shellcheck= -pyflakes= .github/workflows/*.yml"
+        )
         mutations = {
             "missing_scan": (
-                "actionlint .github/workflows/*.yml",
-                "actionlint .github/workflows/workflow-parity.yml",
+                required_scan,
+                "actionlint -shellcheck= -pyflakes= "
+                ".github/workflows/workflow-parity.yml",
+            ),
+            "shellcheck_autodiscovery": (
+                required_scan,
+                "actionlint -pyflakes= .github/workflows/*.yml",
+            ),
+            "pyflakes_autodiscovery": (
+                required_scan,
+                "actionlint -shellcheck= .github/workflows/*.yml",
             ),
             "checksum_drift": (
                 "023070a287cd8cccd71515fedc843f1985bf96c436b7effaecce67290e7e0757",

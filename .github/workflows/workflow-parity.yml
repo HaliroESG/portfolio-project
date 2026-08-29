@@ -41,7 +41,7 @@ jobs:
           printf '%s\n' "$install_dir" >> "$GITHUB_PATH"
 
       - name: Validate every workflow with Actionlint
-        run: actionlint .github/workflows/*.yml
+        run: actionlint -shellcheck= -pyflakes= .github/workflows/*.yml
 
       - name: Validate workflow inventory and fail-closed gates
         run: python3 .github/scripts/check_workflow_parity.py

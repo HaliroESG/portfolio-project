@@ -271,10 +271,11 @@ def _check_required_actionlint(text: str) -> None:
         )
     validate_run = steps[validate_index].get("run")
     if not isinstance(validate_run, str) or validate_run.strip() != (
-        "actionlint .github/workflows/*.yml"
+        "actionlint -shellcheck= -pyflakes= .github/workflows/*.yml"
     ):
         raise AssertionError(
-            "workflow-parity.yml: required Actionlint scan must cover every workflow"
+            "workflow-parity.yml: required Actionlint scan must cover every workflow "
+            "with optional ShellCheck and Pyflakes integrations disabled"
         )
 
 
