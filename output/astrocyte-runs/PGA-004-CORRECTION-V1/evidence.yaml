@@ -1,0 +1,97 @@
+schema_version: astrocyte_pga_evidence_v1
+workstream: portfolio-astrocyte-pga-004-correction-v1
+run_id: PGA-004-CORRECTION-V1
+observed_at_utc: '2026-08-29T11:02:27Z'
+status: READY_FOR_INDEPENDENT_REVIEW
+route:
+  mode: solo
+  model: gpt-5.6-sol
+  reasoning_effort: high
+  auxiliary_agents: 0
+base:
+  ref: origin/main
+  sha: 00c88d220fc7a99ff642d4423193fcd6b58a1656
+candidate:
+  code_commit_sha: 46ccdff13d50eb2639dced30fed64a161c183abc
+  branch: codex/portfolio-astrocyte-pga-004-correction-v1
+  pull_request: https://github.com/HaliroESG/portfolio-project/pull/12
+  pull_request_number: 12
+  pull_request_state: OPEN_DRAFT
+  merge_state_at_observation: CLEAN
+upstream_proof_sha256:
+  test_plan: 930db6c86d15ce4c30cf857d1cfdf03e25eaf7cfa9c4ac7480d5adf1721002c1
+  evidence: 715419800efde8df3edea71c1fdc2a825266da27e773520c7fc347923f118fa0
+  findings: 4739a4e914128af16bae44f7468d850ec0f820de53ee036a3aa3ef0e346ec224
+  handoff: 0a35c6e4d43c0e84a4aedf6df3544a09a1c7ad6dbd94043f9ae52352602cc884
+tests:
+  - id: PG15-MIGRATION-RLS-A-B
+    status: PASS
+    result: PostgreSQL 15.19 exact chain; 2 supported owners; 0 unsafe owner FKs; RLS/grants/views/cross-owner negatives pass
+  - id: BACKEND-TARGETED-SECURITY
+    status: PASS
+    result: 10 passed
+  - id: BACKEND-FULL
+    status: PASS
+    result: 146 passed
+  - id: BACKEND-PY-COMPILE
+    status: PASS
+  - id: FRONTEND-LINT
+    status: PASS
+  - id: FRONTEND-TSC
+    status: PASS
+  - id: FRONTEND-LOCAL-TESTS
+    status: PASS
+    result: 8 script groups including owner isolation
+  - id: FRONTEND-CRITICAL-FLOWS
+    status: PASS
+    result: 29 checks including owner-scoped cache
+  - id: FRONTEND-PERFORMANCE-BUDGET
+    status: PASS
+    result: 8 checks
+  - id: FRONTEND-BUILD
+    status: PASS
+    result: Next.js 16.3.3 production build with local non-secret placeholders and preview command environment
+  - id: SUPABASE-SMOKE-LOCAL
+    status: BLOCKED
+    result: missing isolated NEXT_PUBLIC_SUPABASE_URL and publishable key; no remote fallback attempted
+  - id: TWO-USER-POSTGREST-BROWSER-RUNTIME
+    status: NOT_RUN
+    blocker: no isolated non-Production Supabase/PostgREST/browser target
+ci:
+  code_commit_sha: 46ccdff13d50eb2639dced30fed64a161c183abc
+  frontend_contract_check:
+    status: PASS
+    run_id: 33249099396
+    job_id: 99091557922
+  validate:
+    status: PASS
+    run_id: 33249099405
+    job_id: 99091557949
+  supabase_gate:
+    status: SKIPPED_PULL_REQUEST
+  vercel_frontend_preview_status: PASS_AUTOMATIC_NOT_OPENED
+  vercel_quant_terminal_preview_status: PASS_AUTOMATIC_NOT_OPENED
+safety:
+  production_reads: 0
+  production_writes: 0
+  production_configuration_reads: 0
+  supabase_migrations_applied: 0
+  provider_mutations_direct: 0
+  business_commands: 0
+  paid_actions: 0
+  preview_runtime_reads: 0
+review:
+  self_review: PASS
+  independent_exact_review: REQUIRED_BEFORE_READY_OR_MERGE
+  independent_review_performed_in_solo_lane: false
+lease:
+  registry: /Users/oliviersoudee/.codex/haliro-execution-governor/portfolio-project-workstreams.json
+  owner_thread_id: 01a04d1b-f815-7731-9d15-2449bfa7bb0a
+  profile: high-risk-train
+  checkpoint_decision: CONTINUE
+  usage_estimate:
+    fresh_output_tokens: 350000
+    model_calls: 80
+    full_ci_runs: 1
+    review_cycles: 0
+next_single_action: obtain an independent exact read-only review of the final draft PR head; do not mark ready or merge before a ship verdict
