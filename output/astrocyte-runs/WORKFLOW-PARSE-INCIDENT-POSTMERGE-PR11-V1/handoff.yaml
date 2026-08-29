@@ -2,7 +2,7 @@ schema_version: astrocyte_workflow_parse_incident_handoff_v2
 workstream: portfolio-pr13-required-actionlint-v1
 owner_thread_id: 01a04cc7-807e-7720-b53e-011f4e5dacfd
 controller_thread_id: 01a048fb-6d82-7363-be6a-781ed87229b0
-updated_at_utc: 2026-08-29T12:27:28Z
+updated_at_utc: 2026-08-29T12:31:40Z
 status: READY_FOR_INDEPENDENT_REREVIEW_AFTER_FINAL_HEAD_CI
 route: solo
 lease:
@@ -31,8 +31,8 @@ git:
   branch: codex/pr11-postmerge-workflow-parse-v1
   pr_number: 13
   pr_state: OPEN_DRAFT
-  correction_code_commit: f36d20ede981da539737ad1fc1e05ee270a8b0d5
-  correction_code_tree: c3ca5429f87bc0a35fb6e228783a6fe3e3b3a9ae
+  correction_code_commit: e11d780d34e7eb5dc7ab0b7ff8956209a0858c41
+  correction_code_tree: c74578ec848e50e1c823f6d042664bbf0bf07da4
   final_seal_commit: GIT_OBJECT_CONTAINING_THIS_HANDOFF
   push_policy: TARGETED_FORCE_WITH_LEASE_EXPECTING_F190D31
 impact:
@@ -48,6 +48,7 @@ correction:
   acquisition: VERSION_PINNED_HTTPS_AND_EMBEDDED_SHA256_VERIFIED_FAIL_CLOSED
   checksum_command: sha256sum_--check_--strict
   binary_version_check: REQUIRED_EQUALS_1_7_7
+  binary_version_output: FIRST_LINE_MUST_EQUAL_V1_7_7
   workflow_scan: ALL_DOT_GITHUB_WORKFLOWS_YML
   scan_order: ACTIONLINT_BEFORE_PYTHON_CONTRACTS
   checker_guard: SEMANTIC_YAML_JOB_ENV_ONLY_AND_WHITESPACE_INSENSITIVE
@@ -94,19 +95,21 @@ tests:
   frontend_build: PASS
   frontend_critical_flows: PASS_28
   frontend_smoke_supabase: NOT_RUN_NO_CONTRACT_CHANGE_AND_PROVIDER_ACCESS_FORBIDDEN
+  first_remote_ci_run: 33252610963
+  first_remote_ci_result: CHECKSUM_PASS_VERSION_OUTPUT_MULTILINE_SHAPE_FIXED
   remote_ci: PENDING_FINAL_SEAL_HEAD
 review_payload:
   definition: BINARY_DIFF_REJECTED_PR_HEAD_TO_CORRECTION_CODE_COMMIT_EXCLUDING_SEAL_ARTIFACTS
   base_sha: f190d31a3f3fb68cad8a36477e000af2f9c04b04
-  target_sha: f36d20ede981da539737ad1fc1e05ee270a8b0d5
+  target_sha: e11d780d34e7eb5dc7ab0b7ff8956209a0858c41
   file: review.diff
   sidecar: review.diff.sha256
-  sha256: fea9e1d4e1090abe2130147649e11f420f3d2926532bb12a793b00955b544e77
+  sha256: e9f427c980df52ffd7a54105712973d66fc67d27698d839690e7d03aeb75ac8a
   changed_files: 3
   file_sha256:
-    .github/scripts/check_workflow_parity.py: 595a7d4621c38f8b7d91d042b82cd3fda02fa2a17bbeadfa933489aa73ef3e69
+    .github/scripts/check_workflow_parity.py: 641ce0a6085e38000cebde5f642396e965770bba5e3c9deb31eda08b46a9914b
     .github/tests/test_workflow_contracts.py: 3f759c8fe4cb7fa4f65758bdb1bebf64cf43372561ec2f20f3a37a4fe36b8a3e
-    .github/workflows/workflow-parity.yml: db00c24784d5df344f0a8f7bdf08b30d0f1362998f665a027868613b4fd0e491
+    .github/workflows/workflow-parity.yml: 8ce4a03bb59ac92752b4c67af5484f8a65a7a38c9aa3cb6793effdcfe80be4d4
 risks:
   - RELEASE_ASSET_URL_IS_VERSIONED_AND_BYTES_ARE_CRYPTOGRAPHICALLY_PINNED_REPLACEMENT_FAILS_CLOSED
   - REQUIRED_CHECK_DEPENDS_ON_GITHUB_HOSTED_RUNNER_CURL_TAR_SHA256SUM_BASELINE
