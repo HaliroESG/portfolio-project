@@ -22,6 +22,7 @@ const targets = read('frontend/app/targets/page.tsx')
 const supports = read('frontend/app/supports/page.tsx')
 const dashboard = read('frontend/app/page.tsx')
 const familyOfficeData = read('frontend/lib/familyOfficeData.ts')
+const familyOfficeHook = read('frontend/lib/useFamilyOfficeBundle.ts')
 const dataHealth = read('frontend/components/DataHealthPanel.tsx')
 const publications = read('frontend/app/publications/page.tsx')
 const publicationsData = read('frontend/lib/equityPublicationsData.ts')
@@ -56,8 +57,10 @@ const checks = [
   ),
   assertCheck(
     'dashboard.family_office_bounded_reads',
-    dashboard.includes('FAMILY_OFFICE_SWR_KEY') &&
-      dashboard.includes('loadFamilyOfficeBundle(supabase)') &&
+    dashboard.includes('useFamilyOfficeBundle()') &&
+      familyOfficeHook.includes('useSWR(') &&
+      familyOfficeHook.includes('familyOfficeSWRKey(ownerUserId)') &&
+      familyOfficeHook.includes('loadFamilyOfficeBundle(supabase)') &&
       familyOfficeData.includes('const results = await Promise.all([') &&
       familyOfficeData.includes('.limit(1500)') &&
       familyOfficeData.includes('.limit(100)') &&

@@ -2,19 +2,17 @@
 
 import { Banknote, Building2, RefreshCw, WalletCards } from 'lucide-react'
 import { useMemo, useState } from 'react'
-import useSWR from 'swr'
 import { AppShell } from '../../components/AppShell'
 import { EmptyState } from '../../components/EmptyState'
 import { FamilyOfficeStateBadge } from '../../components/FamilyOfficeStateBadge'
 import { command } from '../../lib/commandApi'
-import { FAMILY_OFFICE_REFRESH_MS, FAMILY_OFFICE_SWR_KEY, loadFamilyOfficeBundle } from '../../lib/familyOfficeData'
-import { supabase } from '../../lib/supabase'
+import { useFamilyOfficeBundle } from '../../lib/useFamilyOfficeBundle'
 
 const eur = new Intl.NumberFormat('fr-FR', { style: 'currency', currency: 'EUR', maximumFractionDigits: 0 })
 const number = new Intl.NumberFormat('fr-FR', { maximumFractionDigits: 4 })
 
 export default function PortfoliosPage() {
-  const { data, error, isLoading, mutate } = useSWR(FAMILY_OFFICE_SWR_KEY, () => loadFamilyOfficeBundle(supabase), { refreshInterval: FAMILY_OFFICE_REFRESH_MS })
+  const { data, error, isLoading, mutate } = useFamilyOfficeBundle()
   const [portfolioOverride, setPortfolioOverride] = useState('')
   const [accountOverride, setAccountOverride] = useState('ALL')
   const [recalculating, setRecalculating] = useState(false)

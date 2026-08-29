@@ -2,12 +2,12 @@
 
 import { CheckCircle2, FileDown, Plus, Send, XCircle } from 'lucide-react'
 import { FormEvent, useState } from 'react'
-import useSWR from 'swr'
 import { AppShell } from '../../components/AppShell'
 import { EmptyState } from '../../components/EmptyState'
 import { authenticatedDownload, command } from '../../lib/commandApi'
-import { FAMILY_OFFICE_REFRESH_MS, FAMILY_OFFICE_SWR_KEY, loadFamilyOfficeBundle } from '../../lib/familyOfficeData'
+import { assertOwnerIsolation } from '../../lib/ownerIsolation'
 import { supabase } from '../../lib/supabase'
+import { useFamilyOfficeBundle } from '../../lib/useFamilyOfficeBundle'
 import type { FamilyOfficeDecisionRow, FamilyOfficeDecisionStatus } from '../../types'
 
 const transitions: Partial<Record<FamilyOfficeDecisionStatus, Array<{ status: FamilyOfficeDecisionStatus; label: string }>>> = {
@@ -25,7 +25,7 @@ function statusClass(status: FamilyOfficeDecisionStatus): string {
 }
 
 export default function DecisionsPage() {
-  const { data, error, isLoading, mutate } = useSWR(FAMILY_OFFICE_SWR_KEY, () => loadFamilyOfficeBundle(supabase), { refreshInterval: FAMILY_OFFICE_REFRESH_MS })
+  const { data, error, isLoading, mutate, ownerUserId } = useFamilyOfficeBundle()
   const [pending, setPending] = useState<string | null>(null)
   const [feedback, setFeedback] = useState<string | null>(null)
   const [actionError, setActionError] = useState<string | null>(null)
@@ -137,7 +137,7 @@ export default function DecisionsPage() {
 
           {orderDecisionId && <section className="rounded-md border border-blue-200 bg-blue-50 p-4 dark:border-blue-900/40 dark:bg-blue-950/20"><div className="flex items-center justify-between"><div><h2 className="text-sm font-black">Ordre brouillon</h2><p className="mt-1 text-[10px] text-slate-500">Aucun ordre ne sera envoyé au courtier.</p></div><button type="button" onClick={() => setOrderDecisionId('')} aria-label="Fermer"><XCircle size={18} /></button></div><form onSubmit={createOrder} className="mt-4 grid gap-3 md:grid-cols-5"><input type="hidden" name="decision_id" value={orderDecisionId} /><select name="account_id" required className="input"><option value="">Compte</option>{data.accounts.map((row) => <option key={row.id} value={row.id}>{row.name}</option>)}</select><select name="instrument_id" required className="input"><option value="">Instrument</option>{instrumentOptions.map((row) => <option key={row.instrument_id} value={row.instrument_id}>{row.name}</option>)}</select><select name="side" required className="input"><option value="BUY">Acheter</option><option value="SELL">Vendre</option></select><input name="amount_eur" required type="number" min="1" step="0.01" placeholder="Montant EUR" className="input" /><button type="submit" disabled={pending === 'order'} className="inline-flex h-10 items-center justify-center gap-2 rounded-md bg-blue-600 px-3 text-xs font-black text-white disabled:opacity-50"><Send size={14} />Créer</button></form></section>}
 
-          <OrdersPanel decisions={data.decisions} exportOrder={exportOrder} pending={pending} />
+          <OrdersPanel decisions={data.decisions} exportOrder={exportOrder} pending={pending} ownerUserId={ownerUserId ?? ''} />
         </div>
       </main>
     </AppShell>
@@ -146,12 +146,14 @@ export default function DecisionsPage() {
 
 function Field({ label, children }: { label: string; children: React.ReactNode }) { return <label className="block"><span className="text-[9px] font-black uppercase text-slate-500">{label}</span><div className="mt-2">{children}</div></label> }
 
-function OrdersPanel({ decisions, exportOrder, pending }: { decisions: FamilyOfficeDecisionRow[]; exportOrder: (id: string, format: 'csv' | 'pdf') => void; pending: string | null }) {
-  const [orders, setOrders] = useState<Array<{ id: string; decision_id: string; account_id: string; status: string; estimated_gross_eur: number | null }>>([])
+function OrdersPanel({ decisions, exportOrder, pending, ownerUserId }: { decisions: FamilyOfficeDecisionRow[]; exportOrder: (id: string, format: 'csv' | 'pdf') => void; pending: string | null; ownerUserId: string }) {
+  const [orders, setOrders] = useState<Array<{ id: string; owner_user_id: string; decision_id: string; account_id: string; status: string; estimated_gross_eur: number | null }>>([])
   const [loaded, setLoaded] = useState(false)
   const load = async () => {
-    const { data } = await supabase.from('fo_order_drafts').select('id,decision_id,account_id,status,estimated_gross_eur').order('created_at', { ascending: false })
-    setOrders((data ?? []) as typeof orders)
+    const { data } = await supabase.from('fo_order_drafts').select('id,owner_user_id,decision_id,account_id,status,estimated_gross_eur').order('created_at', { ascending: false })
+    const rows = (data ?? []) as typeof orders
+    assertOwnerIsolation(ownerUserId, [rows])
+    setOrders(rows)
     setLoaded(true)
   }
   const titleByDecision = new Map(decisions.map((row) => [row.id, row.title]))

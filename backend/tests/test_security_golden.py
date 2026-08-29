@@ -188,6 +188,53 @@ def test_identity_requires_a_valid_registered_owner(monkeypatch: pytest.MonkeyPa
     assert unregistered.value.status_code == 403
 
 
+def test_every_business_route_is_503_in_production_even_when_configured(
+    command_client: tuple[TestClient, MemoryRepository, dict[str, str]],
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    client, repository, _ = command_client
+    monkeypatch.setenv("FAMILY_OFFICE_ENVIRONMENT", "Production")
+    monkeypatch.setenv("SUPABASE_URL", "https://configured-but-unused.invalid")
+    monkeypatch.setenv("SUPABASE_SERVICE_ROLE_KEY", "configured-but-unused")
+
+    business_routes = [
+        route
+        for route in api.app.routes
+        if getattr(route, "path", "").startswith("/v1/")
+    ]
+    assert business_routes
+    for route in business_routes:
+        method = sorted(route.methods & {"GET", "POST", "PATCH"})[0]
+        path = (
+            route.path.replace("{holding_id}", "holding-b")
+            .replace("{decision_id}", "decision-b")
+            .replace("{order_id}", "order-b")
+            .replace("{close_id}", "close-b")
+            .replace("{exception_id}", "exception-b")
+        )
+        response = client.request(method, path)
+        assert response.status_code == 503, (method, path, response.text)
+        assert response.json() == {
+            "detail": "Business commands are disabled in Production"
+        }
+
+    assert repository.tables["fo_manual_holdings"] == []
+    assert repository.tables["fo_audit_log"] == []
+
+
+def test_production_guard_has_priority_over_all_command_configuration() -> None:
+    assert api._production_commands_disabled(
+        {
+            "FAMILY_OFFICE_ENVIRONMENT": "production",
+            "SUPABASE_URL": "https://configured.invalid",
+            "SUPABASE_SERVICE_ROLE_KEY": "configured",
+        }
+    )
+    assert not api._production_commands_disabled(
+        {"FAMILY_OFFICE_ENVIRONMENT": "preview"}
+    )
+
+
 def test_cross_owner_command_refuses_before_audit_or_insert(
     command_client: tuple[TestClient, MemoryRepository, dict[str, str]],
 ) -> None:

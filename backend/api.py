@@ -6,7 +6,7 @@ import os
 import tempfile
 from datetime import date, datetime, timezone
 from pathlib import Path
-from typing import Any, Literal
+from typing import Any, Literal, Mapping
 
 import requests
 from fastapi import Depends, FastAPI, File, Form, Header, HTTPException, Request, UploadFile, status
@@ -37,6 +37,20 @@ from family_office.sync import rebuild_portfolio
 
 def _iso_now() -> str:
     return datetime.now(timezone.utc).isoformat()
+
+
+def _production_commands_disabled(environment: Mapping[str, str] | None = None) -> bool:
+    values = environment if environment is not None else os.environ
+    runtime_values = (
+        values.get("FAMILY_OFFICE_ENVIRONMENT"),
+        values.get("APP_ENV"),
+        values.get("ENVIRONMENT"),
+        values.get("VERCEL_ENV"),
+    )
+    return any(
+        (value or "").strip().lower() in {"production", "prod"}
+        for value in runtime_values
+    )
 
 
 class AuthenticatedOwner(BaseModel):
@@ -216,6 +230,16 @@ app.add_middleware(
     allow_methods=["GET", "POST", "PATCH"],
     allow_headers=["Authorization", "Content-Type", "Idempotency-Key"],
 )
+
+
+@app.middleware("http")
+async def production_command_guard(request: Request, call_next: Any) -> Response:
+    if request.url.path.startswith("/v1/") and _production_commands_disabled():
+        return JSONResponse(
+            status_code=503,
+            content={"detail": "Business commands are disabled in Production"},
+        )
+    return await call_next(request)
 
 
 @app.exception_handler(ValueError)

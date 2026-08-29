@@ -64,6 +64,7 @@ Required:
 - `NEXT_PUBLIC_SUPABASE_URL`
 - `NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY` (or legacy `NEXT_PUBLIC_SUPABASE_ANON_KEY`)
 - `NEXT_PUBLIC_COMMAND_API_URL`
+- `NEXT_PUBLIC_FAMILY_OFFICE_ENVIRONMENT` (`production` keeps commands fail-closed with HTTP 503)
 
 Used by:
 - app runtime (`frontend/lib/supabase.ts`)
@@ -75,6 +76,7 @@ Common required for most scripts:
 - `SUPABASE_URL`
 - `SUPABASE_SECRET_KEY` or `SUPABASE_KEY` (backend/service role credential)
 - `SUPABASE_DB_URL` (optional; required only for GitHub Actions SQL migration application with `psql`)
+- `FAMILY_OFFICE_ENVIRONMENT` (`production` keeps every `/v1/*` business route on HTTP 503)
 
 Additional for specific jobs:
 - `GSPREAD_SERVICE_ACCOUNT` (required by `backend/bridge.py`)

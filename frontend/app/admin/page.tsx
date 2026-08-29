@@ -7,19 +7,26 @@ import { AppShell } from '../../components/AppShell'
 import { DataHealthPanel } from '../../components/DataHealthPanel'
 import { EmptyState } from '../../components/EmptyState'
 import { command } from '../../lib/commandApi'
-import { FAMILY_OFFICE_REFRESH_MS, FAMILY_OFFICE_SWR_KEY, loadFamilyOfficeBundle } from '../../lib/familyOfficeData'
 import { supabase } from '../../lib/supabase'
+import { useFamilyOfficeBundle } from '../../lib/useFamilyOfficeBundle'
 import type { FamilyOfficeOwnerProfileRow } from '../../types'
 
-async function loadProfile(): Promise<FamilyOfficeOwnerProfileRow | null> {
+async function loadProfile(expectedOwnerUserId: string): Promise<FamilyOfficeOwnerProfileRow | null> {
   const { data, error } = await supabase.from('fo_owner_profiles').select('user_id,email,display_name,base_currency,created_at,updated_at').maybeSingle()
   if (error) throw error
-  return data as FamilyOfficeOwnerProfileRow | null
+  const profile = data as FamilyOfficeOwnerProfileRow | null
+  if (profile && profile.user_id !== expectedOwnerUserId) {
+    throw new Error('Cross-owner profile data was refused by the UI boundary')
+  }
+  return profile
 }
 
 export default function AdminPage() {
-  const { data, error, isLoading, mutate } = useSWR(FAMILY_OFFICE_SWR_KEY, () => loadFamilyOfficeBundle(supabase), { refreshInterval: FAMILY_OFFICE_REFRESH_MS })
-  const { data: profile } = useSWR('family-office-owner-profile', loadProfile)
+  const { data, error, isLoading, mutate, ownerUserId } = useFamilyOfficeBundle()
+  const { data: profile } = useSWR(
+    ownerUserId ? `family-office-owner-profile-v2:${ownerUserId}` : null,
+    () => loadProfile(ownerUserId ?? ''),
+  )
   const [pending, setPending] = useState<string | null>(null)
   const [feedback, setFeedback] = useState<string | null>(null)
   const [actionError, setActionError] = useState<string | null>(null)

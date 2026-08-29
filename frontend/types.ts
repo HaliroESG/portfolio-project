@@ -1103,6 +1103,7 @@ export interface FamilyOfficeOperationRow {
 }
 
 export interface FamilyOfficePerformanceRow {
+  owner_user_id: string
   portfolio_id: string
   performance_date: string
   nav_eur: number | null

@@ -294,16 +294,24 @@ try {
 
   const dashboard = read('frontend/app/page.tsx')
   const familyOfficeData = read('frontend/lib/familyOfficeData.ts')
+  const familyOfficeHook = read('frontend/lib/useFamilyOfficeBundle.ts')
   addCheck(
     'frontend.dashboard.family_office_shared_cache',
     hasAll(dashboard, [
-      'useSWR(',
-      'FAMILY_OFFICE_SWR_KEY',
-      'loadFamilyOfficeBundle(supabase)',
+      'useFamilyOfficeBundle()',
       '<FamilyOfficeStateBadge',
       "data?.schemaState === 'SCHEMA_PENDING'",
-    ]),
+    ]) && hasAll(familyOfficeHook, ['useSWR(', 'familyOfficeSWRKey(ownerUserId)']),
     'Family Office overview should use the shared registry cache and expose explicit contract/data states.'
+  )
+  addCheck(
+    'frontend.family_office.owner_scoped_cache',
+    hasAll(familyOfficeHook, [
+      'familyOfficeSWRKey(ownerUserId)',
+      'loadFamilyOfficeBundle(supabase)',
+      'onAuthStateChange',
+    ]),
+    'Family Office cache keys must change with the authenticated owner and reject missing identity.'
   )
   addCheck(
     'frontend.family_office.bounded_parallel_reads',
