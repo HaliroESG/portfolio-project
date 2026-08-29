@@ -1,0 +1,44 @@
+schema_version: pga004_pg15_receipt_v4
+run_id: PGA-004-CORRECTION-V4
+candidate_code_commit: 9677c2fd4de916c04146fd067a7c8145c8e31c82
+base_sha: 3828d6d7851958f6e832896ce908c60097f67f90
+executed_locally: true
+provider_called: false
+supabase_migration_applied: false
+postgres:
+  version: PostgreSQL 15.19 Homebrew
+  command_from_repository_root: backend/tests/sql/run_pga004_pg15.sh
+  optional_binary_override: PGA004_PG_BIN=/path/to/postgresql-15/bin
+  fixture: backend/tests/sql/pga004_legacy_fixture.sql
+  actual_writer_test: backend/tests/sql/pga004_writer_pg_test.py
+  cleanup: trap stops the ephemeral cluster and removes only /tmp/pga004-pg15.*
+  results:
+    clean_canonical_graph: PASS
+    canonical_owner_composite_fks: 27
+    canonical_direct_owner_profile_fks: 22
+    canonical_owner_related_total: 49
+    legacy_private_tables: 16
+    legacy_owner_composite_fks: 13
+    legacy_direct_owner_profile_fks: 16
+    legacy_A_B_rls_each_table: PASS
+    legacy_security_invoker_view_A_B: PASS
+    actual_writers_A_B_collision_replay: PASS
+    canonical_contaminated_preflight_exit: 3
+    canonical_edges_checked: 27
+    canonical_cross_owner_rows: 1
+    legacy_contaminated_preflight_exit: 3
+    legacy_edges_checked: 13
+    legacy_cross_owner_rows: 1
+    legacy_null_owner_rows: 1
+    legacy_unknown_owner_rows: 1
+    contaminated_migration_exit: 3
+    contaminated_graph_atomic_rollback: PASS
+    guarded_post_commit_rollback: PASS
+hashes:
+  migration: 5ca9423c2a4eb367d764b3c8830fb6ba2d38bb91f7b70f545576e618928932cf
+  preflight: 6c62e5d3a97c7eef33291dd83109e8b13b6c17852e3322d61696a445b4a452db
+  rollback: faeb0504c75a806bfe3c4e6af3a93f077512cc32fc84c3ac7f83be2911a3d284
+  fixture: 32e523e0449086ff8a4a155f4b68b1aa47f29198badde86ca89f6a1323979e7c
+  isolation_test: 58575f4c77badc168c8d9437d407e936d2bea310dee36fc1f11582638860eb48
+  harness: e6dca9aec7ab0c1ed68fd8aafe7ffa19d5dbd36d97362d9e51ea942001ae7830
+  actual_writer_test: 11062d80a39eb69a2683cb9b0ee86533638bc51fdb1b1340a4dd75ef49c99c6a
