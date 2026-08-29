@@ -6,11 +6,10 @@ import { cn } from '../lib/utils'
 import { Activity, AlertTriangle, ChevronDown, Clock, Database, Minus, TrendingDown, TrendingUp, X } from 'lucide-react'
 import { resolveFreshness } from '../lib/dataFreshness'
 import { isSelectorSchemaError } from '../lib/supabaseSelectorErrors'
-import { assertOwnerIsolation, OwnerIsolationError } from '../lib/ownerIsolation'
-import { useOwnerIdentity } from '../lib/useOwnerIdentity'
 import { useOwnerBoundState } from '../lib/useOwnerBoundState'
 import { useOwnerScopedSWR } from '../lib/useOwnerScopedSWR'
 import { swrOptions, SWR_REFRESH } from '../lib/swrConfig'
+import { useDataHealthOwnerReader } from '../lib/dataHealthOwnerReader'
 
 interface HealthItem {
   id: string
@@ -467,7 +466,7 @@ async function detectMarketWatchTechnicalSchema(): Promise<boolean> {
   }
 }
 
-async function fetchQualityMetrics(ownerUserId: string): Promise<QualityMetric[]> {
+async function fetchQualityMetrics(valuationCoveragePct: number | null): Promise<QualityMetric[]> {
   let marketRows: JsonRecord[] = []
   const technicalColumnsAvailable = await detectMarketWatchTechnicalSchema()
   const selectors = [
@@ -525,29 +524,6 @@ async function fetchQualityMetrics(ownerUserId: string): Promise<QualityMetric[]
   const nonOkPct = totalAssets > 0 ? (nonOkAssets / totalAssets) * 100 : null
   const technicalPct =
     technicalColumnsAvailable && totalAssets > 0 ? (technicalReadyAssets / totalAssets) * 100 : null
-
-  let valuationCoveragePct: number | null = null
-  try {
-    const { data, error } = await supabase
-      .from('valuation_snapshots')
-      .select('owner_user_id,coverage_pct,created_at')
-      .eq('owner_user_id', ownerUserId)
-      .order('created_at', { ascending: false })
-      .limit(1)
-      .maybeSingle()
-    if (!error) {
-      const row = (data ?? null) as JsonRecord | null
-      if (row) {
-        const rowOwnerUserId = readString(row.owner_user_id)
-        if (!rowOwnerUserId) throw new OwnerIsolationError('Valuation snapshot owner is missing')
-        assertOwnerIsolation(ownerUserId, [[{ owner_user_id: rowOwnerUserId }]])
-      }
-      valuationCoveragePct = readNumber(row?.coverage_pct)
-    }
-  } catch (error) {
-    if (error instanceof OwnerIsolationError) throw error
-    valuationCoveragePct = null
-  }
 
   const metrics: QualityMetric[] = [
     {
@@ -847,18 +823,24 @@ function operationAction(view: EtlJobView): string {
 }
 
 export function DataHealthPanel() {
-  const { ownerUserId, error: ownerError } = useOwnerIdentity()
+  const {
+    ownerUserId,
+    ownerError,
+    valuationCoveragePct,
+    valuationError,
+    valuationLoading,
+  } = useDataHealthOwnerReader()
   const [expanded, setExpanded] = useOwnerBoundState(ownerUserId, false)
 
   const { data, error: healthError } = useOwnerScopedSWR(
-    ownerUserId,
+    valuationLoading ? null : ownerUserId,
     'data-health-panel',
-    [],
-    async (requestedOwnerUserId) => {
+    [valuationCoveragePct],
+    async () => {
       const [freshnessItems, recentEtlRuns, metrics] = await Promise.all([
         fetchFreshnessItems(),
         fetchRecentEtlRuns(),
-        fetchQualityMetrics(requestedOwnerUserId),
+        fetchQualityMetrics(valuationCoveragePct),
       ])
       return {
         items: freshnessItems,
@@ -896,7 +878,7 @@ export function DataHealthPanel() {
 
   return (
     <div className="w-full rounded-xl border border-slate-200 bg-white/80 p-3 shadow-sm dark:border-white/10 dark:bg-[#0D1117]/70">
-      {(ownerError || healthError) && (
+      {(ownerError || valuationError || healthError) && (
         <div className="mb-3 rounded-lg border border-red-300 bg-red-50 px-3 py-2 text-[11px] text-red-700 dark:border-red-900/60 dark:bg-red-950/20 dark:text-red-300">
           Data health is unavailable for the current owner.
         </div>

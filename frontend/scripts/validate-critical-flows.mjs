@@ -335,16 +335,37 @@ try {
   const targetsPage = read('frontend/app/targets/page.tsx')
   const arbitragePage = read('frontend/app/arbitrage/page.tsx')
   const governanceWidget = read('frontend/components/GovernanceWidget.tsx')
+  const targetsOwnerReader = read('frontend/lib/targetsOwnerReader.ts')
+  const arbitrageOwnerReader = read('frontend/lib/arbitrageOwnerReader.ts')
+  const governanceOwnerReader = read('frontend/lib/governanceOwnerReader.ts')
+  const dataHealthOwnerReader = read('frontend/lib/dataHealthOwnerReader.ts')
+  const geoOwnerReader = read('frontend/lib/portfolioAggregationOwnerReader.ts')
+  const ownerSurfaceTransitionTest = read('frontend/scripts/test-owner-surface-transition.cjs')
   addCheck(
     'frontend.private_legacy_surfaces.owner_transition_contract',
-    [targetsPage, arbitragePage, governanceWidget, dataHealth, geoPage].every((surface) => (
-      surface.includes('useOwnerIdentity') && surface.includes('useOwnerScopedSWR')
-    )) && hasAll(targetsPage, ['useOwnerBoundState', "'targets-portfolios'", "'targets-positions'"]) &&
-      hasAll(arbitragePage, ['useOwnerBoundState', "'arbitrage-portfolios'", "'arbitrage-portfolio-decision-items'"]) &&
-      hasAll(governanceWidget, ["'governance-widget'", ".eq('owner_user_id', requestedOwnerUserId)"]) &&
-      hasAll(dataHealth, ['useOwnerBoundState', "'data-health-panel'", ".eq('owner_user_id', ownerUserId)"]) &&
-      hasAll(geoPage, ['useOwnerBoundState', "'geo-portfolio-aggregation'", 'requestedOwnerUserId']) &&
-      hasAll(portfolioData, ['loadPortfolioAggregation(', 'ownerUserId,', 'assertOwnerIsolation(ownerUserId']),
+    hasAll(targetsPage, ['useTargetsOwnerReader()']) &&
+      hasAll(arbitragePage, ['useArbitrageOwnerReader()']) &&
+      hasAll(governanceWidget, ['useGovernanceOwnerReader(selectedPortfolioId)']) &&
+      hasAll(dataHealth, ['useDataHealthOwnerReader()']) &&
+      hasAll(geoPage, ['usePortfolioAggregationOwnerReader()']) &&
+      [targetsOwnerReader, arbitrageOwnerReader, governanceOwnerReader, dataHealthOwnerReader, geoOwnerReader].every((reader) => (
+        reader.includes('useOwnerIdentity') && reader.includes('useOwnerScopedSWR')
+      )) &&
+      hasAll(targetsOwnerReader, ['useOwnerBoundState', "'targets-portfolios'", "'targets-positions'"]) &&
+      hasAll(arbitrageOwnerReader, ['useOwnerBoundState', "'arbitrage-portfolios'", "'arbitrage-portfolio-decision-items'"]) &&
+      hasAll(governanceOwnerReader, ["'governance-widget'", ".eq('owner_user_id', requestedOwnerUserId)"]) &&
+      hasAll(dataHealthOwnerReader, ["'data-health-valuation-coverage'", ".eq('owner_user_id', requestedOwnerUserId)"]) &&
+      hasAll(geoOwnerReader, ['useOwnerBoundState', "'geo-portfolio-aggregation'", 'requestedOwnerUserId']) &&
+      hasAll(portfolioData, ['loadPortfolioAggregation(', 'ownerUserId,', 'assertOwnerIsolation(ownerUserId']) &&
+      hasAll(ownerSurfaceTransitionTest, [
+        'useTargetsOwnerReader',
+        'useArbitrageOwnerReader',
+        'useGovernanceOwnerReader',
+        'useDataHealthOwnerReader',
+        'usePortfolioAggregationOwnerReader',
+        "client.auth.transition('owner-b')",
+        'client.releaseHeldA()',
+      ]),
     'Every private legacy surface must use the shared owner identity, an owner-keyed request, and synchronous owner-change rendering guards.'
   )
   addCheck(
@@ -393,9 +414,10 @@ try {
   )
   addCheck(
     'frontend.arbitrage.decision_dashboard',
-    hasAll(arbitragePage, [
+    hasAll(arbitrageOwnerReader, [
       'portfolio_decision_items_latest',
-      'DECISION_SELECTOR',
+      'ARBITRAGE_DECISION_SELECTOR',
+    ]) && hasAll(arbitragePage, [
       'Decision queue',
       'FilterSelect label="Action"',
       'FilterSelect label="Data issue"',

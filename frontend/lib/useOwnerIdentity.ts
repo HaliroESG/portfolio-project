@@ -1,6 +1,7 @@
 "use client"
 
 import { useEffect, useState } from 'react'
+import type { SupabaseClient } from '@supabase/supabase-js'
 import { OwnerIsolationError } from './ownerIsolation'
 import { supabase } from './supabase'
 
@@ -10,7 +11,9 @@ interface OwnerIdentityState {
   error: Error | null
 }
 
-export function useOwnerIdentity(): OwnerIdentityState {
+export type OwnerIdentityClient = Pick<SupabaseClient, 'auth'>
+
+export function useOwnerIdentity(client: OwnerIdentityClient = supabase): OwnerIdentityState {
   const [state, setState] = useState<OwnerIdentityState>({
     ownerUserId: null,
     loading: true,
@@ -19,7 +22,7 @@ export function useOwnerIdentity(): OwnerIdentityState {
 
   useEffect(() => {
     let active = true
-    void supabase.auth.getSession().then(({ data, error }) => {
+    void client.auth.getSession().then(({ data, error }) => {
       if (!active) return
       const ownerUserId = data.session?.user.id ?? null
       setState({
@@ -30,7 +33,7 @@ export function useOwnerIdentity(): OwnerIdentityState {
       })
     })
 
-    const { data: listener } = supabase.auth.onAuthStateChange((_event, session) => {
+    const { data: listener } = client.auth.onAuthStateChange((_event, session) => {
       if (!active) return
       const ownerUserId = session?.user.id ?? null
       setState({
@@ -46,7 +49,7 @@ export function useOwnerIdentity(): OwnerIdentityState {
       active = false
       listener.subscription.unsubscribe()
     }
-  }, [])
+  }, [client])
 
   return state
 }

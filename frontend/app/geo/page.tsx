@@ -3,19 +3,12 @@
 import React, { useMemo, useState } from 'react'
 import { AppShell } from '../../components/AppShell'
 import { GeographicMap } from '../../components/GeographicMap'
-import { supabase } from '../../lib/supabase'
 import { Globe, Loader2 } from 'lucide-react'
 import { cn } from '../../lib/utils'
 import { Asset, CountryPerformance, GeoTimeframe, PortfolioOption } from '../../types'
-import {
-  buildGeographicPerformance,
-  loadPortfolioAggregation,
-} from '../../lib/portfolioData'
+import { buildGeographicPerformance } from '../../lib/portfolioData'
 import { stateFromList, stateLabel as dataStateLabel } from '../../lib/dataStates'
-import { swrOptions, SWR_REFRESH } from '../../lib/swrConfig'
-import { useOwnerIdentity } from '../../lib/useOwnerIdentity'
-import { useOwnerBoundState } from '../../lib/useOwnerBoundState'
-import { useOwnerScopedSWR } from '../../lib/useOwnerScopedSWR'
+import { usePortfolioAggregationOwnerReader } from '../../lib/portfolioAggregationOwnerReader'
 
 function getDisplayedPerformance(country: CountryPerformance, timeframe: GeoTimeframe): number {
   if (timeframe === 'day') return country.performanceDay
@@ -25,16 +18,14 @@ function getDisplayedPerformance(country: CountryPerformance, timeframe: GeoTime
 
 export default function GeoPage() {
   const [timeframe, setTimeframe] = useState<GeoTimeframe>('day')
-  const { ownerUserId, loading: ownerLoading, error: ownerError } = useOwnerIdentity()
-  const [selectedPortfolioId, setSelectedPortfolioId] = useOwnerBoundState(ownerUserId, 'ALL')
-
-  const { data: portfolioBundle, isLoading: bundleLoading, error: bundleError } = useOwnerScopedSWR(
-    ownerUserId,
-    'geo-portfolio-aggregation',
-    [],
-    (requestedOwnerUserId) => loadPortfolioAggregation(supabase, requestedOwnerUserId),
-    swrOptions(SWR_REFRESH.SLOW),
-  )
+  const {
+    ownerError,
+    selectedPortfolioId,
+    setSelectedPortfolioId,
+    portfolioBundle,
+    bundleError,
+    loading,
+  } = usePortfolioAggregationOwnerReader()
 
   const portfolioOptions: PortfolioOption[] = portfolioBundle?.portfolioOptions ?? []
   const lastSync = portfolioBundle?.lastSync ?? ''
@@ -49,7 +40,6 @@ export default function GeoPage() {
     return buildGeographicPerformance(assets, timeframe)
   }, [assets, timeframe])
 
-  const loading = ownerLoading || bundleLoading
   const geoState = stateFromList({ loading, count: regions.length, error: ownerError ?? bundleError })
 
   return (

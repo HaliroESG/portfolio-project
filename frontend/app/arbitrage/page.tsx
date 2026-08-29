@@ -7,8 +7,11 @@ import { EmptyState } from '../../components/EmptyState'
 import { supabase } from '../../lib/supabase'
 import { cn } from '../../lib/utils'
 import { loadMacroAllocationAdvice } from '../../lib/macroStrategyData'
-import { assertOwnerIsolation } from '../../lib/ownerIsolation'
-import { useOwnerIdentity } from '../../lib/useOwnerIdentity'
+import {
+  useArbitrageOwnerReader,
+  type ArbitragePortfolioRow as PortfolioRow,
+  type ArbitrageRawDecisionRow as RawDecisionRow,
+} from '../../lib/arbitrageOwnerReader'
 import { useOwnerBoundState } from '../../lib/useOwnerBoundState'
 import { useOwnerScopedSWR } from '../../lib/useOwnerScopedSWR'
 import type {
@@ -30,12 +33,6 @@ type SortConfig = { key: SortKey; direction: SortDirection }
 type ExecutionUniverseStatus = 'READY' | 'PARTIAL_SOURCE' | 'MANUAL_REQUIRED'
 type OverlayFilter = 'ALL' | 'STANDARD' | 'MACRO'
 
-interface PortfolioRow {
-  id: string
-  owner_user_id: string
-  name: string | null
-}
-
 interface ExecutionUniverseRow {
   key: string
   sourceId: string
@@ -48,37 +45,7 @@ interface ExecutionUniverseRow {
   status: ExecutionUniverseStatus
 }
 
-type RawDecisionRow = Record<string, unknown>
 type RawRow = Record<string, unknown>
-
-const DECISION_SELECTOR = [
-  'portfolio_id',
-  'ticker',
-  'name',
-  'asset_class',
-  'isin',
-  'currency',
-  'current_quantity',
-  'current_value_eur',
-  'current_weight_pct',
-  'target_weight_pct',
-  'drift_pct',
-  'rebalance_amount_eur',
-  'action',
-  'confidence',
-  'reason_codes',
-  'data_state',
-  'price_state',
-  'market_data_status',
-  'reconciliation_state',
-  'trident_provider_symbol',
-  'trident_score',
-  'trident_confidence',
-  'history_coverage_pct',
-  'target_total_pct',
-  'total_value_eur',
-  'updated_at',
-].join(',')
 
 const ACTION_RANK: Record<PortfolioDecisionAction, number> = {
   EXIT: 0,
@@ -466,47 +433,29 @@ function SortHeader({
 }
 
 export default function ArbitragePage() {
-  const { ownerUserId, error: ownerError } = useOwnerIdentity()
-  const [selectedPortfolioIdOverride, setSelectedPortfolioIdOverride] = useOwnerBoundState(ownerUserId, '')
+  const {
+    ownerUserId,
+    ownerError,
+    portfolios,
+    portfolioError,
+    selectedPortfolioId,
+    setSelectedPortfolioIdOverride,
+    actionFilter,
+    setActionFilter,
+    rawDecisionRows,
+    decisionError: error,
+    decisionsLoading: isLoading,
+  } = useArbitrageOwnerReader()
   const [selectedScope, setSelectedScope] = useOwnerBoundState<PortfolioScope>(ownerUserId, 'PERSO')
   const [overlayFilter, setOverlayFilter] = useOwnerBoundState<OverlayFilter>(ownerUserId, 'ALL')
-  const [actionFilter, setActionFilter] = useOwnerBoundState<'ALL' | PortfolioDecisionAction>(ownerUserId, 'ALL')
   const [issueFilter, setIssueFilter] = useOwnerBoundState(ownerUserId, 'ALL')
   const [assetClassFilter, setAssetClassFilter] = useOwnerBoundState(ownerUserId, 'ALL')
   const [currencyFilter, setCurrencyFilter] = useOwnerBoundState(ownerUserId, 'ALL')
   const [sort, setSort] = useOwnerBoundState<SortConfig>(ownerUserId, DEFAULT_SORT)
 
-  const { data: portfolios, error: portfolioError } = useOwnerScopedSWR(
-    ownerUserId,
-    'arbitrage-portfolios',
-    [],
-    async (requestedOwnerUserId) => {
-      const { data, error } = await supabase
-        .from('portfolios')
-        .select('id,owner_user_id,name')
-        .eq('owner_user_id', requestedOwnerUserId)
-      if (error) throw error
-      const rows = (data ?? []) as PortfolioRow[]
-      assertOwnerIsolation(requestedOwnerUserId, [rows])
-      return rows
-    },
-  )
-  const selectedPortfolioId = selectedPortfolioIdOverride || portfolios?.[0]?.id || ''
-
-  const { data: rows = [], error, isLoading } = useOwnerScopedSWR(
-    selectedPortfolioId ? ownerUserId : null,
-    'arbitrage-portfolio-decision-items',
-    [selectedPortfolioId],
-    async () => {
-      const { data, error } = await supabase
-        .from('portfolio_decision_items_latest')
-        .select(DECISION_SELECTOR)
-        .eq('portfolio_id', selectedPortfolioId)
-      if (error) throw error
-      return ((data ?? []) as unknown as RawDecisionRow[])
-        .map(parseDecisionRow)
-        .filter((row): row is PortfolioDecisionItemRow => row !== null)
-    }
+  const rows = useMemo(
+    () => rawDecisionRows.map(parseDecisionRow).filter((row): row is PortfolioDecisionItemRow => row !== null),
+    [rawDecisionRows],
   )
 
   const { data: adviceRows = [], error: adviceError } = useOwnerScopedSWR(

@@ -7,36 +7,13 @@ import { EmptyState } from '../../components/EmptyState'
 import { supabase } from '../../lib/supabase'
 import { cn } from '../../lib/utils'
 import { assertOwnerIsolation } from '../../lib/ownerIsolation'
-import { useOwnerIdentity } from '../../lib/useOwnerIdentity'
-import { useOwnerBoundState } from '../../lib/useOwnerBoundState'
+import {
+  useTargetsOwnerReader,
+  type TargetsPortfolioRow as PortfolioRow,
+  type TargetsPositionRow as PositionRow,
+} from '../../lib/targetsOwnerReader'
 import { useOwnerScopedSWR } from '../../lib/useOwnerScopedSWR'
 import type { PortfolioScope, TargetBucketRow, TargetEnvelopeLineRow, TargetModelRow } from '../../types'
-
-interface PortfolioRow {
-  id: string
-  owner_user_id: string
-  name: string | null
-}
-
-interface PositionRow {
-  owner_user_id: string
-  portfolio_id: string
-  ticker: string
-  name: string | null
-  instrument_type: string | null
-  currency: string | null
-  quantity_current: number | string | null
-  pru: number | string | null
-  target_weight_pct: number | string | null
-  target_source: string | null
-  target_source_file: string | null
-  target_updated_at: string | null
-  actual_source: string | null
-  actual_source_accounts: unknown
-  actual_as_of_date: string | null
-  actual_updated_at: string | null
-  updated_at: string | null
-}
 
 interface ActualSourceAccount {
   broker?: string | null
@@ -294,87 +271,18 @@ function resolveDataState(
 }
 
 export default function TargetsPage() {
-  const { ownerUserId, error: ownerError } = useOwnerIdentity()
-  const [selectedPortfolioIdOverride, setSelectedPortfolioIdOverride] = useOwnerBoundState(ownerUserId, '')
-  const [selectedScope, setSelectedScope] = useOwnerBoundState<PortfolioScope>(ownerUserId, 'PERSO')
-
-  const { data: portfolios, error: portfolioError } = useOwnerScopedSWR(
+  const {
     ownerUserId,
-    'targets-portfolios',
-    [],
-    async (requestedOwnerUserId) => {
-      const { data, error } = await supabase
-        .from('portfolios')
-        .select('id,owner_user_id,name')
-        .eq('owner_user_id', requestedOwnerUserId)
-      if (error) throw error
-      const rows = (data ?? []) as PortfolioRow[]
-      assertOwnerIsolation(requestedOwnerUserId, [rows])
-      return rows
-    },
-  )
-
-  const selectedPortfolioId = selectedPortfolioIdOverride || portfolios?.[0]?.id || ''
-
-  const { data: positions, error: positionsError } = useOwnerScopedSWR(
-    selectedPortfolioId ? ownerUserId : null,
-    'targets-positions',
-    [selectedPortfolioId],
-    async (requestedOwnerUserId) => {
-      const extendedSelector = [
-        'owner_user_id',
-        'portfolio_id',
-        'ticker',
-        'name',
-        'instrument_type',
-        'currency',
-        'quantity_current',
-        'pru',
-        'target_weight_pct',
-        'target_source',
-        'target_source_file',
-        'target_updated_at',
-        'actual_source',
-        'actual_source_accounts',
-        'actual_as_of_date',
-        'actual_updated_at',
-        'updated_at',
-      ].join(',')
-      const legacySelector = [
-        'owner_user_id',
-        'portfolio_id',
-        'ticker',
-        'name',
-        'instrument_type',
-        'currency',
-        'quantity_current',
-        'pru',
-        'target_weight_pct',
-        'updated_at',
-      ].join(',')
-      const { data, error } = await supabase
-        .from('portfolio_positions')
-        .select(extendedSelector)
-        .eq('owner_user_id', requestedOwnerUserId)
-        .eq('portfolio_id', selectedPortfolioId)
-        .order('ticker', { ascending: true })
-      if (error) {
-        const fallback = await supabase
-          .from('portfolio_positions')
-          .select(legacySelector)
-          .eq('owner_user_id', requestedOwnerUserId)
-          .eq('portfolio_id', selectedPortfolioId)
-          .order('ticker', { ascending: true })
-        if (fallback.error) throw fallback.error
-        const rows = (fallback.data ?? []) as unknown as PositionRow[]
-        assertOwnerIsolation(requestedOwnerUserId, [rows])
-        return rows
-      }
-      const rows = (data ?? []) as unknown as PositionRow[]
-      assertOwnerIsolation(requestedOwnerUserId, [rows])
-      return rows
-    }
-  )
+    ownerError,
+    portfolios,
+    portfolioError,
+    selectedPortfolioId,
+    setSelectedPortfolioIdOverride,
+    selectedScope,
+    setSelectedScope,
+    positions,
+    positionsError,
+  } = useTargetsOwnerReader()
 
   const { data: brokerSnapshotRuns } = useOwnerScopedSWR(
     selectedPortfolioId ? ownerUserId : null,

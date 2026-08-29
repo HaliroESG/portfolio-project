@@ -74,7 +74,7 @@ interface PortfolioPositionRow {
   geo_coverage: Record<string, number> | null
 }
 
-interface AggregationBundle {
+export interface AggregationBundle {
   ownerUserId: string
   portfolioOptions: PortfolioOption[]
   assetsByPortfolio: Record<string, Asset[]>

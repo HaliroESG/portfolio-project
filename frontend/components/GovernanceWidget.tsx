@@ -1,21 +1,10 @@
 "use client"
 
 import React, { useMemo } from 'react'
-import { supabase } from '../lib/supabase'
 import { Asset } from '../types'
 import { Shield, AlertTriangle, CheckCircle2 } from 'lucide-react'
 import { cn } from '../lib/utils'
-import { assertOwnerIsolation } from '../lib/ownerIsolation'
-import { useOwnerIdentity } from '../lib/useOwnerIdentity'
-import { useOwnerScopedSWR } from '../lib/useOwnerScopedSWR'
-
-interface GovernanceTarget {
-  id: string
-  portfolio_id: string
-  asset_class: string
-  target_pct: number
-  tolerance_band: number
-}
+import { useGovernanceOwnerReader } from '../lib/governanceOwnerReader'
 
 interface AllocationData {
   asset_class: string
@@ -29,18 +18,6 @@ interface AllocationData {
 interface GovernanceWidgetProps {
   assets: Asset[]
   selectedPortfolioId?: string
-}
-
-type GovernanceTargetRow = {
-  id: string
-  owner_user_id: string
-  portfolio_id: string
-  asset_class: string
-  target_pct?: number | null
-  target_weight_pct?: number | null
-  target_weight?: number | null
-  target_percent?: number | null
-  tolerance_band: number
 }
 
 // Normalize asset_class to standard format (EQUITY -> Equity)
@@ -84,78 +61,7 @@ function calculateDriftStatus(drift: number, toleranceBand: number): 'OK' | 'WAR
 }
 
 export function GovernanceWidget({ assets, selectedPortfolioId = 'ALL' }: GovernanceWidgetProps) {
-  const { ownerUserId, error: ownerError } = useOwnerIdentity()
-  const { data: targets = [], isLoading: loading, error: targetsError } = useOwnerScopedSWR(
-    ownerUserId,
-    'governance-widget',
-    [selectedPortfolioId],
-    async (requestedOwnerUserId): Promise<GovernanceTarget[]> => {
-      try {
-        let portfolioId = selectedPortfolioId
-
-        if (portfolioId === 'ALL') {
-          const portfoliosResponse = await supabase
-            .from('portfolios')
-            .select('id,owner_user_id')
-            .eq('owner_user_id', requestedOwnerUserId)
-            .limit(1)
-            .maybeSingle()
-
-          if (portfoliosResponse.error || !portfoliosResponse.data) {
-            console.warn('No portfolio found, skipping governance targets fetch')
-            return []
-          }
-
-          portfolioId = portfoliosResponse.data.id
-        }
-        
-        // Schema-tolerant fetch: governance target column name differs across deployments.
-        const selectors = [
-          'id,owner_user_id,portfolio_id,asset_class,target_pct,target_weight_pct,target_weight,target_percent,tolerance_band',
-          'id,owner_user_id,portfolio_id,asset_class,target_pct,tolerance_band',
-          'id,owner_user_id,portfolio_id,asset_class,target_weight_pct,tolerance_band',
-          'id,owner_user_id,portfolio_id,asset_class,target_weight,tolerance_band',
-          'id,owner_user_id,portfolio_id,asset_class,target_percent,tolerance_band',
-        ]
-        let data: unknown[] = []
-        let lastError: string | null = null
-
-        for (const selector of selectors) {
-          const response = await supabase
-            .from('governance_targets')
-            .select(selector)
-            .eq('owner_user_id', requestedOwnerUserId)
-            .eq('portfolio_id', portfolioId)
-
-          if (!response.error) {
-            data = response.data ?? []
-            lastError = null
-            break
-          }
-          lastError = response.error.message
-        }
-
-        if (lastError) throw new Error(lastError)
-
-        const rows = (data ?? []) as unknown as GovernanceTargetRow[]
-        assertOwnerIsolation(requestedOwnerUserId, [rows])
-
-        const normalizedTargets: GovernanceTarget[] = rows
-          .map((row) => ({
-            id: row.id,
-            portfolio_id: row.portfolio_id,
-            asset_class: row.asset_class,
-            target_pct: row.target_pct ?? row.target_weight_pct ?? row.target_weight ?? row.target_percent ?? 0,
-            tolerance_band: row.tolerance_band,
-          }))
-          .filter((target) => Number.isFinite(target.target_pct))
-
-        return normalizedTargets
-      } catch (err) {
-        throw err instanceof Error ? err : new Error('Governance target read failed')
-      }
-    },
-  )
+  const { targets, loading, ownerError, targetsError } = useGovernanceOwnerReader(selectedPortfolioId)
 
   // Calculate current allocation based on assets (PRD Step 2)
   const { allocationData, hasBreach, totalTargetPct, unknownPct } = useMemo(() => {
