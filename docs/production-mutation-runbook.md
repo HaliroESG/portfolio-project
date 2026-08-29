@@ -48,7 +48,15 @@ Before the first schema/data write, every workflow requires all predicates:
 The full signature, freshness, inputs, target, restore receipt, and current-run
 anti-replay predicates are re-evaluated inside each mutative job after its
 Production environment gate and immediately before its first provider access.
-The initial claim is not sufficient if authority expires while setup runs.
+The verifier is a standalone standard-library script executed with the system
+Python in isolated mode (`/usr/bin/python3 -I -S`), so `PYTHONPATH`, user-site
+packages, and `sitecustomize` cannot run while the HMAC key is present. Runtime
+dependencies are prepared in a separate job that has no Production environment
+and no secret. Each protected job starts on a fresh runner, authenticates the
+manifest before mutable setup, rechecks the verifier, revalidates authority,
+and only then downloads the prepared dependency artifact. Provider secrets are
+step-scoped after that final boundary. The initial claim is not sufficient if
+authority expires while trusted setup runs.
 
 All write workflows share portfolio-production-mutation with
 cancel-in-progress: false. A newer run cannot cancel a mutation already in
@@ -82,8 +90,8 @@ Workflow IDs and normalized inputs:
 | --- | --- |
 | financial-data-sync | scope, trident_mode, optional trident_price_start_date |
 | production-data-remediation | apply_schema, top_n, start_date, run_full_after_top |
-| trident-price-backfill | top_n, start_date, optional end_date, dry_run=false |
-| trident-stock-insights | top_n, optional normalized ticker, force, dry_run=false |
+| trident-price-backfill | top_n, start_date, optional end_date, dry_run |
+| trident-stock-insights | top_n, optional normalized ticker, force, dry_run |
 | trident-supabase | apply_schema, run_trident_etl, with at least one true |
 
 Optional values are JSON null, booleans are JSON booleans, integers have no
@@ -112,6 +120,9 @@ an expired authority cannot become replayable after normal marker cleanup.
 This repository does not configure ASTROCYTE_AUTHORIZATION_HMAC_KEY or an
 issuer. Until both independent issuance and the protected Production secret are
 configured under separate authority, every Production mutation fails closed.
+Dry-run modes still read provider data and therefore require the same authentic,
+one-shot authority and provider-secret boundary; `dry_run=true` removes writes,
+not provider access.
 
 ## Migration and postconditions
 

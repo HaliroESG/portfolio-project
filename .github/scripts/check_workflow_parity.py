@@ -38,16 +38,39 @@ MIGRATION_WORKFLOWS = {
 }
 EXPECTED_ENFORCEMENT_COUNTS = {
     "production-data-remediation.yml": 1,
-    "schedule.yml": 5,
+    "schedule.yml": 6,
     "trident-price-backfill.yml": 1,
     "trident-stock-insights.yml": 1,
     "trident-supabase.yml": 1,
+}
+TRUST_BOUNDARY_JOBS = {
+    "production-data-remediation.yml": {
+        "remediate-data": ("Claim one-shot mutation authorization", "Resolve database URL"),
+    },
+    "schedule.yml": {
+        "preflight": ("Claim one-shot mutation authorization", "Preflight schema check"),
+        "refresh-core": ("Verify authority before mutable setup", "Refresh core feeds"),
+        "refresh-market-history": ("Verify authority before mutable setup", "Refresh historical prices"),
+        "refresh-trident": ("Verify authority before mutable setup", "Refresh Trident screener"),
+        "refresh-backtest": ("Verify authority before mutable setup", "Refresh production reference backtest"),
+        "post-refresh-gate": ("Verify authority before mutable setup", "Post-refresh schema check"),
+    },
+    "trident-price-backfill.yml": {
+        "top-backfill": ("Claim one-shot mutation authorization", "Preflight schema check"),
+    },
+    "trident-stock-insights.yml": {
+        "sync-insights": ("Claim one-shot mutation authorization", "Preflight schema check"),
+    },
+    "trident-supabase.yml": {
+        "mutate-production": ("Claim one-shot mutation authorization", "Pre-migration schema check"),
+    },
 }
 PINNED_ACTIONS = {
     "actions/checkout": "11d5960a326750d5838078e36cf38b85af677262",
     "actions/setup-python": "a26af69be951a213d495a4c3e4e4022e16d87065",
     "actions/setup-node": "49933ea5288caeca8642d1e84afbd3f7d6820020",
     "actions/upload-artifact": "ea165f8d65b6e75b540449e92b4886f43607fa02",
+    "actions/download-artifact": "d3f86a106a0bac45b974a628896c90dbdf5c8093",
 }
 BOOTSTRAP_SHA256 = "77c9966f7a0d40efa2abd56cac0801a11437a34efec35145a69e1bb35729ae0d"
 
@@ -103,6 +126,18 @@ walk.call(document)
 STDOUT.write(JSON.generate(uses))
 """
 
+RUBY_YAML_DOCUMENT_PARSER = r"""
+require "json"
+require "psych"
+document = Psych.safe_load(
+  STDIN.read,
+  permitted_classes: [],
+  permitted_symbols: [],
+  aliases: true
+)
+STDOUT.write(JSON.generate(document))
+"""
+
 
 def _parse_workflow_uses(name: str, text: str) -> list[str]:
     try:
@@ -120,6 +155,95 @@ def _parse_workflow_uses(name: str, text: str) -> list[str]:
     if not isinstance(parsed, list) or not all(isinstance(item, str) for item in parsed):
         raise AssertionError(f"{name}: every semantic uses value must be a string")
     return parsed
+
+
+def _parse_workflow_document(name: str, text: str) -> dict[str, object]:
+    try:
+        result = subprocess.run(
+            ["ruby", "-e", RUBY_YAML_DOCUMENT_PARSER],
+            input=text,
+            text=True,
+            capture_output=True,
+            check=True,
+            timeout=15,
+        )
+        parsed = json.loads(result.stdout)
+    except (OSError, subprocess.SubprocessError, json.JSONDecodeError) as exc:
+        raise AssertionError(f"{name}: semantic YAML document parsing failed closed") from exc
+    if not isinstance(parsed, dict):
+        raise AssertionError(f"{name}: workflow document must be a mapping")
+    return parsed
+
+
+def _check_trust_boundaries(name: str, text: str) -> None:
+    document = _parse_workflow_document(name, text)
+    jobs = document.get("jobs")
+    if not isinstance(jobs, dict):
+        raise AssertionError(f"{name}: jobs must be a mapping")
+    preparation = jobs.get("prepare-runtime")
+    if not isinstance(preparation, dict):
+        raise AssertionError(f"{name}: isolated prepare-runtime job is missing")
+    encoded_preparation = json.dumps(preparation, sort_keys=True)
+    if "environment" in preparation or "secrets." in encoded_preparation:
+        raise AssertionError(
+            f"{name}: dependency preparation must not receive Production or secrets"
+        )
+    if "Build untrusted dependency artifact without secrets" not in encoded_preparation:
+        raise AssertionError(f"{name}: dependency preparation contract is missing")
+    for job_name, (initial_boundary, provider_step) in TRUST_BOUNDARY_JOBS[name].items():
+        job = jobs.get(job_name)
+        if not isinstance(job, dict):
+            raise AssertionError(f"{name}: missing protected job {job_name}")
+        job_env = json.dumps(job.get("env", {}), sort_keys=True)
+        if "secrets." in job_env:
+            raise AssertionError(f"{name} {job_name}: provider secrets may not be job-scoped")
+        steps = job.get("steps")
+        if not isinstance(steps, list) or not all(isinstance(step, dict) for step in steps):
+            raise AssertionError(f"{name} {job_name}: steps must be mappings")
+        names = [step.get("name") for step in steps]
+        if initial_boundary not in names or provider_step not in names:
+            raise AssertionError(f"{name} {job_name}: trust boundary steps are missing")
+        initial_index = names.index(initial_boundary)
+        final_name = "Enforce one-shot authorization immediately before provider access"
+        if final_name not in names:
+            raise AssertionError(f"{name} {job_name}: final authority enforcement is missing")
+        final_index = names.index(final_name)
+        provider_index = names.index(provider_step)
+        dependency_name = "Download prepared dependencies after authority"
+        if dependency_name not in names:
+            raise AssertionError(
+                f"{name} {job_name}: prepared dependencies must be downloaded after authority"
+            )
+        dependency_index = names.index(dependency_name)
+        if not initial_index < final_index < dependency_index < provider_index:
+            raise AssertionError(f"{name} {job_name}: authority ordering is unsafe")
+        for step in steps[:initial_index]:
+            encoded = json.dumps(step, sort_keys=True)
+            if "secrets." in encoded:
+                raise AssertionError(f"{name} {job_name}: secret is exposed before authority")
+            if any(
+                fragment in encoded
+                for fragment in ("pip install", "npm ci", "actions/setup-python@", "actions/setup-node@")
+            ):
+                raise AssertionError(f"{name} {job_name}: mutable setup runs before authority")
+        for step in steps[:final_index]:
+            encoded = json.dumps(step, sort_keys=True)
+            secret_names = set(re.findall(r"secrets\.([A-Z0-9_]+)", encoded))
+            if secret_names - {"ASTROCYTE_AUTHORIZATION_HMAC_KEY"}:
+                raise AssertionError(f"{name} {job_name}: provider secret precedes final authority")
+        initial_run = steps[initial_index].get("run", "")
+        final_run = steps[final_index].get("run", "")
+        if not all(
+            isinstance(run, str) and "/usr/bin/python3 -I -S" in run
+            for run in (initial_run, final_run)
+        ):
+            raise AssertionError(f"{name} {job_name}: verifier must use isolated system Python")
+        integrity_names = {
+            "Record trusted verifier digest before mutable setup",
+            "Verify trusted verifier integrity after mutable setup",
+        }
+        if not integrity_names.issubset(set(names)):
+            raise AssertionError(f"{name} {job_name}: verifier integrity checks are missing")
 
 
 def _check_action_pins(name: str, text: str) -> None:
@@ -210,6 +334,7 @@ def validate_workflow_contract(contents: dict[str, str]) -> None:
 
     for name in MUTATION_WORKFLOWS:
         text = contents[name]
+        _check_trust_boundaries(name, text)
         require(text, "actions: read", name)
         require(text, "portfolio-production-mutation", name)
         require(text, "cancel-in-progress: false", name)

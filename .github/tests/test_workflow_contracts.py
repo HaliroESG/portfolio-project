@@ -1,7 +1,10 @@
 from __future__ import annotations
 
 import copy
+import os
+import subprocess
 import sys
+import tempfile
 import unittest
 from pathlib import Path
 
@@ -69,6 +72,63 @@ class WorkflowContractTests(unittest.TestCase):
             1,
         )
         with self.assertRaisesRegex(AssertionError, "pinned to reviewed SHA"):
+            validate_workflow_contract(contents)
+
+    def test_sitecustomize_and_pre_auth_dependency_are_rejected(self) -> None:
+        verifier = SCRIPTS / "check_mutation_contract.py"
+        system_python = Path("/usr/bin/python3")
+        self.assertTrue(system_python.is_file(), "system Python bootstrap is unavailable")
+        with tempfile.TemporaryDirectory() as temporary_directory:
+            temporary = Path(temporary_directory)
+            marker = temporary / "sitecustomize-observation.txt"
+            (temporary / "sitecustomize.py").write_text(
+                "import os\n"
+                "from pathlib import Path\n"
+                "Path(os.environ['SITECUSTOMIZE_MARKER']).write_text("
+                "str(bool(os.environ.get('AUTHORIZATION_HMAC_KEY'))))\n",
+                encoding="utf-8",
+            )
+            environment = os.environ.copy()
+            environment.update(
+                {
+                    "PYTHONPATH": str(temporary),
+                    "SITECUSTOMIZE_MARKER": str(marker),
+                    "AUTHORIZATION_MANIFEST": "{}",
+                    "AUTHORIZATION_HMAC_KEY": "sentinel-not-a-real-secret",
+                }
+            )
+            result = subprocess.run(
+                [
+                    str(system_python),
+                    "-I",
+                    "-S",
+                    str(verifier),
+                    "--workflow",
+                    "trident-supabase",
+                    "--replay-phase",
+                    "claim",
+                ],
+                cwd=ROOT,
+                env=environment,
+                text=True,
+                capture_output=True,
+                timeout=15,
+                check=False,
+            )
+            self.assertNotEqual(result.returncode, 0)
+            self.assertFalse(marker.exists(), "isolated verifier loaded sitecustomize")
+
+        contents = workflow_contents()
+        contents["production-data-remediation.yml"] = contents[
+            "production-data-remediation.yml"
+        ].replace(
+            "      - name: Claim one-shot mutation authorization\n",
+            "      - name: Install attacker dependency\n"
+            "        run: pip install attacker-controlled-package\n\n"
+            "      - name: Claim one-shot mutation authorization\n",
+            1,
+        )
+        with self.assertRaisesRegex(AssertionError, "mutable setup runs before authority"):
             validate_workflow_contract(contents)
 
 

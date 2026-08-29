@@ -6,6 +6,8 @@ from __future__ import annotations
 import argparse
 import hashlib
 import hmac
+import json
+import math
 import os
 import re
 import time
@@ -14,21 +16,14 @@ import urllib.parse
 import urllib.request
 from datetime import date, datetime, timedelta, timezone
 from pathlib import Path
-from typing import Any, Callable
-
-from verify_backup_restore_receipt import (
-    ReceiptError,
-    canonical_json,
-    parse_utc,
-    receipt_sha256,
-    strict_json_loads,
-    validate_receipt,
-)
+from typing import Any, Callable, Optional
 
 
 SCHEMA_VERSION = "astrocyte_mutation_authorization_v2"
+RECEIPT_SCHEMA_VERSION = "astrocyte_restore_drill_receipt_v1"
 TRUSTED_ISSUER = "ASTROCYTE_CONTROL_CENTER_V1"
 MAX_AUTHORIZATION_WINDOW = timedelta(hours=24)
+MAX_RECEIPT_AGE = timedelta(days=7)
 MAX_CLOCK_SKEW = timedelta(minutes=5)
 REPLAY_RETENTION_DAYS = 30
 SHA256_RE = re.compile(r"^[0-9a-f]{64}$")
@@ -37,6 +32,7 @@ CONTROLLER_REF_RE = re.compile(r"^[A-Z0-9][A-Z0-9._:/-]{7,127}$")
 NONCE_RE = re.compile(r"^[0-9a-f]{32,64}$")
 RECEIPT_ID_RE = re.compile(r"^[a-z0-9][a-z0-9-]{15,63}$")
 TICKER_RE = re.compile(r"^[A-Z0-9.^:=/-]{1,32}$")
+ALLOWED_CLEANUP = {"DELETED", "PAUSED", "RETAINED_WITH_AUTHORITY"}
 REQUIRED_MANIFEST_FIELDS = {
     "schema_version",
     "issuer",
@@ -54,6 +50,138 @@ REQUIRED_MANIFEST_FIELDS = {
     "nonce",
     "receipt_id",
 }
+REQUIRED_RECEIPT_FIELDS = {
+    "schema_version",
+    "status",
+    "completed_at",
+    "expires_at",
+    "target_sha256",
+    "base_sha",
+    "restore_mode",
+    "fingerprint_match",
+    "outbound_side_effects",
+    "rpo_seconds",
+    "rto_seconds",
+    "cleanup_status",
+}
+
+
+class ReceiptError(ValueError):
+    """Raised when a restore receipt fails closed."""
+
+
+def canonical_json(value: Any) -> str:
+    try:
+        return json.dumps(
+            value,
+            sort_keys=True,
+            separators=(",", ":"),
+            ensure_ascii=True,
+            allow_nan=False,
+        )
+    except (TypeError, ValueError) as exc:
+        raise ReceiptError("value is not strict JSON") from exc
+
+
+def strict_json_loads(raw: str) -> Any:
+    def reject_constant(value: str) -> None:
+        raise ReceiptError(f"non-standard JSON constant {value!r} is forbidden")
+
+    try:
+        return json.loads(raw, parse_constant=reject_constant)
+    except (TypeError, json.JSONDecodeError) as exc:
+        raise ReceiptError("value is not valid strict JSON") from exc
+
+
+def receipt_sha256(receipt: dict[str, Any]) -> str:
+    return hashlib.sha256(canonical_json(receipt).encode("utf-8")).hexdigest()
+
+
+def parse_utc(value: object, field: str) -> datetime:
+    if not isinstance(value, str) or not value.endswith("Z"):
+        raise ReceiptError(f"{field} must be an RFC3339 UTC timestamp ending in Z")
+    try:
+        parsed = datetime.fromisoformat(value[:-1] + "+00:00")
+    except ValueError as exc:
+        raise ReceiptError(f"{field} is not a valid RFC3339 timestamp") from exc
+    if parsed.tzinfo != timezone.utc:
+        raise ReceiptError(f"{field} must use UTC")
+    return parsed
+
+
+def _bounded_number(receipt: dict[str, Any], field: str, maximum: int) -> None:
+    value = receipt[field]
+    if (
+        isinstance(value, bool)
+        or not isinstance(value, (int, float))
+        or not math.isfinite(value)
+        or value < 0
+    ):
+        raise ReceiptError(f"{field} must be a non-negative number")
+    if value > maximum:
+        raise ReceiptError(f"{field} exceeds the accepted maximum of {maximum}")
+
+
+def validate_receipt(
+    receipt: object,
+    *,
+    expected_target_sha256: str,
+    expected_base_sha: str,
+    now: Optional[datetime] = None,
+) -> dict[str, Any]:
+    if not isinstance(receipt, dict):
+        raise ReceiptError("receipt must be a JSON object")
+    keys = set(receipt)
+    if keys != REQUIRED_RECEIPT_FIELDS:
+        raise ReceiptError(
+            f"receipt fields mismatch; missing={sorted(REQUIRED_RECEIPT_FIELDS - keys)}, "
+            f"unexpected={sorted(keys - REQUIRED_RECEIPT_FIELDS)}"
+        )
+    if receipt["schema_version"] != RECEIPT_SCHEMA_VERSION:
+        raise ReceiptError("unsupported restore receipt schema")
+    if receipt["status"] != "PASS":
+        raise ReceiptError("restore drill status must be PASS")
+    if receipt["restore_mode"] != "ISOLATED_PROJECT":
+        raise ReceiptError("restore drill must use an isolated project")
+    if receipt["fingerprint_match"] is not True:
+        raise ReceiptError("restore fingerprint must match")
+    if receipt["outbound_side_effects"] is not False:
+        raise ReceiptError("restore drill must attest zero outbound side effects")
+    if receipt["cleanup_status"] not in ALLOWED_CLEANUP:
+        raise ReceiptError("restore drill cleanup status is not accepted")
+
+    target = receipt["target_sha256"]
+    base_sha = receipt["base_sha"]
+    if not isinstance(target, str) or not SHA256_RE.fullmatch(target):
+        raise ReceiptError("target_sha256 must be a lowercase SHA-256")
+    if not isinstance(base_sha, str) or not SHA_RE.fullmatch(base_sha):
+        raise ReceiptError("base_sha must be a lowercase Git SHA")
+    if not SHA256_RE.fullmatch(expected_target_sha256):
+        raise ReceiptError("expected target hash is invalid")
+    if not SHA_RE.fullmatch(expected_base_sha):
+        raise ReceiptError("expected base SHA is invalid")
+    if not hmac.compare_digest(target, expected_target_sha256):
+        raise ReceiptError("restore receipt target does not match the authorized target")
+    if not hmac.compare_digest(base_sha, expected_base_sha):
+        raise ReceiptError("restore receipt base SHA does not match the run SHA")
+
+    completed_at = parse_utc(receipt["completed_at"], "completed_at")
+    expires_at = parse_utc(receipt["expires_at"], "expires_at")
+    current = now or datetime.now(timezone.utc)
+    if current.tzinfo != timezone.utc:
+        raise ReceiptError("validator clock must use UTC")
+    if completed_at > current + MAX_CLOCK_SKEW:
+        raise ReceiptError("restore receipt completion time is in the future")
+    if current - completed_at > MAX_RECEIPT_AGE:
+        raise ReceiptError("restore receipt is stale")
+    if expires_at <= current:
+        raise ReceiptError("restore receipt has expired")
+    if expires_at > completed_at + MAX_RECEIPT_AGE:
+        raise ReceiptError("restore receipt validity exceeds seven days")
+
+    _bounded_number(receipt, "rpo_seconds", 120)
+    _bounded_number(receipt, "rto_seconds", 7200)
+    return receipt
 
 
 class ContractError(ValueError):
@@ -85,7 +213,7 @@ def _date(value: str) -> str:
     return value
 
 
-def _optional_date(value: str) -> str | None:
+def _optional_date(value: str) -> Optional[str]:
     return None if value == "" else _date(value)
 
 
@@ -98,7 +226,7 @@ def _enum(*allowed: str) -> Callable[[str], str]:
     return normalize
 
 
-def _optional_ticker(value: str) -> str | None:
+def _optional_ticker(value: str) -> Optional[str]:
     if value == "":
         return None
     if value != value.strip().upper() or not TICKER_RE.fullmatch(value):
@@ -169,10 +297,6 @@ def normalize_inputs(workflow: str, raw: dict[str, str]) -> dict[str, Any]:
         normalized["apply_schema"] or normalized["run_trident_etl"]
     ):
         raise ContractError("at least one Supabase mutation must be explicitly selected")
-    if workflow in {"trident-price-backfill", "trident-stock-insights"} and normalized[
-        "dry_run"
-    ]:
-        raise ContractError("dry-run does not consume Production mutation authority")
     return normalized
 
 
@@ -205,7 +329,7 @@ def validate_contract(
     ref: str,
     run_sha: str,
     raw_inputs: dict[str, str],
-    now: datetime | None = None,
+    now: Optional[datetime] = None,
 ) -> dict[str, Any]:
     if not isinstance(manifest, dict):
         raise ContractError("authorization manifest must be a JSON object")
