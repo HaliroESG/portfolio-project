@@ -1,4 +1,5 @@
 import { chromium } from 'playwright'
+import { classifyAuthRedirect } from './browser-smoke-auth.mjs'
 
 const baseUrl = process.env.BASE_URL || 'http://127.0.0.1:3001'
 const vercelProtectionBypass = process.env.VERCEL_PROTECTION_BYPASS || process.env.VERCEL_AUTOMATION_BYPASS_SECRET || ''
@@ -96,6 +97,8 @@ try {
           title: document.title,
           bodyChars: bodyText.length,
           authProtected,
+          hasLoginScreen:
+            mainText.includes('portfolio office') && mainText.includes('connexion propriétaire'),
           hasTridentScreen: mainText.includes('trident screener'),
           hasOpenScreenerScreen: mainText.includes('open screener'),
           hasFrameworkOverlay: Boolean(errorOverlay) || nextPortalText.length > 0,
@@ -115,6 +118,21 @@ try {
       if (metrics.scrollWidth > metrics.clientWidth + 2) {
         fail(`${viewport.name} ${route}: horizontal overflow ${metrics.scrollWidth}px for ${metrics.clientWidth}px viewport.`)
       }
+
+      const authRedirect = classifyAuthRedirect(page.url(), route, metrics.hasLoginScreen)
+      if (authRedirect.detected) {
+        if (!authRedirect.valid) {
+          fail(`${viewport.name} ${route}: invalid authentication redirect: ${authRedirect.reason}.`)
+        }
+        results.push({
+          route,
+          viewport: viewport.name,
+          ...metrics,
+          authRedirectVerified: true,
+        })
+        continue
+      }
+
       if (route === '/trident' && metrics.tridentRows > 220) {
         fail(`${viewport.name} ${route}: Trident rendered ${metrics.tridentRows} row nodes; budget is 220.`)
       }
@@ -128,7 +146,7 @@ try {
         fail(`${viewport.name} ${route}: Open screener rendered ${metrics.equityScreenerRows} row nodes; budget is 220.`)
       }
 
-      results.push({ route, viewport: viewport.name, ...metrics })
+      results.push({ route, viewport: viewport.name, ...metrics, authRedirectVerified: false })
     }
 
     await page.close()
