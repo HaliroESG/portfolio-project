@@ -15,6 +15,7 @@ from fastapi.responses import JSONResponse, Response
 from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 
 from family_office.commands import (
+    CommandReplayBlockedError,
     add_manual_valuation,
     bootstrap_default_book,
     command_scope,
@@ -220,6 +221,16 @@ app.add_middleware(
 @app.exception_handler(ValueError)
 async def business_validation_error(_: Request, exc: ValueError) -> JSONResponse:
     return JSONResponse(status_code=400, content={"detail": str(exc)})
+
+
+@app.exception_handler(CommandReplayBlockedError)
+async def command_replay_blocked(
+    _: Request, exc: CommandReplayBlockedError
+) -> JSONResponse:
+    return JSONResponse(
+        status_code=409,
+        content={"detail": str(exc), "command_state": exc.command_state},
+    )
 
 
 @app.get("/health")

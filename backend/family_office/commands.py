@@ -20,6 +20,15 @@ from .repository import FamilyOfficeRepository
 T = TypeVar("T")
 
 
+class CommandReplayBlockedError(RuntimeError):
+    def __init__(self, command_state: str) -> None:
+        self.command_state = command_state
+        super().__init__(
+            "Command execution is blocked because its prior outcome is "
+            f"{command_state.lower().replace('_', ' ')}"
+        )
+
+
 def _iso_now() -> str:
     return datetime.now(timezone.utc).isoformat()
 
@@ -139,8 +148,13 @@ def execute_audited_command(
         _assert_matching_command(accepted, command_type=command_type, scope=scope)
     if failed is not None:
         _assert_matching_command(failed, command_type=command_type, scope=scope)
+    if accepted is not None or failed is not None:
+        raise CommandReplayBlockedError(
+            "INDETERMINATE" if failed is not None else "IN_PROGRESS_OR_INDETERMINATE"
+        )
+
     audit_scope = {"command_scope": dict(scope)}
-    if accepted is None:
+    try:
         repository.audit(
             owner_user_id=owner_user_id,
             command_id=command_id,
@@ -148,6 +162,15 @@ def execute_audited_command(
             status="ACCEPTED",
             before_state=audit_scope,
         )
+    except Exception:
+        # The unique (owner_user_id, command_id, status) audit constraint is the
+        # atomic command claim. If another request won it, never execute locally.
+        claimed = repository.existing_audit(owner_user_id, command_id, "ACCEPTED")
+        if claimed is not None:
+            _assert_matching_command(claimed, command_type=command_type, scope=scope)
+            raise CommandReplayBlockedError("IN_PROGRESS_OR_INDETERMINATE") from None
+        raise
+
     try:
         result = operation()
         repository.audit(

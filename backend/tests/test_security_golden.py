@@ -11,6 +11,7 @@ from fastapi.testclient import TestClient
 import api
 from equity_screener import build_screener_rows, deduplicate_screener_rows
 from family_office.commands import (
+    CommandReplayBlockedError,
     command_scope,
     execute_audited_command,
     prepare_monthly_close,
@@ -246,6 +247,72 @@ def test_owner_command_is_idempotent_request_bound_and_user_isolated(
         "owner-a",
         "owner-b",
     }
+
+
+def test_completed_audit_failure_blocks_retry_without_second_business_effect(
+    command_client: tuple[TestClient, MemoryRepository, dict[str, str]],
+) -> None:
+    client, repository, _ = command_client
+    original_audit = repository.audit
+    completion_writes = 0
+
+    def fail_completed_audit(**payload: Any) -> dict[str, Any]:
+        nonlocal completion_writes
+        if payload["status"] == "COMPLETED":
+            completion_writes += 1
+            raise RuntimeError("simulated COMPLETED audit failure")
+        return original_audit(**payload)
+
+    repository.audit = fail_completed_audit  # type: ignore[method-assign]
+    headers = {"Idempotency-Key": "golden-indeterminate-retry-0001"}
+    payload = _holding_payload("portfolio-a")
+
+    with pytest.raises(RuntimeError, match="simulated COMPLETED audit failure"):
+        client.post("/v1/manual-holdings", headers=headers, json=payload)
+
+    retry = client.post("/v1/manual-holdings", headers=headers, json=payload)
+
+    assert retry.status_code == 409
+    assert retry.json()["command_state"] == "INDETERMINATE"
+    assert len(repository.tables["fo_manual_holdings"]) == 1
+    assert completion_writes == 1
+    assert [row["status"] for row in repository.tables["fo_audit_log"]] == [
+        "ACCEPTED",
+        "FAILED",
+    ]
+
+
+def test_atomic_accepted_claim_loser_never_executes_operation() -> None:
+    repository = MemoryRepository()
+    operation_calls = 0
+    original_audit = repository.audit
+
+    def lose_claim_after_concurrent_insert(**payload: Any) -> dict[str, Any]:
+        if payload["status"] == "ACCEPTED":
+            original_audit(**payload)
+            raise RuntimeError("simulated unique claim conflict")
+        return original_audit(**payload)
+
+    def operation() -> dict[str, Any]:
+        nonlocal operation_calls
+        operation_calls += 1
+        return {"resource_type": "probe", "resource_id": "unexpected"}
+
+    repository.audit = lose_claim_after_concurrent_insert  # type: ignore[method-assign]
+
+    with pytest.raises(CommandReplayBlockedError) as blocked:
+        execute_audited_command(
+            repository,  # type: ignore[arg-type]
+            owner_user_id="owner-a",
+            command_id="golden-atomic-claim-0001",
+            command_type="PROBE",
+            scope=command_scope({"portfolio_id": "portfolio-a"}),
+            authorize=lambda: None,
+            operation=operation,
+        )
+
+    assert blocked.value.command_state == "IN_PROGRESS_OR_INDETERMINATE"
+    assert operation_calls == 0
 
 
 def test_foreign_closed_monthly_close_cannot_bypass_owner_check() -> None:
