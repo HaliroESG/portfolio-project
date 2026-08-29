@@ -530,7 +530,7 @@ Dry-run reference on user PDFs:
 Status: IMPLEMENTED IN CODE AND SUPABASE SCHEMA; OWNER BOOTSTRAP AND LIVE BROKER ACCEPTANCE PENDING
 
 Delivered:
-- Single-owner magic-link authentication with an unexposed allowlist and private Next.js proxy.
+- Magic-link authentication with an unexposed allowlist and private Next.js proxy. The PGA-004 repository candidate supports multiple isolated owner profiles; its migration/runtime activation remains unverified and unapplied.
 - RLS on every public table, zero `anon` table grants, read-only owner-scoped authenticated access and backend-only writes.
 - Archived legacy operational rows before resetting the old portfolio register; market/research/history data preserved.
 - Canonical entities, portfolios, institutions, accounts, instruments, immutable ledger, import runs, positions, cash, reconciliations, manual assets/passives, performance, risk, IPS, decisions, order drafts, monthly closes and audit log.
@@ -555,9 +555,10 @@ Acceptance still required before financial reliance:
 - Compare quantities, cash, PRU, NAV, monthly TWR and XIRR to broker statements using documented tolerances.
 - Resolve the Supabase `402 exceed_db_size_quota` Data API restriction even though measured Postgres size is below the Free-plan database limit.
 - Run authenticated desktop/mobile browser smoke after the owner session exists.
+- Apply and validate the PGA-004 owner-isolation migration only in a separately authorized environment after its preflight passes; no provider application is established by the repository candidate.
 
 Deferred scope:
 - Tax lots and realized-tax reporting by PEA/PER/CTO/AV.
 - Automated broker APIs and broker order transmission.
 - Benchmark attribution, factor/correlation stress testing, cash planning and document vault.
-- Multi-user adviser/accountant roles; the current product is intentionally single-owner.
+- Adviser/accountant delegation and role-based sharing. Independent allowlisted owners are a separate isolation contract and do not grant cross-owner collaboration.

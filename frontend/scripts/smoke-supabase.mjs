@@ -318,7 +318,7 @@ async function optionalReadModelCheck(name, queryFactory, schemaWarning) {
 const checks = await Promise.all([
   marketWatchCheck(),
   q('currencies', () => supabase.from('currencies').select('id,symbol,rate_to_eur,last_update', { count: 'exact' }).limit(5)),
-  q('valuation_snapshots', () => supabase.from('valuation_snapshots').select('coverage_pct,created_at', { count: 'exact' }).order('created_at', { ascending: false }).limit(5)),
+  q('valuation_snapshots', () => supabase.from('valuation_snapshots').select('owner_user_id,coverage_pct,created_at', { count: 'exact' }).order('created_at', { ascending: false }).limit(5)),
   q('news_feed', () => supabase.from('news_feed').select('id,title,impact_score,published_at,ticker', { count: 'exact' }).limit(5)),
   q('macro_indicators', () => supabase.from('macro_indicators').select('id,name,value,last_update', { count: 'exact' }).limit(5)),
   optionalReadModelCheck(
@@ -380,7 +380,7 @@ const checks = await Promise.all([
   ),
   optionalReadModelCheck(
     'target_models',
-    () => supabase.from('target_models').select('id,portfolio_scope,model_name,source_file,target_total_pct,status,updated_at', { count: 'exact' }).limit(5),
+    () => supabase.from('target_models').select('id,owner_user_id,portfolio_scope,model_name,source_file,target_total_pct,status,updated_at', { count: 'exact' }).limit(5),
     'Apply backend/sql/20260526_supports_targets_advice.sql and run import_target_model.py.'
   ),
   optionalReadModelCheck(

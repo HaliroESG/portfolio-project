@@ -525,7 +525,7 @@ async function fetchQualityMetrics(): Promise<QualityMetric[]> {
   try {
     const { data, error } = await supabase
       .from('valuation_snapshots')
-      .select('coverage_pct,created_at')
+      .select('owner_user_id,coverage_pct,created_at')
       .order('created_at', { ascending: false })
       .limit(1)
       .maybeSingle()

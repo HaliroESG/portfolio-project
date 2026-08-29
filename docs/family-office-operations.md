@@ -9,6 +9,7 @@
 - The ledger is append-only. Corrections must be represented by reversal or adjustment entries.
 - Orders are drafts exported to CSV/PDF; no broker order is transmitted.
 - Multiple allowlisted owners are isolated by owner-composite foreign keys, RLS, and a frontend contamination check.
+- The 16 legacy portfolio/broker/target tables are private owner-scoped compatibility surfaces, not shared reference data. Shared market and research tables remain separately classified.
 - Every Command API `/v1/*` route is deliberately unavailable with HTTP 503 when the runtime environment is `production`, even if API and Supabase configuration is present.
 
 ## Production configuration
@@ -40,6 +41,8 @@ npm run dev
 ## Owner bootstrap
 
 The application supports multiple owners only through the unexposed allowlist. Each identity receives an independent `fo_owner_profiles` row, and owner-composite constraints reject cross-owner parent references even for privileged writers.
+
+Legacy child writers derive ownership from their owner-scoped parent. A legacy root write without `owner_user_id` remains compatible while exactly one owner exists; once several owners exist, an ambiguous root write fails closed and must provide an explicit owner. This limitation does not affect canonical `fo_*` commands, which already carry the authenticated owner.
 
 ```bash
 cd backend

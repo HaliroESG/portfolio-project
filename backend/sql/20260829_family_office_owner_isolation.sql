@@ -226,13 +226,62 @@ alter table public.fo_monthly_closes
     foreign key (owner_user_id, portfolio_id)
     references public.fo_portfolios (owner_user_id, id);
 
--- Legacy operational tables do not carry an owner identity. They cannot be
--- safely exposed after enabling multiple owners, so their authenticated read
--- path is removed until a separate owner-aware migration exists. Shared market
--- and research reference tables keep their existing registered-owner policy.
+-- The 16 legacy operational tables contain portfolio, transaction, valuation,
+-- governance or target data. None is reference data: all 16 are private. Give
+-- them the same explicit owner boundary as the canonical fo_* graph so the
+-- still-active readers remain usable without reopening the former global read.
+create or replace function fo_private.assign_legacy_owner()
+returns trigger
+language plpgsql
+security definer
+set search_path = ''
+as $$
+declare
+  resolved_owner uuid;
+  parent_value text;
+begin
+  resolved_owner := new.owner_user_id;
+
+  if resolved_owner is null and coalesce(array_length(tg_argv, 1), 0) = 3 then
+    parent_value := to_jsonb(new) ->> tg_argv[1];
+    if parent_value is not null then
+      execute format(
+        'select owner_user_id from public.%I where %I::text = $1',
+        tg_argv[0], tg_argv[2]
+      )
+      into resolved_owner
+      using parent_value;
+    end if;
+  end if;
+
+  if resolved_owner is null then
+    resolved_owner := auth.uid();
+  end if;
+
+  if resolved_owner is null then
+    select min(profile.user_id::text)::uuid
+    into resolved_owner
+    from public.fo_owner_profiles profile
+    having count(*) = 1;
+  end if;
+
+  if resolved_owner is null then
+    raise exception
+      'owner_user_id is required for legacy table % when more than one owner exists',
+      tg_table_name;
+  end if;
+
+  new.owner_user_id := resolved_owner;
+  return new;
+end;
+$$;
+
 do $$
 declare
   object_name text;
+  owner_count bigint;
+  sole_owner uuid;
+  unowned_count bigint;
   legacy_tables constant text[] := array[
     'portfolios', 'portfolio_positions', 'valuation_snapshots',
     'governance_targets', 'decision_journal', 'target_portfolios',
@@ -243,12 +292,182 @@ declare
     'target_model_audit_holdings'
   ];
 begin
+  select count(*), min(user_id::text)::uuid
+  into owner_count, sole_owner
+  from public.fo_owner_profiles;
+
   foreach object_name in array legacy_tables loop
     if to_regclass(format('public.%I', object_name)) is null then
       continue;
     end if;
+
+    execute format(
+      'alter table public.%I add column if not exists owner_user_id uuid',
+      object_name
+    );
+    execute format(
+      'select count(*) from public.%I where owner_user_id is null',
+      object_name
+    ) into unowned_count;
+
+    if unowned_count > 0 and owner_count <> 1 then
+      raise exception
+        'cannot deterministically assign % unowned rows in public.% with % owner profiles',
+        unowned_count, object_name, owner_count;
+    end if;
+    if unowned_count > 0 then
+      execute format(
+        'update public.%I set owner_user_id = $1 where owner_user_id is null',
+        object_name
+      ) using sole_owner;
+    end if;
+
+    execute format(
+      'alter table public.%I alter column owner_user_id set not null',
+      object_name
+    );
+    execute format(
+      'alter table public.%I drop constraint if exists %I, '
+      'add constraint %I foreign key (owner_user_id) '
+      'references public.fo_owner_profiles(user_id) on delete cascade',
+      object_name,
+      object_name || '_owner_user_id_fkey',
+      object_name || '_owner_user_id_fkey'
+    );
+    execute format(
+      'create index if not exists %I on public.%I (owner_user_id)',
+      object_name || '_owner_user_id_idx', object_name
+    );
+    if exists (
+      select 1
+      from pg_attribute
+      where attrelid = to_regclass(format('public.%I', object_name))
+        and attname = 'id'
+        and not attisdropped
+    ) then
+      execute format(
+        'create unique index if not exists %I on public.%I (owner_user_id, id)',
+        object_name || '_owner_id_uq', object_name
+      );
+    end if;
+
     execute format('drop policy if exists fo_legacy_owner_read on public.%I', object_name);
-    execute format('revoke all on table public.%I from authenticated', object_name);
+    execute format('drop policy if exists fo_legacy_private_read on public.%I', object_name);
+    execute format(
+      'create policy fo_legacy_private_read on public.%I for select to authenticated '
+      'using ((select auth.uid()) = owner_user_id)',
+      object_name
+    );
+    execute format('revoke all on table public.%I from public, anon, authenticated', object_name);
+    execute format('grant select on table public.%I to authenticated', object_name);
+  end loop;
+end;
+$$;
+
+-- Every known legacy child-parent edge is owner-composite. The catalog-driven
+-- guards let this migration cover older deployments where optional legacy
+-- tables/columns are absent, while refusing a present contaminated edge.
+do $$
+declare
+  edge record;
+  child_regclass regclass;
+  parent_regclass regclass;
+  constraint_name text;
+begin
+  for edge in
+    select * from (values
+      ('portfolio_positions', 'portfolio_id', 'portfolios', 'id'),
+      ('valuation_snapshots', 'portfolio_id', 'portfolios', 'id'),
+      ('governance_targets', 'portfolio_id', 'portfolios', 'id'),
+      ('decision_journal', 'portfolio_id', 'portfolios', 'id'),
+      ('target_portfolios', 'portfolio_id', 'portfolios', 'id'),
+      ('target_envelope_weights', 'target_portfolio_id', 'target_portfolios', 'id'),
+      ('broker_position_snapshot_runs', 'portfolio_id', 'portfolios', 'id'),
+      ('broker_position_snapshot_items', 'run_id', 'broker_position_snapshot_runs', 'id'),
+      ('broker_position_snapshot_items', 'portfolio_id', 'portfolios', 'id'),
+      ('broker_reconciliation_items', 'run_id', 'broker_reconciliation_runs', 'id'),
+      ('target_buckets', 'model_id', 'target_models', 'id'),
+      ('target_envelope_lines', 'model_id', 'target_models', 'id'),
+      ('target_model_audit_holdings', 'model_id', 'target_models', 'id')
+    ) as edges(child_table, child_column, parent_table, parent_column)
+  loop
+    child_regclass := to_regclass(format('public.%I', edge.child_table));
+    parent_regclass := to_regclass(format('public.%I', edge.parent_table));
+    if child_regclass is null or parent_regclass is null
+      or not exists (
+        select 1 from pg_attribute
+        where attrelid = child_regclass and attname = edge.child_column and not attisdropped
+      )
+      or not exists (
+        select 1 from pg_attribute
+        where attrelid = parent_regclass and attname = edge.parent_column and not attisdropped
+      )
+    then
+      continue;
+    end if;
+
+    constraint_name := edge.child_table || '_owner_' || edge.child_column || '_fkey';
+    execute format(
+      'alter table public.%I drop constraint if exists %I, '
+      'add constraint %I foreign key (owner_user_id, %I) '
+      'references public.%I (owner_user_id, %I)',
+      edge.child_table, constraint_name, constraint_name,
+      edge.child_column, edge.parent_table, edge.parent_column
+    );
+  end loop;
+end;
+$$;
+
+-- Existing service-role writers can continue in a single-owner installation.
+-- With multiple owners, child rows derive ownership from their parent; root
+-- rows must carry owner_user_id explicitly and ambiguous writes fail closed.
+do $$
+declare
+  trigger_row record;
+  table_regclass regclass;
+begin
+  for trigger_row in
+    select * from (values
+      ('portfolios', null, null, null),
+      ('portfolio_positions', 'portfolios', 'portfolio_id', 'id'),
+      ('valuation_snapshots', 'portfolios', 'portfolio_id', 'id'),
+      ('governance_targets', 'portfolios', 'portfolio_id', 'id'),
+      ('decision_journal', 'portfolios', 'portfolio_id', 'id'),
+      ('target_portfolios', 'portfolios', 'portfolio_id', 'id'),
+      ('target_envelope_weights', 'target_portfolios', 'target_portfolio_id', 'id'),
+      ('broker_transactions', null, null, null),
+      ('broker_reconciliation_runs', null, null, null),
+      ('broker_reconciliation_items', 'broker_reconciliation_runs', 'run_id', 'id'),
+      ('broker_position_snapshot_runs', 'portfolios', 'portfolio_id', 'id'),
+      ('broker_position_snapshot_items', 'broker_position_snapshot_runs', 'run_id', 'id'),
+      ('target_models', null, null, null),
+      ('target_buckets', 'target_models', 'model_id', 'id'),
+      ('target_envelope_lines', 'target_models', 'model_id', 'id'),
+      ('target_model_audit_holdings', 'target_models', 'model_id', 'id')
+    ) as triggers(table_name, parent_table, child_column, parent_column)
+  loop
+    table_regclass := to_regclass(format('public.%I', trigger_row.table_name));
+    if table_regclass is null then
+      continue;
+    end if;
+    execute format(
+      'drop trigger if exists fo_assign_legacy_owner on public.%I',
+      trigger_row.table_name
+    );
+    if trigger_row.parent_table is null then
+      execute format(
+        'create trigger fo_assign_legacy_owner before insert or update of owner_user_id '
+        'on public.%I for each row execute function fo_private.assign_legacy_owner()',
+        trigger_row.table_name
+      );
+    else
+      execute format(
+        'create trigger fo_assign_legacy_owner before insert or update of owner_user_id '
+        'on public.%I for each row execute function fo_private.assign_legacy_owner(%L, %L, %L)',
+        trigger_row.table_name, trigger_row.parent_table,
+        trigger_row.child_column, trigger_row.parent_column
+      );
+    end if;
   end loop;
 end;
 $$;

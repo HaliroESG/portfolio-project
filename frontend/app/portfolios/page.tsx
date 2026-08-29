@@ -1,7 +1,7 @@
 "use client"
 
 import { Banknote, Building2, RefreshCw, WalletCards } from 'lucide-react'
-import { useMemo, useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import { AppShell } from '../../components/AppShell'
 import { EmptyState } from '../../components/EmptyState'
 import { FamilyOfficeStateBadge } from '../../components/FamilyOfficeStateBadge'
@@ -12,11 +12,17 @@ const eur = new Intl.NumberFormat('fr-FR', { style: 'currency', currency: 'EUR',
 const number = new Intl.NumberFormat('fr-FR', { maximumFractionDigits: 4 })
 
 export default function PortfoliosPage() {
-  const { data, error, isLoading, mutate } = useFamilyOfficeBundle()
+  const { data, error, isLoading, mutate, ownerUserId } = useFamilyOfficeBundle()
   const [portfolioOverride, setPortfolioOverride] = useState('')
   const [accountOverride, setAccountOverride] = useState('ALL')
   const [recalculating, setRecalculating] = useState(false)
   const [commandError, setCommandError] = useState<string | null>(null)
+  useEffect(() => {
+    setPortfolioOverride('')
+    setAccountOverride('ALL')
+    setRecalculating(false)
+    setCommandError(null)
+  }, [ownerUserId])
   const portfolioId = portfolioOverride || data?.portfolios[0]?.id || ''
   const accounts = data?.accounts.filter((row) => row.portfolio_id === portfolioId) ?? []
   const positions = data?.positions.filter((row) => row.portfolio_id === portfolioId && (accountOverride === 'ALL' || row.account_id === accountOverride)) ?? []

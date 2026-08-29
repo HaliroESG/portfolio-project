@@ -44,14 +44,22 @@ export function useFamilyOfficeBundle() {
 
   const result = useSWR(
     ownerUserId ? familyOfficeSWRKey(ownerUserId) : null,
-    () => loadFamilyOfficeBundle(supabase),
+    async () => ({
+      ownerUserId: ownerUserId ?? '',
+      bundle: await loadFamilyOfficeBundle(supabase),
+    }),
     { refreshInterval: 60_000, revalidateOnFocus: false },
   )
 
+  const scopedData = result.data?.ownerUserId === ownerUserId
+    ? result.data.bundle
+    : undefined
+
   return {
     ...result,
+    data: scopedData,
     ownerUserId,
     error: sessionError ?? result.error,
-    isLoading: sessionLoading || result.isLoading,
+    isLoading: sessionLoading || result.isLoading || (!!ownerUserId && !scopedData && !result.error),
   }
 }

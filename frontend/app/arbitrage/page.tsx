@@ -29,6 +29,7 @@ type OverlayFilter = 'ALL' | 'STANDARD' | 'MACRO'
 
 interface PortfolioRow {
   id: string
+  owner_user_id: string
   name: string | null
 }
 
@@ -472,7 +473,7 @@ export default function ArbitragePage() {
   const [sort, setSort] = useState<SortConfig>(DEFAULT_SORT)
 
   const { data: portfolios } = useSWR('arbitrage-portfolios', async () => {
-    const { data, error } = await supabase.from('portfolios').select('id,name')
+    const { data, error } = await supabase.from('portfolios').select('id,owner_user_id,name')
     if (error) throw error
     return (data ?? []) as PortfolioRow[]
   })

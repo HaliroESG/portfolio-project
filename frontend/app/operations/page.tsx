@@ -1,7 +1,7 @@
 "use client"
 
 import { AlertTriangle, Check, FileDown, FileSpreadsheet, LockKeyhole, RefreshCw, Upload } from 'lucide-react'
-import { FormEvent, useMemo, useState } from 'react'
+import { FormEvent, useEffect, useMemo, useState } from 'react'
 import { AppShell } from '../../components/AppShell'
 import { EmptyState } from '../../components/EmptyState'
 import { authenticatedDownload, command } from '../../lib/commandApi'
@@ -17,10 +17,15 @@ function severityStyle(severity: FamilyOfficeOperationRow['severity']): string {
 }
 
 export default function OperationsPage() {
-  const { data, error, isLoading, mutate } = useFamilyOfficeBundle()
+  const { data, error, isLoading, mutate, ownerUserId } = useFamilyOfficeBundle()
   const [pendingAction, setPendingAction] = useState<string | null>(null)
   const [feedback, setFeedback] = useState<string | null>(null)
   const [actionError, setActionError] = useState<string | null>(null)
+  useEffect(() => {
+    setPendingAction(null)
+    setFeedback(null)
+    setActionError(null)
+  }, [ownerUserId])
   const primaryPortfolio = data?.portfolios[0] ?? null
   const institutionNames = useMemo(() => new Map((data?.institutions ?? []).map((row) => [row.id, row.name])), [data?.institutions])
 

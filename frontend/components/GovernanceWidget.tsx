@@ -30,6 +30,7 @@ interface GovernanceWidgetProps {
 
 type GovernanceTargetRow = {
   id: string
+  owner_user_id: string
   portfolio_id: string
   asset_class: string
   target_pct?: number | null
@@ -92,7 +93,7 @@ export function GovernanceWidget({ assets, selectedPortfolioId = 'ALL' }: Govern
         if (portfolioId === 'ALL') {
           const portfoliosResponse = await supabase
             .from('portfolios')
-            .select('id')
+            .select('id,owner_user_id')
             .limit(1)
             .single()
 
@@ -108,11 +109,11 @@ export function GovernanceWidget({ assets, selectedPortfolioId = 'ALL' }: Govern
         
         // Schema-tolerant fetch: governance target column name differs across deployments.
         const selectors = [
-          'id,portfolio_id,asset_class,target_pct,target_weight_pct,target_weight,target_percent,tolerance_band',
-          'id,portfolio_id,asset_class,target_pct,tolerance_band',
-          'id,portfolio_id,asset_class,target_weight_pct,tolerance_band',
-          'id,portfolio_id,asset_class,target_weight,tolerance_band',
-          'id,portfolio_id,asset_class,target_percent,tolerance_band',
+          'id,owner_user_id,portfolio_id,asset_class,target_pct,target_weight_pct,target_weight,target_percent,tolerance_band',
+          'id,owner_user_id,portfolio_id,asset_class,target_pct,tolerance_band',
+          'id,owner_user_id,portfolio_id,asset_class,target_weight_pct,tolerance_band',
+          'id,owner_user_id,portfolio_id,asset_class,target_weight,tolerance_band',
+          'id,owner_user_id,portfolio_id,asset_class,target_percent,tolerance_band',
         ]
         let data: unknown[] = []
         let lastError: string | null = null

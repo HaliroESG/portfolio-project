@@ -15,7 +15,7 @@ import {
   WalletCards,
 } from 'lucide-react'
 import Link from 'next/link'
-import { useMemo, useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import { AppShell } from '../components/AppShell'
 import { EmptyState } from '../components/EmptyState'
 import { FamilyOfficeStateBadge } from '../components/FamilyOfficeStateBadge'
@@ -69,9 +69,13 @@ function severityClass(severity: FamilyOfficeOperationRow['severity']): string {
 }
 
 export default function FamilyOfficeOverviewPage() {
-  const { data, error, isLoading, mutate } = useFamilyOfficeBundle()
+  const { data, error, isLoading, mutate, ownerUserId } = useFamilyOfficeBundle()
   const [bootstrapping, setBootstrapping] = useState(false)
   const [commandError, setCommandError] = useState<string | null>(null)
+  useEffect(() => {
+    setBootstrapping(false)
+    setCommandError(null)
+  }, [ownerUserId])
 
   const totals = useMemo(() => aggregateOverview(data?.overview ?? []), [data?.overview])
   const primary = data?.overview[0] ?? null

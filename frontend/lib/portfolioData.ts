@@ -55,10 +55,12 @@ interface MarketWatchRow {
 
 interface PortfolioRow {
   id: string
+  owner_user_id: string
   name: string
 }
 
 interface PortfolioPositionRow {
+  owner_user_id: string | null
   portfolio_id: string
   ticker: string
   name: string | null
@@ -405,14 +407,16 @@ async function detectMarketWatchTechnicalSchema(supabase: SupabaseClient): Promi
 
 function parsePortfolioRow(raw: JsonRecord): PortfolioRow | null {
   const id = readString(raw.id)
-  if (!id) return null
+  const ownerUserId = readString(raw.owner_user_id)
+  if (!id || !ownerUserId) return null
   const name = readString(raw.name) ?? `Portfolio ${id.slice(0, 6)}`
-  return { id, name }
+  return { id, owner_user_id: ownerUserId, name }
 }
 
 function parsePositionRow(raw: JsonRecord): PortfolioPositionRow | null {
   const ticker = readString(raw.ticker)?.toUpperCase()
-  if (!ticker) return null
+  const ownerUserId = readString(raw.owner_user_id)
+  if (!ticker || !ownerUserId) return null
 
   const portfolioId = readString(raw.portfolio_id) ?? DEFAULT_PORTFOLIO_ID
   const quantityCurrent = readNumber(raw.quantity_current) ?? readNumber(raw.quantity)
@@ -422,6 +426,7 @@ function parsePositionRow(raw: JsonRecord): PortfolioPositionRow | null {
   const coverage = readGeoCoverage(raw.geo_coverage)
 
   return {
+    owner_user_id: ownerUserId,
     portfolio_id: portfolioId,
     ticker,
     name: readString(raw.name),
@@ -514,7 +519,7 @@ async function fetchCurrencyRows(supabase: SupabaseClient): Promise<CurrencyPair
 }
 
 async function fetchPortfolios(supabase: SupabaseClient): Promise<PortfolioRow[]> {
-  const rows = await selectWithFallback(supabase, 'portfolios', ['id,name', 'id'])
+  const rows = await selectWithFallback(supabase, 'portfolios', ['id,owner_user_id,name', 'id,owner_user_id'])
   return rows
     .map(parsePortfolioRow)
     .filter((portfolio): portfolio is PortfolioRow => portfolio !== null)
@@ -525,9 +530,9 @@ async function fetchPositions(supabase: SupabaseClient): Promise<PortfolioPositi
     supabase,
     'portfolio_positions',
     [
-      'portfolio_id,ticker,name,instrument_type,currency,quantity_buy,quantity_current,pru,target_weight_pct,geo_coverage',
-      'portfolio_id,ticker,name,type,currency,quantity_buy,quantity,pru,target_pct,geo_coverage',
-      'portfolio_id,ticker,name,currency,quantity,geo_coverage',
+      'owner_user_id,portfolio_id,ticker,name,instrument_type,currency,quantity_buy,quantity_current,pru,target_weight_pct,geo_coverage',
+      'owner_user_id,portfolio_id,ticker,name,type,currency,quantity_buy,quantity,pru,target_pct,geo_coverage',
+      'owner_user_id,portfolio_id,ticker,name,currency,quantity,geo_coverage',
     ]
   )
 
@@ -543,6 +548,7 @@ function buildFallbackPositions(marketRows: MarketWatchRow[]): PortfolioPosition
       const ticker = (row.ticker ?? '').toUpperCase()
       const quantityCurrent = row.quantity ?? 1
       return {
+        owner_user_id: null,
         portfolio_id: row.portfolio_id ?? DEFAULT_PORTFOLIO_ID,
         ticker,
         name: row.name,

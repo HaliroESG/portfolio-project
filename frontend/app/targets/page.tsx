@@ -11,10 +11,12 @@ import type { PortfolioScope, TargetBucketRow, TargetEnvelopeLineRow, TargetMode
 
 interface PortfolioRow {
   id: string
+  owner_user_id: string
   name: string | null
 }
 
 interface PositionRow {
+  owner_user_id: string
   portfolio_id: string
   ticker: string
   name: string | null
@@ -42,6 +44,7 @@ interface ActualSourceAccount {
 }
 
 interface BrokerSnapshotRunRow {
+  owner_user_id: string
   broker: string
   account_id: string
   portfolio_id: string
@@ -149,11 +152,13 @@ function parseScope(value: unknown): PortfolioScope {
 
 function parseTargetModel(raw: RawRow): TargetModelRow | null {
   const id = readString(raw.id)
+  const ownerUserId = readString(raw.owner_user_id)
   const modelName = readString(raw.model_name)
   const sourceFile = readString(raw.source_file)
-  if (!id || !modelName || !sourceFile) return null
+  if (!id || !ownerUserId || !modelName || !sourceFile) return null
   return {
     id,
+    owner_user_id: ownerUserId,
     portfolio_scope: parseScope(raw.portfolio_scope),
     model_name: modelName,
     source_file: sourceFile,
@@ -172,13 +177,15 @@ function parseTargetModel(raw: RawRow): TargetModelRow | null {
 
 function parseTargetBucket(raw: RawRow): TargetBucketRow | null {
   const id = readNumber(raw.id as number | string | null)
+  const ownerUserId = readString(raw.owner_user_id)
   const modelId = readString(raw.model_id)
   const bucketKey = readString(raw.bucket_key)
   const bucketLabel = readString(raw.bucket_label)
   const targetWeight = readNumber(raw.target_weight_pct as number | string | null)
-  if (id === null || !modelId || !bucketKey || !bucketLabel || targetWeight === null) return null
+  if (id === null || !ownerUserId || !modelId || !bucketKey || !bucketLabel || targetWeight === null) return null
   return {
     id,
+    owner_user_id: ownerUserId,
     model_id: modelId,
     portfolio_scope: parseScope(raw.portfolio_scope),
     bucket_key: bucketKey,
@@ -195,11 +202,13 @@ function parseTargetBucket(raw: RawRow): TargetBucketRow | null {
 
 function parseTargetEnvelopeLine(raw: RawRow): TargetEnvelopeLineRow | null {
   const id = readNumber(raw.id as number | string | null)
+  const ownerUserId = readString(raw.owner_user_id)
   const modelId = readString(raw.model_id)
   const envelope = readString(raw.envelope)
-  if (id === null || !modelId || !envelope) return null
+  if (id === null || !ownerUserId || !modelId || !envelope) return null
   return {
     id,
+    owner_user_id: ownerUserId,
     model_id: modelId,
     portfolio_scope: parseScope(raw.portfolio_scope),
     envelope,
@@ -286,7 +295,7 @@ export default function TargetsPage() {
   const [selectedScope, setSelectedScope] = useState<PortfolioScope>('PERSO')
 
   const { data: portfolios } = useSWR('portfolios', async () => {
-    const { data, error } = await supabase.from('portfolios').select('id,name')
+    const { data, error } = await supabase.from('portfolios').select('id,owner_user_id,name')
     if (error) throw error
     return (data ?? []) as PortfolioRow[]
   })
@@ -297,6 +306,7 @@ export default function TargetsPage() {
     selectedPortfolioId ? ['positions', selectedPortfolioId] : null,
     async () => {
       const extendedSelector = [
+        'owner_user_id',
         'portfolio_id',
         'ticker',
         'name',
@@ -315,6 +325,7 @@ export default function TargetsPage() {
         'updated_at',
       ].join(',')
       const legacySelector = [
+        'owner_user_id',
         'portfolio_id',
         'ticker',
         'name',
@@ -348,7 +359,7 @@ export default function TargetsPage() {
     async (): Promise<BrokerSnapshotRunResult> => {
       const { data, error } = await supabase
         .from('broker_position_snapshot_runs')
-        .select('broker,account_id,portfolio_id,envelope,as_of_date,source_file,position_count,created_at,updated_at')
+        .select('owner_user_id,broker,account_id,portfolio_id,envelope,as_of_date,source_file,position_count,created_at,updated_at')
         .eq('portfolio_id', selectedPortfolioId)
         .order('as_of_date', { ascending: false })
         .order('created_at', { ascending: false })
@@ -376,7 +387,7 @@ export default function TargetsPage() {
   const { data: targetModels = [], error: targetModelError } = useSWR('target-models', async () => {
     const { data, error } = await supabase
       .from('target_models')
-      .select('id,portfolio_scope,model_name,source_file,source_kind,as_of_date,is_active,target_total_pct,status,report_json,imported_at,updated_at')
+      .select('id,owner_user_id,portfolio_scope,model_name,source_file,source_kind,as_of_date,is_active,target_total_pct,status,report_json,imported_at,updated_at')
       .eq('is_active', true)
       .order('updated_at', { ascending: false })
     if (error) throw error
@@ -392,7 +403,7 @@ export default function TargetsPage() {
     async () => {
       const { data, error } = await supabase
         .from('target_buckets')
-        .select('id,model_id,portfolio_scope,bucket_key,bucket_label,parent_bucket_key,target_weight_pct,lower_band_pct,upper_band_pct,source_sheet,source_row,updated_at')
+        .select('id,owner_user_id,model_id,portfolio_scope,bucket_key,bucket_label,parent_bucket_key,target_weight_pct,lower_band_pct,upper_band_pct,source_sheet,source_row,updated_at')
         .eq('model_id', selectedTargetModel!.id)
         .order('source_row', { ascending: true })
       if (error) throw error
@@ -407,7 +418,7 @@ export default function TargetsPage() {
     async () => {
       const { data, error } = await supabase
         .from('target_envelope_lines')
-        .select('id,model_id,portfolio_scope,envelope,ticker,isin,instrument,asset_class,region,currency,target_weight_pct,target_value_eur,notes,source_sheet,source_row,updated_at')
+        .select('id,owner_user_id,model_id,portfolio_scope,envelope,ticker,isin,instrument,asset_class,region,currency,target_weight_pct,target_value_eur,notes,source_sheet,source_row,updated_at')
         .eq('model_id', selectedTargetModel!.id)
         .order('envelope', { ascending: true })
         .order('source_row', { ascending: true })

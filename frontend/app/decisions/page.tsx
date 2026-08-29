@@ -1,14 +1,15 @@
 "use client"
 
 import { CheckCircle2, FileDown, Plus, Send, XCircle } from 'lucide-react'
-import { FormEvent, useState } from 'react'
+import { FormEvent, useCallback, useEffect, useState } from 'react'
 import { AppShell } from '../../components/AppShell'
 import { EmptyState } from '../../components/EmptyState'
 import { authenticatedDownload, command } from '../../lib/commandApi'
 import { assertOwnerIsolation } from '../../lib/ownerIsolation'
 import { supabase } from '../../lib/supabase'
 import { useFamilyOfficeBundle } from '../../lib/useFamilyOfficeBundle'
-import type { FamilyOfficeDecisionRow, FamilyOfficeDecisionStatus } from '../../types'
+import { useOwnerScopedRows } from '../../lib/useOwnerScopedRows'
+import type { FamilyOfficeDecisionRow, FamilyOfficeDecisionStatus, FamilyOfficeOrderDraftRow } from '../../types'
 
 const transitions: Partial<Record<FamilyOfficeDecisionStatus, Array<{ status: FamilyOfficeDecisionStatus; label: string }>>> = {
   DRAFT: [{ status: 'VALIDATED', label: 'Valider' }, { status: 'CANCELLED', label: 'Annuler' }],
@@ -30,6 +31,13 @@ export default function DecisionsPage() {
   const [feedback, setFeedback] = useState<string | null>(null)
   const [actionError, setActionError] = useState<string | null>(null)
   const [orderDecisionId, setOrderDecisionId] = useState('')
+
+  useEffect(() => {
+    setPending(null)
+    setFeedback(null)
+    setActionError(null)
+    setOrderDecisionId('')
+  }, [ownerUserId])
 
   const createDecision = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault()
@@ -147,15 +155,19 @@ export default function DecisionsPage() {
 function Field({ label, children }: { label: string; children: React.ReactNode }) { return <label className="block"><span className="text-[9px] font-black uppercase text-slate-500">{label}</span><div className="mt-2">{children}</div></label> }
 
 function OrdersPanel({ decisions, exportOrder, pending, ownerUserId }: { decisions: FamilyOfficeDecisionRow[]; exportOrder: (id: string, format: 'csv' | 'pdf') => void; pending: string | null; ownerUserId: string }) {
-  const [orders, setOrders] = useState<Array<{ id: string; owner_user_id: string; decision_id: string; account_id: string; status: string; estimated_gross_eur: number | null }>>([])
-  const [loaded, setLoaded] = useState(false)
-  const load = async () => {
-    const { data } = await supabase.from('fo_order_drafts').select('id,owner_user_id,decision_id,account_id,status,estimated_gross_eur').order('created_at', { ascending: false })
-    const rows = (data ?? []) as typeof orders
+  const loadOwnerOrders = useCallback(async (requestedOwnerUserId: string) => {
+    if (!requestedOwnerUserId) throw new Error('Identité propriétaire indisponible')
+    const { data, error } = await supabase
+      .from('fo_order_drafts')
+      .select('id,owner_user_id,decision_id,account_id,status,estimated_gross_eur')
+      .eq('owner_user_id', requestedOwnerUserId)
+      .order('created_at', { ascending: false })
+    if (error) throw error
+    const rows = (data ?? []) as FamilyOfficeOrderDraftRow[]
     assertOwnerIsolation(ownerUserId, [rows])
-    setOrders(rows)
-    setLoaded(true)
-  }
+    return rows
+  }, [ownerUserId])
+  const { rows: orders, loaded, error, load } = useOwnerScopedRows(ownerUserId, loadOwnerOrders)
   const titleByDecision = new Map(decisions.map((row) => [row.id, row.title]))
-  return <section className="overflow-hidden rounded-md border border-slate-200 bg-white dark:border-white/10 dark:bg-[#0D1117]"><div className="flex items-center justify-between border-b border-slate-200 px-4 py-3 dark:border-white/10"><h2 className="text-sm font-black">Ordres brouillons</h2><button type="button" onClick={load} className="text-[10px] font-black uppercase text-emerald-600 dark:text-emerald-400">{loaded ? 'Actualiser' : 'Charger'}</button></div>{!loaded ? <div className="p-5 text-sm text-slate-500">Chargez les ordres validés pour préparer un export.</div> : orders.length === 0 ? <div className="p-5 text-sm text-slate-500">Aucun ordre brouillon.</div> : <div className="divide-y divide-slate-200 dark:divide-white/10">{orders.map((order) => <div key={order.id} className="flex flex-wrap items-center justify-between gap-3 px-4 py-3"><div><div className="text-xs font-black">{titleByDecision.get(order.decision_id) ?? order.id.slice(0, 8)}</div><div className="mt-1 text-[9px] font-mono text-slate-500">{order.status} · {order.estimated_gross_eur ?? 0} EUR</div></div><div className="flex gap-2"><button type="button" onClick={() => exportOrder(order.id, 'csv')} disabled={pending === `export-${order.id}`} className="inline-flex h-8 items-center gap-1 rounded-md border border-slate-300 px-3 text-[10px] font-black dark:border-white/10"><FileDown size={12} />CSV</button><button type="button" onClick={() => exportOrder(order.id, 'pdf')} disabled={pending === `export-${order.id}`} className="inline-flex h-8 items-center gap-1 rounded-md border border-slate-300 px-3 text-[10px] font-black dark:border-white/10"><FileDown size={12} />PDF</button></div></div>)}</div>}</section>
+  return <section className="overflow-hidden rounded-md border border-slate-200 bg-white dark:border-white/10 dark:bg-[#0D1117]"><div className="flex items-center justify-between border-b border-slate-200 px-4 py-3 dark:border-white/10"><h2 className="text-sm font-black">Ordres brouillons</h2><button type="button" onClick={() => void load()} className="text-[10px] font-black uppercase text-emerald-600 dark:text-emerald-400">{loaded ? 'Actualiser' : 'Charger'}</button></div>{error ? <div className="p-5 text-sm text-red-600 dark:text-red-300">Lecture des ordres impossible : {error.message}</div> : !loaded ? <div className="p-5 text-sm text-slate-500">Chargez les ordres validés pour préparer un export.</div> : orders.length === 0 ? <div className="p-5 text-sm text-slate-500">Aucun ordre brouillon.</div> : <div className="divide-y divide-slate-200 dark:divide-white/10">{orders.map((order) => <div key={order.id} className="flex flex-wrap items-center justify-between gap-3 px-4 py-3"><div><div className="text-xs font-black">{titleByDecision.get(order.decision_id) ?? order.id.slice(0, 8)}</div><div className="mt-1 text-[9px] font-mono text-slate-500">{order.status} · {order.estimated_gross_eur ?? 0} EUR</div></div><div className="flex gap-2"><button type="button" onClick={() => exportOrder(order.id, 'csv')} disabled={pending === `export-${order.id}`} className="inline-flex h-8 items-center gap-1 rounded-md border border-slate-300 px-3 text-[10px] font-black dark:border-white/10"><FileDown size={12} />CSV</button><button type="button" onClick={() => exportOrder(order.id, 'pdf')} disabled={pending === `export-${order.id}`} className="inline-flex h-8 items-center gap-1 rounded-md border border-slate-300 px-3 text-[10px] font-black dark:border-white/10"><FileDown size={12} />PDF</button></div></div>)}</div>}</section>
 }
