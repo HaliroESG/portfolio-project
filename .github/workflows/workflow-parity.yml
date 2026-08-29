@@ -37,7 +37,7 @@ jobs:
           mkdir -p "$install_dir"
           tar -xzf "$archive" -C "$install_dir" actionlint
           reported_version=$("$install_dir/actionlint" -version)
-          test "${reported_version%%$'\n'*}" = "v$ACTIONLINT_VERSION"
+          test "${reported_version%%$'\n'*}" = "$ACTIONLINT_VERSION"
           printf '%s\n' "$install_dir" >> "$GITHUB_PATH"
 
       - name: Validate every workflow with Actionlint
