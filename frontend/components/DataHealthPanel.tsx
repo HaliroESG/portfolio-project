@@ -5,6 +5,7 @@ import { supabase } from '../lib/supabase'
 import { cn } from '../lib/utils'
 import { Activity, AlertTriangle, ChevronDown, Clock, Database, Minus, TrendingDown, TrendingUp, X } from 'lucide-react'
 import { resolveFreshness } from '../lib/dataFreshness'
+import { isSelectorSchemaError } from '../lib/supabaseSelectorErrors'
 
 interface HealthItem {
   id: string
@@ -92,6 +93,7 @@ const ETL_QUALITY_THRESHOLDS = {
 } as const
 
 let QUALITY_MARKET_WATCH_SELECTOR_CACHE: string | null = null
+const QUALITY_MARKET_WATCH_BAD_SELECTORS = new Set<string>()
 const MARKET_WATCH_TECHNICAL_COLUMNS = [
   'macd_line',
   'macd_signal',
@@ -467,15 +469,21 @@ async function fetchQualityMetrics(): Promise<QualityMetric[]> {
     'ticker,last_price,data_status,last_update,rsi_14,macd_line,macd_signal,momentum_20',
     'ticker,last_price,data_status,last_update',
   ]
-  const orderedSelectors = QUALITY_MARKET_WATCH_SELECTOR_CACHE
-    ? [QUALITY_MARKET_WATCH_SELECTOR_CACHE, ...selectors.filter((selector) => selector !== QUALITY_MARKET_WATCH_SELECTOR_CACHE)]
+  const cachedSelector = QUALITY_MARKET_WATCH_SELECTOR_CACHE
+  const orderedSelectors = (cachedSelector
+    ? [cachedSelector, ...selectors.filter((selector) => selector !== cachedSelector)]
     : technicalColumnsAvailable
     ? selectors
-    : [selectors[1]]
+    : [selectors[1]]).filter((selector) => !QUALITY_MARKET_WATCH_BAD_SELECTORS.has(selector))
 
   for (const selector of orderedSelectors) {
     const { data, error } = await supabase.from('market_watch').select(selector).limit(600)
-    if (error) continue
+    if (error) {
+      if (isSelectorSchemaError(error)) {
+        QUALITY_MARKET_WATCH_BAD_SELECTORS.add(selector)
+      }
+      continue
+    }
     marketRows = (data ?? []) as unknown as JsonRecord[]
     QUALITY_MARKET_WATCH_SELECTOR_CACHE = selector
     break

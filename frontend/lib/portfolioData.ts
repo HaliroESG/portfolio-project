@@ -10,6 +10,7 @@ import {
   PortfolioOption,
   TrendState,
 } from '../types'
+import { isSelectorSchemaError } from './supabaseSelectorErrors'
 
 type JsonRecord = Record<string, unknown>
 
@@ -458,8 +459,10 @@ async function selectWithFallback(
       return ((data ?? []) as unknown as JsonRecord[])
     }
     lastErrorMessage = error.message
-    if (!KNOWN_BAD_SELECTORS[table]) KNOWN_BAD_SELECTORS[table] = new Set<string>()
-    KNOWN_BAD_SELECTORS[table].add(selector)
+    if (isSelectorSchemaError(error)) {
+      if (!KNOWN_BAD_SELECTORS[table]) KNOWN_BAD_SELECTORS[table] = new Set<string>()
+      KNOWN_BAD_SELECTORS[table].add(selector)
+    }
   }
 
   if (lastErrorMessage) {
