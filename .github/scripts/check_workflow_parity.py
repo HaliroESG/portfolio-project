@@ -262,7 +262,8 @@ def _check_required_actionlint(text: str) -> None:
         for fragment in (
             ACTIONLINT_ARCHIVE_URL,
             "sha256sum --check --strict",
-            'test "$("$install_dir/actionlint" -version)" = "$ACTIONLINT_VERSION"',
+            'reported_version=$("$install_dir/actionlint" -version)',
+            'test "${reported_version%%$\'\\n\'*}" = "v$ACTIONLINT_VERSION"',
         )
     ):
         raise AssertionError(

@@ -36,7 +36,8 @@ jobs:
             | sha256sum --check --strict
           mkdir -p "$install_dir"
           tar -xzf "$archive" -C "$install_dir" actionlint
-          test "$("$install_dir/actionlint" -version)" = "$ACTIONLINT_VERSION"
+          reported_version=$("$install_dir/actionlint" -version)
+          test "${reported_version%%$'\n'*}" = "v$ACTIONLINT_VERSION"
           printf '%s\n' "$install_dir" >> "$GITHUB_PATH"
 
       - name: Validate every workflow with Actionlint
