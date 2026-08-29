@@ -45,10 +45,16 @@ EXPECTED_ENFORCEMENT_COUNTS = {
 }
 TRUST_BOUNDARY_JOBS = {
     "production-data-remediation.yml": {
-        "remediate-data": ("Claim one-shot mutation authorization", "Resolve database URL"),
+        "remediate-data": (
+            "Claim one-shot mutation authorization",
+            "Apply provider kill switches and verify required configuration",
+        ),
     },
     "schedule.yml": {
-        "preflight": ("Claim one-shot mutation authorization", "Preflight schema check"),
+        "preflight": (
+            "Claim one-shot mutation authorization",
+            "Verify required secrets and variables",
+        ),
         "refresh-core": ("Verify authority before mutable setup", "Refresh core feeds"),
         "refresh-market-history": ("Verify authority before mutable setup", "Refresh historical prices"),
         "refresh-trident": ("Verify authority before mutable setup", "Refresh Trident screener"),
@@ -56,10 +62,16 @@ TRUST_BOUNDARY_JOBS = {
         "post-refresh-gate": ("Verify authority before mutable setup", "Post-refresh schema check"),
     },
     "trident-price-backfill.yml": {
-        "top-backfill": ("Claim one-shot mutation authorization", "Preflight schema check"),
+        "top-backfill": (
+            "Claim one-shot mutation authorization",
+            "Apply provider kill switches and verify required configuration",
+        ),
     },
     "trident-stock-insights.yml": {
-        "sync-insights": ("Claim one-shot mutation authorization", "Preflight schema check"),
+        "sync-insights": (
+            "Claim one-shot mutation authorization",
+            "Apply provider kill switches and verify required configuration",
+        ),
     },
     "trident-supabase.yml": {
         "mutate-production": ("Claim one-shot mutation authorization", "Pre-migration schema check"),
@@ -180,6 +192,14 @@ def _check_trust_boundaries(name: str, text: str) -> None:
     jobs = document.get("jobs")
     if not isinstance(jobs, dict):
         raise AssertionError(f"{name}: jobs must be a mapping")
+    encoded_document = json.dumps(document, sort_keys=True)
+    if any(
+        f"vars.{credential}" in encoded_document
+        for credential in ("SUPABASE_DB_URL", "DATABASE_URL")
+    ):
+        raise AssertionError(
+            f"{name}: database credentials may not come from repository variables"
+        )
     preparation = jobs.get("prepare-runtime")
     if not isinstance(preparation, dict):
         raise AssertionError(f"{name}: isolated prepare-runtime job is missing")
@@ -197,6 +217,13 @@ def _check_trust_boundaries(name: str, text: str) -> None:
         job_env = json.dumps(job.get("env", {}), sort_keys=True)
         if "secrets." in job_env:
             raise AssertionError(f"{name} {job_name}: provider secrets may not be job-scoped")
+        if any(
+            f"vars.{credential}" in job_env
+            for credential in ("SUPABASE_DB_URL", "DATABASE_URL")
+        ):
+            raise AssertionError(
+                f"{name} {job_name}: database credentials may not come from vars or job env"
+            )
         steps = job.get("steps")
         if not isinstance(steps, list) or not all(isinstance(step, dict) for step in steps):
             raise AssertionError(f"{name} {job_name}: steps must be mappings")
@@ -204,6 +231,12 @@ def _check_trust_boundaries(name: str, text: str) -> None:
         if initial_boundary not in names or provider_step not in names:
             raise AssertionError(f"{name} {job_name}: trust boundary steps are missing")
         initial_index = names.index(initial_boundary)
+        pre_download_name = "Validate one-shot authorization before dependency download"
+        if pre_download_name not in names:
+            raise AssertionError(
+                f"{name} {job_name}: pre-download authority validation is missing"
+            )
+        pre_download_index = names.index(pre_download_name)
         final_name = "Enforce one-shot authorization immediately before provider access"
         if final_name not in names:
             raise AssertionError(f"{name} {job_name}: final authority enforcement is missing")
@@ -215,7 +248,13 @@ def _check_trust_boundaries(name: str, text: str) -> None:
                 f"{name} {job_name}: prepared dependencies must be downloaded after authority"
             )
         dependency_index = names.index(dependency_name)
-        if not initial_index < final_index < dependency_index < provider_index:
+        if not (
+            initial_index
+            < pre_download_index
+            < dependency_index
+            < final_index
+            < provider_index
+        ):
             raise AssertionError(f"{name} {job_name}: authority ordering is unsafe")
         for step in steps[:initial_index]:
             encoded = json.dumps(step, sort_keys=True)
@@ -226,16 +265,42 @@ def _check_trust_boundaries(name: str, text: str) -> None:
                 for fragment in ("pip install", "npm ci", "actions/setup-python@", "actions/setup-node@")
             ):
                 raise AssertionError(f"{name} {job_name}: mutable setup runs before authority")
-        for step in steps[:final_index]:
+        provider_secret_indexes = []
+        for index, step in enumerate(steps):
             encoded = json.dumps(step, sort_keys=True)
             secret_names = set(re.findall(r"secrets\.([A-Z0-9_]+)", encoded))
-            if secret_names - {"ASTROCYTE_AUTHORIZATION_HMAC_KEY"}:
+            provider_secret_names = secret_names - {"ASTROCYTE_AUTHORIZATION_HMAC_KEY"}
+            if provider_secret_names:
+                provider_secret_indexes.append(index)
+            if index < final_index and provider_secret_names:
                 raise AssertionError(f"{name} {job_name}: provider secret precedes final authority")
+            step_env = step.get("env", {})
+            if isinstance(step_env, dict):
+                for credential in ("SUPABASE_DB_URL", "DATABASE_URL"):
+                    if credential not in step_env:
+                        continue
+                    if step_env[credential] != f"${{{{ secrets.{credential} }}}}":
+                        raise AssertionError(
+                            f"{name} {job_name}: {credential} must be a step-scoped secret"
+                        )
+                    if index <= final_index:
+                        raise AssertionError(
+                            f"{name} {job_name}: database credential precedes final authority"
+                        )
+        if (
+            not provider_secret_indexes
+            or provider_secret_indexes[0] != provider_index
+            or provider_index != final_index + 1
+        ):
+            raise AssertionError(
+                f"{name} {job_name}: final authority must immediately precede the first provider-secret step"
+            )
         initial_run = steps[initial_index].get("run", "")
+        pre_download_run = steps[pre_download_index].get("run", "")
         final_run = steps[final_index].get("run", "")
         if not all(
             isinstance(run, str) and "/usr/bin/python3 -I -S" in run
-            for run in (initial_run, final_run)
+            for run in (initial_run, pre_download_run, final_run)
         ):
             raise AssertionError(f"{name} {job_name}: verifier must use isolated system Python")
         integrity_names = {
@@ -356,10 +421,6 @@ def validate_workflow_contract(contents: dict[str, str]) -> None:
         enforcement = "Enforce one-shot authorization immediately before provider access"
         if text.count(enforcement) != EXPECTED_ENFORCEMENT_COUNTS[name]:
             raise AssertionError(f"{name}: every mutative job must revalidate authority")
-        if text.index(enforcement) > text.index(
-            "Apply provider kill switches"
-        ):
-            raise AssertionError(f"{name}: provider kill switches run before revalidation")
         _check_action_pins(name, text)
 
     for name in MIGRATION_WORKFLOWS:
@@ -401,7 +462,7 @@ def validate_workflow_contract(contents: dict[str, str]) -> None:
     require_order(
         contents["production-data-remediation.yml"],
         "Enforce one-shot authorization immediately before provider access",
-        "Resolve database URL",
+        "Apply provider kill switches and verify required configuration",
         "production-data-remediation.yml",
     )
     require_order(

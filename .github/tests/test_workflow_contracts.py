@@ -131,6 +131,53 @@ class WorkflowContractTests(unittest.TestCase):
         with self.assertRaisesRegex(AssertionError, "mutable setup runs before authority"):
             validate_workflow_contract(contents)
 
+    def test_database_credentials_must_be_step_scoped_secrets(self) -> None:
+        contents = workflow_contents()
+        contents["production-data-remediation.yml"] = contents[
+            "production-data-remediation.yml"
+        ].replace(
+            "      AUTHORIZATION_MANIFEST: ${{ inputs.authorization_manifest }}\n",
+            "      SUPABASE_DB_URL: ${{ vars.SUPABASE_DB_URL }}\n"
+            "      AUTHORIZATION_MANIFEST: ${{ inputs.authorization_manifest }}\n",
+            1,
+        )
+        with self.assertRaisesRegex(AssertionError, "database credentials"):
+            validate_workflow_contract(contents)
+
+        contents = workflow_contents()
+        contents["trident-supabase.yml"] = contents["trident-supabase.yml"].replace(
+            "SUPABASE_DB_URL: ${{ secrets.SUPABASE_DB_URL }}",
+            "SUPABASE_DB_URL: ${{ vars.SUPABASE_DB_URL }}",
+            1,
+        )
+        with self.assertRaisesRegex(AssertionError, "database credentials"):
+            validate_workflow_contract(contents)
+
+    def test_download_expiry_gap_is_rejected(self) -> None:
+        contents = workflow_contents()
+        workflow = contents["trident-price-backfill.yml"]
+        download_start = workflow.index(
+            "      - name: Download prepared dependencies after authority\n"
+        )
+        final_start = workflow.index(
+            "      - name: Enforce one-shot authorization immediately before provider access\n",
+            download_start,
+        )
+        provider_start = workflow.index(
+            "      - name: Apply provider kill switches and verify required configuration\n",
+            final_start,
+        )
+        download_block = workflow[download_start:final_start]
+        final_block = workflow[final_start:provider_start]
+        contents["trident-price-backfill.yml"] = (
+            workflow[:download_start]
+            + final_block
+            + download_block
+            + workflow[provider_start:]
+        )
+        with self.assertRaisesRegex(AssertionError, "authority ordering is unsafe"):
+            validate_workflow_contract(contents)
+
 
 if __name__ == "__main__":
     unittest.main()

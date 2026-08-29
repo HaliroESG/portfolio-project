@@ -149,7 +149,7 @@ jobs:
             exit 2
           fi
 
-      - name: Enforce one-shot authorization immediately before provider access
+      - name: Validate one-shot authorization before dependency download
         env:
           AUTHORIZATION_SIGNATURE: ${{ inputs.authorization_signature }}
           AUTHORIZATION_HMAC_KEY: ${{ secrets.ASTROCYTE_AUTHORIZATION_HMAC_KEY }}
@@ -170,6 +170,22 @@ jobs:
         with:
           name: price-backfill-python-runtime-${{ github.run_id }}-${{ github.run_attempt }}
           path: ${{ runner.temp }}/python-deps
+
+      - name: Enforce one-shot authorization immediately before provider access
+        env:
+          AUTHORIZATION_SIGNATURE: ${{ inputs.authorization_signature }}
+          AUTHORIZATION_HMAC_KEY: ${{ secrets.ASTROCYTE_AUTHORIZATION_HMAC_KEY }}
+          AUTHORIZATION_NONCE: ${{ inputs.authorization_nonce }}
+          AUTHORIZATION_RECEIPT_ID: ${{ inputs.authorization_receipt_id }}
+          GITHUB_TOKEN: ${{ github.token }}
+        run: |
+          /usr/bin/python3 -I -S .github/scripts/check_mutation_contract.py \
+            --workflow trident-price-backfill \
+            --replay-phase enforce \
+            --input "top_n=$TOP_N" \
+            --input "start_date=$START_DATE" \
+            --input "end_date=$END_DATE" \
+            --input "dry_run=$DRY_RUN"
 
       - name: Apply provider kill switches and verify required configuration
         env:

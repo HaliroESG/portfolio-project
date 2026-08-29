@@ -87,8 +87,6 @@ jobs:
       PYTHONPATH: ${{ runner.temp }}/python-deps
       MUTATION_GATE: ${{ vars.ASTROCYTE_MUTATION_GATE }}
       SOURCE_RIGHTS_GATE: ${{ vars.ASTROCYTE_SOURCE_RIGHTS_GATE }}
-      SUPABASE_DB_URL_VAR: ${{ vars.SUPABASE_DB_URL }}
-      DATABASE_URL_VAR: ${{ vars.DATABASE_URL }}
       TRIDENT_PROVIDER: ${{ vars.TRIDENT_PROVIDER || 'global_yahoo' }}
       TRIDENT_INDEXES: ${{ vars.TRIDENT_INDEXES }}
       TRIDENT_LIMIT: ${{ vars.TRIDENT_LIMIT }}
@@ -163,7 +161,7 @@ jobs:
             exit 2
           fi
 
-      - name: Enforce one-shot authorization immediately before provider access
+      - name: Validate one-shot authorization before dependency download
         env:
           AUTHORIZATION_SIGNATURE: ${{ inputs.authorization_signature }}
           AUTHORIZATION_HMAC_KEY: ${{ secrets.ASTROCYTE_AUTHORIZATION_HMAC_KEY }}
@@ -184,6 +182,22 @@ jobs:
         with:
           name: remediation-python-runtime-${{ github.run_id }}-${{ github.run_attempt }}
           path: ${{ runner.temp }}/python-deps
+
+      - name: Enforce one-shot authorization immediately before provider access
+        env:
+          AUTHORIZATION_SIGNATURE: ${{ inputs.authorization_signature }}
+          AUTHORIZATION_HMAC_KEY: ${{ secrets.ASTROCYTE_AUTHORIZATION_HMAC_KEY }}
+          AUTHORIZATION_NONCE: ${{ inputs.authorization_nonce }}
+          AUTHORIZATION_RECEIPT_ID: ${{ inputs.authorization_receipt_id }}
+          GITHUB_TOKEN: ${{ github.token }}
+        run: |
+          /usr/bin/python3 -I -S .github/scripts/check_mutation_contract.py \
+            --workflow production-data-remediation \
+            --replay-phase enforce \
+            --input "apply_schema=$APPLY_SCHEMA" \
+            --input "top_n=$TOP_N" \
+            --input "start_date=$START_DATE" \
+            --input "run_full_after_top=$RUN_FULL_AFTER_TOP"
 
       - name: Apply provider kill switches and verify required configuration
         env:
@@ -209,31 +223,6 @@ jobs:
             exit 2
           fi
 
-      - name: Resolve database URL
-        env:
-          SUPABASE_DB_URL: ${{ secrets.SUPABASE_DB_URL }}
-          DATABASE_URL: ${{ secrets.DATABASE_URL }}
-        run: |
-          db_url="$SUPABASE_DB_URL"
-          if [ -z "$db_url" ]; then
-            db_url="$DATABASE_URL"
-          fi
-          if [ -z "$db_url" ]; then
-            db_url="$SUPABASE_DB_URL_VAR"
-          fi
-          if [ -z "$db_url" ]; then
-            db_url="$DATABASE_URL_VAR"
-          fi
-          if [ "$APPLY_SCHEMA" = "true" ] && [ -z "$db_url" ]; then
-            echo "::error::SUPABASE_DB_URL or DATABASE_URL is required to apply SQL migrations before Trident stock insights sync."
-            echo "::error::Without it, provider_symbol and trident_stock_insights remain unavailable, so the data sync cannot succeed."
-            exit 2
-          fi
-          if [ -n "$db_url" ]; then
-            echo "::add-mask::$db_url"
-          fi
-          echo "Database URL configuration resolved."
-
       - name: Pre-migration schema check
         working-directory: ./backend
         env:
@@ -253,10 +242,8 @@ jobs:
             db_url="$DATABASE_URL"
           fi
           if [ -z "$db_url" ]; then
-            db_url="$SUPABASE_DB_URL_VAR"
-          fi
-          if [ -z "$db_url" ]; then
-            db_url="$DATABASE_URL_VAR"
+            echo "::error::SUPABASE_DB_URL or DATABASE_URL is required as a Production secret to apply SQL migrations."
+            exit 2
           fi
           echo "::add-mask::$db_url"
           sudo apt-get update

@@ -242,7 +242,7 @@ jobs:
             exit 2
           fi
 
-      - name: Enforce one-shot authorization immediately before provider access
+      - name: Validate one-shot authorization before dependency download
         env:
           AUTHORIZATION_SIGNATURE: ${{ inputs.authorization_signature }}
           AUTHORIZATION_HMAC_KEY: ${{ secrets.ASTROCYTE_AUTHORIZATION_HMAC_KEY }}
@@ -262,6 +262,21 @@ jobs:
         with:
           name: financial-sync-python-runtime-${{ github.run_id }}-${{ github.run_attempt }}
           path: ${{ runner.temp }}/python-deps
+
+      - name: Enforce one-shot authorization immediately before provider access
+        env:
+          AUTHORIZATION_SIGNATURE: ${{ inputs.authorization_signature }}
+          AUTHORIZATION_HMAC_KEY: ${{ secrets.ASTROCYTE_AUTHORIZATION_HMAC_KEY }}
+          AUTHORIZATION_NONCE: ${{ inputs.authorization_nonce }}
+          AUTHORIZATION_RECEIPT_ID: ${{ inputs.authorization_receipt_id }}
+          GITHUB_TOKEN: ${{ github.token }}
+        run: |
+          /usr/bin/python3 -I -S .github/scripts/check_mutation_contract.py \
+            --workflow financial-data-sync \
+            --replay-phase enforce \
+            --input "scope=$SCOPE_INPUT" \
+            --input "trident_mode=$TRIDENT_MODE_INPUT" \
+            --input "trident_price_start_date=$TRIDENT_PRICE_START_DATE_INPUT"
 
       - name: Verify required secrets and variables
         env:
@@ -366,7 +381,7 @@ jobs:
           actual="${digest_line%% *}"
           if [ "$actual" != "$EXPECTED_VERIFIER_SHA256" ]; then exit 2; fi
 
-      - name: Enforce one-shot authorization immediately before provider access
+      - name: Validate one-shot authorization before dependency download
         env:
           AUTHORIZATION_MANIFEST: ${{ inputs.authorization_manifest }}
           AUTHORIZATION_MANIFEST_SHA256: ${{ inputs.authorization_manifest_sha256 }}
@@ -388,6 +403,23 @@ jobs:
         with:
           name: financial-sync-python-runtime-${{ github.run_id }}-${{ github.run_attempt }}
           path: ${{ runner.temp }}/python-deps
+
+      - name: Enforce one-shot authorization immediately before provider access
+        env:
+          AUTHORIZATION_MANIFEST: ${{ inputs.authorization_manifest }}
+          AUTHORIZATION_MANIFEST_SHA256: ${{ inputs.authorization_manifest_sha256 }}
+          AUTHORIZATION_SIGNATURE: ${{ inputs.authorization_signature }}
+          AUTHORIZATION_HMAC_KEY: ${{ secrets.ASTROCYTE_AUTHORIZATION_HMAC_KEY }}
+          AUTHORIZATION_NONCE: ${{ inputs.authorization_nonce }}
+          AUTHORIZATION_RECEIPT_ID: ${{ inputs.authorization_receipt_id }}
+          GITHUB_TOKEN: ${{ github.token }}
+        run: |
+          /usr/bin/python3 -I -S .github/scripts/check_mutation_contract.py \
+            --workflow financial-data-sync \
+            --replay-phase enforce \
+            --input "scope=${{ inputs.scope }}" \
+            --input "trident_mode=${{ inputs.trident_mode }}" \
+            --input "trident_price_start_date=${{ inputs.trident_price_start_date }}"
 
       - name: Refresh core feeds
         working-directory: ./backend
@@ -461,7 +493,7 @@ jobs:
           actual="${digest_line%% *}"
           if [ "$actual" != "$EXPECTED_VERIFIER_SHA256" ]; then exit 2; fi
 
-      - name: Enforce one-shot authorization immediately before provider access
+      - name: Validate one-shot authorization before dependency download
         env:
           AUTHORIZATION_MANIFEST: ${{ inputs.authorization_manifest }}
           AUTHORIZATION_MANIFEST_SHA256: ${{ inputs.authorization_manifest_sha256 }}
@@ -483,6 +515,23 @@ jobs:
         with:
           name: financial-sync-python-runtime-${{ github.run_id }}-${{ github.run_attempt }}
           path: ${{ runner.temp }}/python-deps
+
+      - name: Enforce one-shot authorization immediately before provider access
+        env:
+          AUTHORIZATION_MANIFEST: ${{ inputs.authorization_manifest }}
+          AUTHORIZATION_MANIFEST_SHA256: ${{ inputs.authorization_manifest_sha256 }}
+          AUTHORIZATION_SIGNATURE: ${{ inputs.authorization_signature }}
+          AUTHORIZATION_HMAC_KEY: ${{ secrets.ASTROCYTE_AUTHORIZATION_HMAC_KEY }}
+          AUTHORIZATION_NONCE: ${{ inputs.authorization_nonce }}
+          AUTHORIZATION_RECEIPT_ID: ${{ inputs.authorization_receipt_id }}
+          GITHUB_TOKEN: ${{ github.token }}
+        run: |
+          /usr/bin/python3 -I -S .github/scripts/check_mutation_contract.py \
+            --workflow financial-data-sync \
+            --replay-phase enforce \
+            --input "scope=${{ inputs.scope }}" \
+            --input "trident_mode=${{ inputs.trident_mode }}" \
+            --input "trident_price_start_date=${{ inputs.trident_price_start_date }}"
 
       - name: Refresh historical prices
         working-directory: ./backend
@@ -553,7 +602,7 @@ jobs:
           actual="${digest_line%% *}"
           if [ "$actual" != "$EXPECTED_VERIFIER_SHA256" ]; then exit 2; fi
 
-      - name: Enforce one-shot authorization immediately before provider access
+      - name: Validate one-shot authorization before dependency download
         env:
           AUTHORIZATION_MANIFEST: ${{ inputs.authorization_manifest }}
           AUTHORIZATION_MANIFEST_SHA256: ${{ inputs.authorization_manifest_sha256 }}
@@ -575,6 +624,23 @@ jobs:
         with:
           name: financial-sync-python-runtime-${{ github.run_id }}-${{ github.run_attempt }}
           path: ${{ runner.temp }}/python-deps
+
+      - name: Enforce one-shot authorization immediately before provider access
+        env:
+          AUTHORIZATION_MANIFEST: ${{ inputs.authorization_manifest }}
+          AUTHORIZATION_MANIFEST_SHA256: ${{ inputs.authorization_manifest_sha256 }}
+          AUTHORIZATION_SIGNATURE: ${{ inputs.authorization_signature }}
+          AUTHORIZATION_HMAC_KEY: ${{ secrets.ASTROCYTE_AUTHORIZATION_HMAC_KEY }}
+          AUTHORIZATION_NONCE: ${{ inputs.authorization_nonce }}
+          AUTHORIZATION_RECEIPT_ID: ${{ inputs.authorization_receipt_id }}
+          GITHUB_TOKEN: ${{ github.token }}
+        run: |
+          /usr/bin/python3 -I -S .github/scripts/check_mutation_contract.py \
+            --workflow financial-data-sync \
+            --replay-phase enforce \
+            --input "scope=${{ inputs.scope }}" \
+            --input "trident_mode=${{ inputs.trident_mode }}" \
+            --input "trident_price_start_date=${{ inputs.trident_price_start_date }}"
 
       - name: Refresh Trident screener
         working-directory: ./backend
@@ -663,7 +729,7 @@ jobs:
           actual="${digest_line%% *}"
           if [ "$actual" != "$EXPECTED_VERIFIER_SHA256" ]; then exit 2; fi
 
-      - name: Enforce one-shot authorization immediately before provider access
+      - name: Validate one-shot authorization before dependency download
         env:
           AUTHORIZATION_MANIFEST: ${{ inputs.authorization_manifest }}
           AUTHORIZATION_MANIFEST_SHA256: ${{ inputs.authorization_manifest_sha256 }}
@@ -685,6 +751,23 @@ jobs:
         with:
           name: financial-sync-python-runtime-${{ github.run_id }}-${{ github.run_attempt }}
           path: ${{ runner.temp }}/python-deps
+
+      - name: Enforce one-shot authorization immediately before provider access
+        env:
+          AUTHORIZATION_MANIFEST: ${{ inputs.authorization_manifest }}
+          AUTHORIZATION_MANIFEST_SHA256: ${{ inputs.authorization_manifest_sha256 }}
+          AUTHORIZATION_SIGNATURE: ${{ inputs.authorization_signature }}
+          AUTHORIZATION_HMAC_KEY: ${{ secrets.ASTROCYTE_AUTHORIZATION_HMAC_KEY }}
+          AUTHORIZATION_NONCE: ${{ inputs.authorization_nonce }}
+          AUTHORIZATION_RECEIPT_ID: ${{ inputs.authorization_receipt_id }}
+          GITHUB_TOKEN: ${{ github.token }}
+        run: |
+          /usr/bin/python3 -I -S .github/scripts/check_mutation_contract.py \
+            --workflow financial-data-sync \
+            --replay-phase enforce \
+            --input "scope=${{ inputs.scope }}" \
+            --input "trident_mode=${{ inputs.trident_mode }}" \
+            --input "trident_price_start_date=${{ inputs.trident_price_start_date }}"
 
       - name: Refresh production reference backtest
         working-directory: ./backend
@@ -758,7 +841,7 @@ jobs:
           actual="${digest_line%% *}"
           if [ "$actual" != "$EXPECTED_VERIFIER_SHA256" ]; then exit 2; fi
 
-      - name: Enforce one-shot authorization immediately before provider access
+      - name: Validate one-shot authorization before dependency download
         env:
           AUTHORIZATION_MANIFEST: ${{ inputs.authorization_manifest }}
           AUTHORIZATION_MANIFEST_SHA256: ${{ inputs.authorization_manifest_sha256 }}
@@ -779,6 +862,23 @@ jobs:
         with:
           name: financial-sync-python-runtime-${{ github.run_id }}-${{ github.run_attempt }}
           path: ${{ runner.temp }}/python-deps
+
+      - name: Enforce one-shot authorization immediately before provider access
+        env:
+          AUTHORIZATION_MANIFEST: ${{ inputs.authorization_manifest }}
+          AUTHORIZATION_MANIFEST_SHA256: ${{ inputs.authorization_manifest_sha256 }}
+          AUTHORIZATION_SIGNATURE: ${{ inputs.authorization_signature }}
+          AUTHORIZATION_HMAC_KEY: ${{ secrets.ASTROCYTE_AUTHORIZATION_HMAC_KEY }}
+          AUTHORIZATION_NONCE: ${{ inputs.authorization_nonce }}
+          AUTHORIZATION_RECEIPT_ID: ${{ inputs.authorization_receipt_id }}
+          GITHUB_TOKEN: ${{ github.token }}
+        run: |
+          /usr/bin/python3 -I -S .github/scripts/check_mutation_contract.py \
+            --workflow financial-data-sync \
+            --replay-phase enforce \
+            --input "scope=${{ inputs.scope }}" \
+            --input "trident_mode=${{ inputs.trident_mode }}" \
+            --input "trident_price_start_date=${{ inputs.trident_price_start_date }}"
 
       - name: Post-refresh schema check
         working-directory: ./backend

@@ -193,8 +193,6 @@ jobs:
       PYTHONPATH: ${{ runner.temp }}/python-deps
       MUTATION_GATE: ${{ vars.ASTROCYTE_MUTATION_GATE }}
       SOURCE_RIGHTS_GATE: ${{ vars.ASTROCYTE_SOURCE_RIGHTS_GATE }}
-      SUPABASE_DB_URL_VAR: ${{ vars.SUPABASE_DB_URL }}
-      DATABASE_URL_VAR: ${{ vars.DATABASE_URL }}
       APPLY_SCHEMA: ${{ github.event_name == 'workflow_dispatch' && inputs.apply_schema || false }}
       RUN_TRIDENT_ETL: ${{ github.event_name == 'workflow_dispatch' && inputs.run_trident_etl || false }}
       TRIDENT_PROVIDER: ${{ vars.TRIDENT_PROVIDER || 'global_yahoo' }}
@@ -264,7 +262,7 @@ jobs:
             exit 2
           fi
 
-      - name: Enforce one-shot authorization immediately before provider access
+      - name: Validate one-shot authorization before dependency download
         env:
           AUTHORIZATION_SIGNATURE: ${{ inputs.authorization_signature }}
           AUTHORIZATION_HMAC_KEY: ${{ secrets.ASTROCYTE_AUTHORIZATION_HMAC_KEY }}
@@ -278,12 +276,6 @@ jobs:
             --input "apply_schema=$APPLY_SCHEMA" \
             --input "run_trident_etl=$RUN_TRIDENT_ETL"
 
-      - name: Download prepared dependencies after authority
-        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4
-        with:
-          name: trident-supabase-python-runtime-${{ github.run_id }}-${{ github.run_attempt }}
-          path: ${{ runner.temp }}/python-deps
-
       - name: Apply provider kill switches
         run: |
           if [ "$MUTATION_GATE" != "APPROVED" ]; then
@@ -294,6 +286,26 @@ jobs:
             echo "::error::Trident ETL requires ASTROCYTE_SOURCE_RIGHTS_GATE=APPROVED."
             exit 2
           fi
+
+      - name: Download prepared dependencies after authority
+        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4
+        with:
+          name: trident-supabase-python-runtime-${{ github.run_id }}-${{ github.run_attempt }}
+          path: ${{ runner.temp }}/python-deps
+
+      - name: Enforce one-shot authorization immediately before provider access
+        env:
+          AUTHORIZATION_SIGNATURE: ${{ inputs.authorization_signature }}
+          AUTHORIZATION_HMAC_KEY: ${{ secrets.ASTROCYTE_AUTHORIZATION_HMAC_KEY }}
+          AUTHORIZATION_NONCE: ${{ inputs.authorization_nonce }}
+          AUTHORIZATION_RECEIPT_ID: ${{ inputs.authorization_receipt_id }}
+          GITHUB_TOKEN: ${{ github.token }}
+        run: |
+          /usr/bin/python3 -I -S .github/scripts/check_mutation_contract.py \
+            --workflow trident-supabase \
+            --replay-phase enforce \
+            --input "apply_schema=$APPLY_SCHEMA" \
+            --input "run_trident_etl=$RUN_TRIDENT_ETL"
 
       - name: Pre-migration schema check
         working-directory: ./backend
@@ -313,13 +325,7 @@ jobs:
             SUPABASE_DB_URL="$DATABASE_URL"
           fi
           if [ -z "$SUPABASE_DB_URL" ]; then
-            SUPABASE_DB_URL="$SUPABASE_DB_URL_VAR"
-          fi
-          if [ -z "$SUPABASE_DB_URL" ]; then
-            SUPABASE_DB_URL="$DATABASE_URL_VAR"
-          fi
-          if [ -z "$SUPABASE_DB_URL" ]; then
-            echo "::error::SUPABASE_DB_URL or DATABASE_URL is required as a GitHub Actions secret or variable to apply SQL migrations."
+            echo "::error::SUPABASE_DB_URL or DATABASE_URL is required as a GitHub Actions secret to apply SQL migrations."
             echo "SUPABASE_URL + SUPABASE_SERVICE_KEY can validate REST schema and write rows, but cannot run DDL SQL."
             exit 2
           fi

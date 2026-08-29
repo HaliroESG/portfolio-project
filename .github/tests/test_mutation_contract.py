@@ -262,9 +262,27 @@ class MutationContractTests(unittest.TestCase):
                 run_id="42",
             )
 
-    def test_pre_provider_revalidation_rejects_expired_authority(self) -> None:
+    def test_download_crossing_expiry_requires_post_download_revalidation(self) -> None:
         manifest, inputs = valid_case()
-        check(manifest, inputs)
+        validate_contract(
+            manifest,
+            expected_manifest_sha256=manifest_sha256(manifest),
+            signature=authorization_signature(manifest, HMAC_KEY),
+            hmac_key=HMAC_KEY,
+            expected_nonce=NONCE,
+            expected_receipt_id=RECEIPT_ID,
+            workflow="trident-supabase",
+            repository="HaliroESG/portfolio-project",
+            workflow_ref=(
+                "HaliroESG/portfolio-project/.github/workflows/"
+                "trident-supabase.yml@refs/heads/main"
+            ),
+            event_name="workflow_dispatch",
+            ref="refs/heads/main",
+            run_sha=RUN_SHA,
+            raw_inputs=inputs,
+            now=datetime(2026, 8, 29, 17, 59, 59, tzinfo=timezone.utc),
+        )
         with self.assertRaisesRegex(ContractError, "expired"):
             validate_contract(
                 manifest,

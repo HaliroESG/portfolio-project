@@ -53,10 +53,16 @@ Python in isolated mode (`/usr/bin/python3 -I -S`), so `PYTHONPATH`, user-site
 packages, and `sitecustomize` cannot run while the HMAC key is present. Runtime
 dependencies are prepared in a separate job that has no Production environment
 and no secret. Each protected job starts on a fresh runner, authenticates the
-manifest before mutable setup, rechecks the verifier, revalidates authority,
-and only then downloads the prepared dependency artifact. Provider secrets are
-step-scoped after that final boundary. The initial claim is not sufficient if
-authority expires while trusted setup runs.
+manifest before mutable setup, rechecks the verifier, and revalidates authority
+before downloading the prepared dependency artifact. After that download, it
+runs the same isolated HMAC, freshness, input, target, receipt, nonce, and
+current-run anti-replay validation again immediately before the first
+provider-secret step. Provider secrets are step-scoped after that final
+boundary. An authority that expires during download therefore fails closed.
+
+Database URLs are credentials. SUPABASE_DB_URL and DATABASE_URL are accepted
+only as Production secrets on the exact migration step that invokes psql; no
+repository variable or job-scoped fallback is accepted.
 
 All write workflows share portfolio-production-mutation with
 cancel-in-progress: false. A newer run cannot cancel a mutation already in
@@ -123,6 +129,15 @@ configured under separate authority, every Production mutation fails closed.
 Dry-run modes still read provider data and therefore require the same authentic,
 one-shot authority and provider-secret boundary; `dry_run=true` removes writes,
 not provider access.
+
+The existing backend dependency ranges are not hash-locked. This correction
+does not claim supply-chain immutability: dependency preparation remains on a
+separate secret-free runner, the protected runner downloads the artifact before
+the final isolated authority check, and no provider secret is exposed until
+that check passes. A reproducible hash-locked production dependency set needs a
+separate cross-platform dependency qualification change before operational
+activation; provider gates and missing authority keep the current workflows
+fail-closed in the meantime.
 
 ## Migration and postconditions
 
