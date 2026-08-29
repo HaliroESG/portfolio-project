@@ -1,0 +1,121 @@
+schema_version: astrocyte_workflow_parse_incident_handoff_v1
+workstream: portfolio-pr11-postmerge-workflow-parse-v1
+owner_thread_id: 01a04cc7-807e-7720-b53e-011f4e5dacfd
+controller_thread_id: 01a048fb-6d82-7363-be6a-781ed87229b0
+updated_at_utc: 2026-08-29T11:57:33Z
+status: READY_FOR_INDEPENDENT_REVIEW
+route: solo
+lease:
+  registry: /Users/oliviersoudee/.codex/haliro-execution-governor/portfolio-project-workstreams.json
+  profile: high-risk-train
+  base_sha: 994a9e530275627667b23de64c375804ecec94a9
+  authority_id: incident-postmerge-pr11-2026-08-29
+  authority_scope_sha256: 6cb78c9af217f87635e9acc01854e071daf21830ab51406743ef08de3d2e13e4
+  allowed_actions:
+    - commit
+    - push
+    - automatic-ci
+    - fix-push
+incident:
+  merged_pr: 11
+  exact_main: 994a9e530275627667b23de64c375804ecec94a9
+  symptom: FIVE_PUSH_RUNS_COMPLETED_FAILURE_WITH_ZERO_JOBS_AND_NO_LOGS
+  affected_runs:
+    trident_supabase: 33250950667
+    production_data_remediation: 33250951014
+    schedule: 33250951414
+    trident_price_backfill: 33250951928
+    trident_stock_insights: 33250952353
+  unaffected_runs:
+    workflow_parity: 33250952940
+    frontend_ci: 33250952987
+diagnosis:
+  reproducer: ACTIONLINT_V1_7_7_PINNED_GO_MODULE
+  command: go_run_github_com_rhysd_actionlint_cmd_actionlint_at_v1_7_7
+  pre_fix_errors: 10
+  exact_error: RUNNER_CONTEXT_NOT_ALLOWED_IN_JOBS_JOB_ENV
+  invalid_expression: PYTHONPATH_RUNNER_TEMP_AT_JOB_ENV
+  permitted_replacement_context: GITHUB_WORKSPACE
+git:
+  branch: codex/pr11-postmerge-workflow-parse-v1
+  pr_number: 13
+  pr_state: OPEN_DRAFT
+  base_sha: 994a9e530275627667b23de64c375804ecec94a9
+  code_commit: dec1acfdc59854f1ec72f360e2920415296c4e06
+  code_tree: a5a4793d2dca2d4e486cd6c4752d936b24c52b32
+  seal_commit: GIT_OBJECT_CONTAINING_THIS_HANDOFF
+  mergeability_at_code_head: MERGEABLE_CLEAN
+impact:
+  backend_writes: NO_PAYLOAD_OR_ETL_CHANGE
+  supabase_schema_data: NO_SCHEMA_DATA_OR_PROVIDER_ACCESS
+  frontend_reads_ui: NO_TYPED_READ_OR_UI_CHANGE
+fix:
+  protected_jobs: 10
+  workflow_files: 5
+  job_env_pythonpath: GITHUB_WORKSPACE_DOT_PYTHON_DEPS
+  dependency_download_path: GITHUB_WORKSPACE_DOT_PYTHON_DEPS
+  new_contract: SEMANTICALLY_REJECT_RUNNER_CONTEXT_IN_ANY_JOB_LEVEL_ENV
+  new_negative_test: REINTRODUCE_RUNNER_TEMP_JOB_ENV_AND_REQUIRE_FAILURE
+security_properties:
+  production_mutation_trigger: WORKFLOW_DISPATCH_ONLY
+  production_environment_gate: PRESERVED
+  production_concurrency: portfolio-production-mutation
+  cancel_in_progress: false
+  authorization_order: PREVALIDATE_THEN_DOWNLOAD_THEN_ISOLATED_REVALIDATE_THEN_PROVIDER
+  verifier_command: /usr/bin/python3_-I_-S
+  downloaded_dependencies_active_during_hmac_validation: false
+  provider_credentials: PRODUCTION_SECRETS_ONLY_STEP_SCOPED_AFTER_FINAL_REVALIDATION
+  provider_credentials_from_vars_or_job_env: FORBIDDEN
+  hmac_authority_and_binding: PRESERVED
+  anti_replay_nonce_receipt_id: PRESERVED
+  restore_receipt_gate: PRESERVED
+  provider_variables: KILL_SWITCHES_ONLY
+  migrations: BLOCKING_PRECHECK_SINGLE_TRANSACTION_BLOCKING_POSTCHECK
+  scheduler_heartbeat: NON_MUTATING_NO_SECRETS
+  bootstrap_private_owner: FAIL_CLOSED_UNCHANGED
+  provider_protection_and_pitr_restore_evidence: SEPARATE_UNCHANGED_GATES
+tests:
+  actionlint_all_ten_workflows: PASS_ZERO_ERRORS
+  workflow_parity: PASS_10_FILES
+  workflow_contract_unittest: PASS_28_TOTAL
+  exact_runner_context_negative: PASS
+  backend_pytest: PASS_144
+  backend_py_compile: PASS
+  frontend_lint: PASS
+  frontend_tsc: PASS
+  frontend_build: PASS
+  frontend_critical_flows: PASS_28
+  frontend_smoke_supabase: NOT_RUN_NO_CONTRACT_CHANGE_AND_PROVIDER_ACCESS_FORBIDDEN
+  remote_workflow_parity_run: 33251234689
+  remote_frontend_ci_run: 33251234705
+  remote_trident_validation_run: 33251234687
+  remote_trident_validate_job: PASS
+  remote_prepare_runtime_job: SKIPPED_ON_PULL_REQUEST
+  remote_mutate_production_job: SKIPPED_ON_PULL_REQUEST
+  remote_exact_code_head: dec1acfdc59854f1ec72f360e2920415296c4e06
+review_payload:
+  definition: BINARY_DIFF_EXACT_MAIN_TO_CODE_COMMIT_EXCLUDING_SEAL_ARTIFACTS
+  file: review.diff
+  sidecar: review.diff.sha256
+  sha256: 06b61851e1f91982926fae1e5f0734a448460beb62947412c40a7b7fc865142f
+  changed_files: 7
+  file_sha256:
+    .github/scripts/check_workflow_parity.py: e51681c140d2995ff3d4c0f5fa002506ba5eca112f842b76c00c588e03e1ed8c
+    .github/tests/test_workflow_contracts.py: e9658b44251102fed7fb84812d6334ef9bcf63d9b9cf5a0a1cc520e2e3ad61ee
+    .github/workflows/production-data-remediation.yml: f7d278634e712b63ea50e5eca8942011ea3d2642b1287bdef3edac9868f5027a
+    .github/workflows/schedule.yml: 613dd562d0f7a5027c55a64703b3ad4f74387734f63479b408c122e0c1183d6a
+    .github/workflows/trident-price-backfill.yml: c7d19464012d692caff8ac41e183f07175bd87ba129b8153250f07cb8b5b40e2
+    .github/workflows/trident-stock-insights.yml: 1c37517a7d01a27135d3922834e5ebb68c905186aea7a69d78f1ade2fb1bc7a7
+    .github/workflows/trident-supabase.yml: 19b0e36dbe05508ad73d91fe4d66af9d86930b11a85ee3a5c0c6900338946b26
+risks:
+  - PYTHON_DEPENDENCIES_REMAIN_NOT_HASH_LOCKED_INHERITED_AND_NOT_EXPANDED_BY_THIS_FIX
+  - INTERNAL_CONTRACT_COVERS_THE_EXACT_RUNNER_JOB_ENV_REJECTION_NOT_ALL_FUTURE_GITHUB_EXPRESSION_RULES
+  - VERCEL_PREVIEW_STATUS_AND_DEPLOYMENT_WERE_AUTOMATIC_AFTER_PR_OPEN_NO_MANUAL_PROVIDER_ACCESS
+  - PRODUCTION_SECRETS_PROVIDER_GATES_PITR_AND_RESTORE_CAPABILITY_REMAIN_UNCONFIGURED_OR_UNVERIFIED
+blocked:
+  - NO_READY_TRANSITION_AUTHORIZED
+  - NO_MERGE_AUTHORIZED
+  - NO_WORKFLOW_DISPATCH_AUTHORIZED
+  - NO_PRODUCTION_OR_PROVIDER_ACCESS_AUTHORIZED
+next_single_action: INDEPENDENT_REVIEW_OF_EXACT_FINAL_PR13_HEAD_USING_SEALED_REVIEW_DIFF
+handoff_sidecar: handoff.yaml.sha256

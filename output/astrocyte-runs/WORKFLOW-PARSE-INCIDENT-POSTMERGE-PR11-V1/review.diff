@@ -1,0 +1,257 @@
+diff --git a/.github/scripts/check_workflow_parity.py b/.github/scripts/check_workflow_parity.py
+index 03db5c1..bd3b4e9 100644
+--- a/.github/scripts/check_workflow_parity.py
++++ b/.github/scripts/check_workflow_parity.py
+@@ -187,6 +187,21 @@ def _parse_workflow_document(name: str, text: str) -> dict[str, object]:
+     return parsed
+ 
+ 
++def _check_job_environment_contexts(name: str, text: str) -> None:
++    document = _parse_workflow_document(name, text)
++    jobs = document.get("jobs")
++    if not isinstance(jobs, dict):
++        raise AssertionError(f"{name}: jobs must be a mapping")
++    for job_name, job in jobs.items():
++        if not isinstance(job, dict):
++            raise AssertionError(f"{name}: job {job_name} must be a mapping")
++        encoded_environment = json.dumps(job.get("env", {}), sort_keys=True)
++        if "${{ runner." in encoded_environment:
++            raise AssertionError(
++                f"{name} {job_name}: runner context is unavailable in job env"
++            )
++
++
+ def _check_trust_boundaries(name: str, text: str) -> None:
+     document = _parse_workflow_document(name, text)
+     jobs = document.get("jobs")
+@@ -330,6 +345,7 @@ def validate_workflow_contract(contents: dict[str, str]) -> None:
+         raise AssertionError("workflow inventory mismatch")
+     for name, text in contents.items():
+         require(text, "permissions:\n  contents: read", name)
++        _check_job_environment_contexts(name, text)
+ 
+     bootstrap = contents["bootstrap-private-owner.yml"]
+     digest = hashlib.sha256(bootstrap.encode("utf-8")).hexdigest()
+diff --git a/.github/tests/test_workflow_contracts.py b/.github/tests/test_workflow_contracts.py
+index efab04f..b2f1926 100644
+--- a/.github/tests/test_workflow_contracts.py
++++ b/.github/tests/test_workflow_contracts.py
+@@ -47,6 +47,18 @@ class WorkflowContractTests(unittest.TestCase):
+         with self.assertRaisesRegex(AssertionError, "portfolio-production-mutation"):
+             validate_workflow_contract(contents)
+ 
++    def test_runner_context_in_job_environment_fails(self) -> None:
++        contents = workflow_contents()
++        contents["trident-price-backfill.yml"] = contents[
++            "trident-price-backfill.yml"
++        ].replace(
++            "${{ github.workspace }}/.python-deps",
++            "${{ runner.temp }}/.python-deps",
++            1,
++        )
++        with self.assertRaisesRegex(AssertionError, "runner context is unavailable"):
++            validate_workflow_contract(contents)
++
+     def test_failed_precheck_cannot_be_ignored(self) -> None:
+         contents = workflow_contents()
+         contents["trident-supabase.yml"] = contents["trident-supabase.yml"].replace(
+diff --git a/.github/workflows/production-data-remediation.yml b/.github/workflows/production-data-remediation.yml
+index cd16555..48eca69 100644
+--- a/.github/workflows/production-data-remediation.yml
++++ b/.github/workflows/production-data-remediation.yml
+@@ -84,7 +84,7 @@ jobs:
+     env:
+       AUTHORIZATION_MANIFEST: ${{ inputs.authorization_manifest }}
+       AUTHORIZATION_MANIFEST_SHA256: ${{ inputs.authorization_manifest_sha256 }}
+-      PYTHONPATH: ${{ runner.temp }}/python-deps
++      PYTHONPATH: ${{ github.workspace }}/.python-deps
+       MUTATION_GATE: ${{ vars.ASTROCYTE_MUTATION_GATE }}
+       SOURCE_RIGHTS_GATE: ${{ vars.ASTROCYTE_SOURCE_RIGHTS_GATE }}
+       TRIDENT_PROVIDER: ${{ vars.TRIDENT_PROVIDER || 'global_yahoo' }}
+@@ -181,7 +181,7 @@ jobs:
+         uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4
+         with:
+           name: remediation-python-runtime-${{ github.run_id }}-${{ github.run_attempt }}
+-          path: ${{ runner.temp }}/python-deps
++          path: ${{ github.workspace }}/.python-deps
+ 
+       - name: Enforce one-shot authorization immediately before provider access
+         env:
+diff --git a/.github/workflows/schedule.yml b/.github/workflows/schedule.yml
+index 5a87446..627be4f 100644
+--- a/.github/workflows/schedule.yml
++++ b/.github/workflows/schedule.yml
+@@ -110,7 +110,7 @@ jobs:
+     env:
+       AUTHORIZATION_MANIFEST: ${{ inputs.authorization_manifest }}
+       AUTHORIZATION_MANIFEST_SHA256: ${{ inputs.authorization_manifest_sha256 }}
+-      PYTHONPATH: ${{ runner.temp }}/python-deps
++      PYTHONPATH: ${{ github.workspace }}/.python-deps
+       SCOPE_INPUT: ${{ inputs.scope }}
+       TRIDENT_MODE_INPUT: ${{ inputs.trident_mode }}
+       TRIDENT_PRICE_START_DATE_INPUT: ${{ inputs.trident_price_start_date }}
+@@ -261,7 +261,7 @@ jobs:
+         uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4
+         with:
+           name: financial-sync-python-runtime-${{ github.run_id }}-${{ github.run_attempt }}
+-          path: ${{ runner.temp }}/python-deps
++          path: ${{ github.workspace }}/.python-deps
+ 
+       - name: Enforce one-shot authorization immediately before provider access
+         env:
+@@ -336,7 +336,7 @@ jobs:
+     if: ${{ needs.preflight.outputs.run_core == 'true' }}
+     timeout-minutes: 90
+     env:
+-      PYTHONPATH: ${{ runner.temp }}/python-deps
++      PYTHONPATH: ${{ github.workspace }}/.python-deps
+ 
+     steps:
+       - name: Checkout code
+@@ -402,7 +402,7 @@ jobs:
+         uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4
+         with:
+           name: financial-sync-python-runtime-${{ github.run_id }}-${{ github.run_attempt }}
+-          path: ${{ runner.temp }}/python-deps
++          path: ${{ github.workspace }}/.python-deps
+ 
+       - name: Enforce one-shot authorization immediately before provider access
+         env:
+@@ -448,7 +448,7 @@ jobs:
+     if: ${{ always() && needs.preflight.outputs.run_history == 'true' && needs.preflight.result == 'success' && (needs.refresh-core.result == 'success' || needs.refresh-core.result == 'skipped') }}
+     timeout-minutes: 120
+     env:
+-      PYTHONPATH: ${{ runner.temp }}/python-deps
++      PYTHONPATH: ${{ github.workspace }}/.python-deps
+ 
+     steps:
+       - name: Checkout code
+@@ -514,7 +514,7 @@ jobs:
+         uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4
+         with:
+           name: financial-sync-python-runtime-${{ github.run_id }}-${{ github.run_attempt }}
+-          path: ${{ runner.temp }}/python-deps
++          path: ${{ github.workspace }}/.python-deps
+ 
+       - name: Enforce one-shot authorization immediately before provider access
+         env:
+@@ -557,7 +557,7 @@ jobs:
+     if: ${{ always() && needs.preflight.outputs.run_trident == 'true' && needs.preflight.result == 'success' && (needs.refresh-core.result == 'success' || needs.refresh-core.result == 'skipped') }}
+     timeout-minutes: 180
+     env:
+-      PYTHONPATH: ${{ runner.temp }}/python-deps
++      PYTHONPATH: ${{ github.workspace }}/.python-deps
+ 
+     steps:
+       - name: Checkout code
+@@ -623,7 +623,7 @@ jobs:
+         uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4
+         with:
+           name: financial-sync-python-runtime-${{ github.run_id }}-${{ github.run_attempt }}
+-          path: ${{ runner.temp }}/python-deps
++          path: ${{ github.workspace }}/.python-deps
+ 
+       - name: Enforce one-shot authorization immediately before provider access
+         env:
+@@ -684,7 +684,7 @@ jobs:
+     if: ${{ always() && needs.preflight.outputs.run_backtest == 'true' && needs.preflight.result == 'success' && (needs.refresh-core.result == 'success' || needs.refresh-core.result == 'skipped') && (needs.refresh-market-history.result == 'success' || needs.refresh-market-history.result == 'skipped') }}
+     timeout-minutes: 60
+     env:
+-      PYTHONPATH: ${{ runner.temp }}/python-deps
++      PYTHONPATH: ${{ github.workspace }}/.python-deps
+ 
+     steps:
+       - name: Checkout code
+@@ -750,7 +750,7 @@ jobs:
+         uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4
+         with:
+           name: financial-sync-python-runtime-${{ github.run_id }}-${{ github.run_attempt }}
+-          path: ${{ runner.temp }}/python-deps
++          path: ${{ github.workspace }}/.python-deps
+ 
+       - name: Enforce one-shot authorization immediately before provider access
+         env:
+@@ -796,7 +796,7 @@ jobs:
+     if: ${{ always() && needs.preflight.result == 'success' && !contains(needs.*.result, 'failure') && !contains(needs.*.result, 'cancelled') }}
+     timeout-minutes: 45
+     env:
+-      PYTHONPATH: ${{ runner.temp }}/python-deps
++      PYTHONPATH: ${{ github.workspace }}/.python-deps
+ 
+     steps:
+       - name: Checkout code
+@@ -861,7 +861,7 @@ jobs:
+         uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4
+         with:
+           name: financial-sync-python-runtime-${{ github.run_id }}-${{ github.run_attempt }}
+-          path: ${{ runner.temp }}/python-deps
++          path: ${{ github.workspace }}/.python-deps
+ 
+       - name: Enforce one-shot authorization immediately before provider access
+         env:
+diff --git a/.github/workflows/trident-price-backfill.yml b/.github/workflows/trident-price-backfill.yml
+index ab4c726..1268fd3 100644
+--- a/.github/workflows/trident-price-backfill.yml
++++ b/.github/workflows/trident-price-backfill.yml
+@@ -83,7 +83,7 @@ jobs:
+     env:
+       AUTHORIZATION_MANIFEST: ${{ inputs.authorization_manifest }}
+       AUTHORIZATION_MANIFEST_SHA256: ${{ inputs.authorization_manifest_sha256 }}
+-      PYTHONPATH: ${{ runner.temp }}/python-deps
++      PYTHONPATH: ${{ github.workspace }}/.python-deps
+       MUTATION_GATE: ${{ vars.ASTROCYTE_MUTATION_GATE }}
+       SOURCE_RIGHTS_GATE: ${{ vars.ASTROCYTE_SOURCE_RIGHTS_GATE }}
+       TOP_N: ${{ inputs.top_n }}
+@@ -169,7 +169,7 @@ jobs:
+         uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4
+         with:
+           name: price-backfill-python-runtime-${{ github.run_id }}-${{ github.run_attempt }}
+-          path: ${{ runner.temp }}/python-deps
++          path: ${{ github.workspace }}/.python-deps
+ 
+       - name: Enforce one-shot authorization immediately before provider access
+         env:
+diff --git a/.github/workflows/trident-stock-insights.yml b/.github/workflows/trident-stock-insights.yml
+index bcf9ade..639d90e 100644
+--- a/.github/workflows/trident-stock-insights.yml
++++ b/.github/workflows/trident-stock-insights.yml
+@@ -83,7 +83,7 @@ jobs:
+     env:
+       AUTHORIZATION_MANIFEST: ${{ inputs.authorization_manifest }}
+       AUTHORIZATION_MANIFEST_SHA256: ${{ inputs.authorization_manifest_sha256 }}
+-      PYTHONPATH: ${{ runner.temp }}/python-deps
++      PYTHONPATH: ${{ github.workspace }}/.python-deps
+       MUTATION_GATE: ${{ vars.ASTROCYTE_MUTATION_GATE }}
+       SOURCE_RIGHTS_GATE: ${{ vars.ASTROCYTE_SOURCE_RIGHTS_GATE }}
+       OPENAI_MODEL: ${{ vars.OPENAI_MODEL || 'gpt-4.1-mini' }}
+@@ -172,7 +172,7 @@ jobs:
+         uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4
+         with:
+           name: stock-insights-python-runtime-${{ github.run_id }}-${{ github.run_attempt }}
+-          path: ${{ runner.temp }}/python-deps
++          path: ${{ github.workspace }}/.python-deps
+ 
+       - name: Enforce one-shot authorization immediately before provider access
+         env:
+diff --git a/.github/workflows/trident-supabase.yml b/.github/workflows/trident-supabase.yml
+index 5a54d4e..6f365c4 100644
+--- a/.github/workflows/trident-supabase.yml
++++ b/.github/workflows/trident-supabase.yml
+@@ -190,7 +190,7 @@ jobs:
+     env:
+       AUTHORIZATION_MANIFEST: ${{ inputs.authorization_manifest }}
+       AUTHORIZATION_MANIFEST_SHA256: ${{ inputs.authorization_manifest_sha256 }}
+-      PYTHONPATH: ${{ runner.temp }}/python-deps
++      PYTHONPATH: ${{ github.workspace }}/.python-deps
+       MUTATION_GATE: ${{ vars.ASTROCYTE_MUTATION_GATE }}
+       SOURCE_RIGHTS_GATE: ${{ vars.ASTROCYTE_SOURCE_RIGHTS_GATE }}
+       APPLY_SCHEMA: ${{ github.event_name == 'workflow_dispatch' && inputs.apply_schema || false }}
+@@ -291,7 +291,7 @@ jobs:
+         uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4
+         with:
+           name: trident-supabase-python-runtime-${{ github.run_id }}-${{ github.run_attempt }}
+-          path: ${{ runner.temp }}/python-deps
++          path: ${{ github.workspace }}/.python-deps
+ 
+       - name: Enforce one-shot authorization immediately before provider access
+         env:
