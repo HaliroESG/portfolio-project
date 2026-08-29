@@ -763,7 +763,7 @@ def fetch_all_rows(supabase: Any, table: str, selector: str) -> list[dict[str, A
     return rows
 
 
-def row_completeness(row: Mapping[str, Any]) -> tuple[int, int, int, float, int]:
+def row_completeness(row: Mapping[str, Any]) -> tuple[int, int, int, float, int, str]:
     data_state = set(row.get("data_state") or [])
     provider = clean_string(row.get("provider")) or ""
     source_index = clean_string(row.get("source_index")) or ""
@@ -780,6 +780,7 @@ def row_completeness(row: Mapping[str, Any]) -> tuple[int, int, int, float, int]
         source_rank + provider_rank,
         quality,
         len(clean_string(row.get("name")) or ""),
+        clean_string(row.get("instrument_key")) or "",
     )
 
 
