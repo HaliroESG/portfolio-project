@@ -32,6 +32,10 @@ CONTROLLER_REF_RE = re.compile(r"^[A-Z0-9][A-Z0-9._:/-]{7,127}$")
 NONCE_RE = re.compile(r"^[0-9a-f]{32,64}$")
 RECEIPT_ID_RE = re.compile(r"^[a-z0-9][a-z0-9-]{15,63}$")
 TICKER_RE = re.compile(r"^[A-Z0-9.^:=/-]{1,32}$")
+FAMILY_OFFICE_CANDIDATE_SHA = "c01eb33878e4030975144c5b0ae98e9bdf31ea04"
+FAMILY_OFFICE_MIGRATION_SHA256 = (
+    "5ca9423c2a4eb367d764b3c8830fb6ba2d38bb91f7b70f545576e618928932cf"
+)
 ALLOWED_CLEANUP = {"DELETED", "PAUSED", "RETAINED_WITH_AUTHORITY"}
 REQUIRED_MANIFEST_FIELDS = {
     "schema_version",
@@ -234,6 +238,18 @@ def _optional_ticker(value: str) -> Optional[str]:
     return value
 
 
+def _family_office_candidate_sha(value: str) -> str:
+    if value != FAMILY_OFFICE_CANDIDATE_SHA:
+        raise ContractError("Family Office candidate SHA is not the reviewed PR12 pin")
+    return value
+
+
+def _family_office_migration_sha256(value: str) -> str:
+    if value != FAMILY_OFFICE_MIGRATION_SHA256:
+        raise ContractError("Family Office migration SHA-256 is not the reviewed PR12 pin")
+    return value
+
+
 WORKFLOW_SCHEMAS: dict[str, dict[str, Callable[[str], Any]]] = {
     "financial-data-sync": {
         "scope": _enum("all", "core", "history", "trident", "backtest"),
@@ -262,6 +278,11 @@ WORKFLOW_SCHEMAS: dict[str, dict[str, Callable[[str], Any]]] = {
         "apply_schema": _bool,
         "run_trident_etl": _bool,
     },
+    "family-office-release": {
+        "candidate_sha": _family_office_candidate_sha,
+        "migration_sha256": _family_office_migration_sha256,
+        "mutate_production": _bool,
+    },
 }
 
 WORKFLOW_FILES = {
@@ -270,6 +291,7 @@ WORKFLOW_FILES = {
     "trident-price-backfill": "trident-price-backfill.yml",
     "trident-stock-insights": "trident-stock-insights.yml",
     "trident-supabase": "trident-supabase.yml",
+    "family-office-release": "family-office-release.yml",
 }
 
 
@@ -297,6 +319,8 @@ def normalize_inputs(workflow: str, raw: dict[str, str]) -> dict[str, Any]:
         normalized["apply_schema"] or normalized["run_trident_etl"]
     ):
         raise ContractError("at least one Supabase mutation must be explicitly selected")
+    if workflow == "family-office-release" and not normalized["mutate_production"]:
+        raise ContractError("Family Office Production mutation must be explicitly selected")
     return normalized
 
 

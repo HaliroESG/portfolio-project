@@ -125,6 +125,34 @@ class WorkflowContractTests(unittest.TestCase):
         with self.assertRaisesRegex(AssertionError, "pre-migration"):
             validate_workflow_contract(contents)
 
+    def test_family_office_local_receipt_cannot_unlock_production(self) -> None:
+        contents = workflow_contents()
+        contents["family-office-release.yml"] = contents[
+            "family-office-release.yml"
+        ].replace("recent ISOLATED_PROJECT receipt", "local restore receipt", 1)
+        with self.assertRaisesRegex(AssertionError, "ISOLATED_PROJECT"):
+            validate_workflow_contract(contents)
+
+    def test_family_office_mutation_cannot_be_enabled_by_default(self) -> None:
+        contents = workflow_contents()
+        contents["family-office-release.yml"] = contents[
+            "family-office-release.yml"
+        ].replace("default: false", "default: true", 1)
+        with self.assertRaisesRegex(AssertionError, "default: false"):
+            validate_workflow_contract(contents)
+
+    def test_family_office_http_503_refusal_is_required(self) -> None:
+        contents = workflow_contents()
+        contents["family-office-release.yml"] = contents[
+            "family-office-release.yml"
+        ].replace(
+            "FAMILY_OFFICE_PRODUCTION_HTTP_503: no provider mutation command is enabled.",
+            "Production enabled",
+            1,
+        )
+        with self.assertRaisesRegex(AssertionError, "HTTP_503"):
+            validate_workflow_contract(contents)
+
     def test_bootstrap_refusal_is_immutable(self) -> None:
         contents = workflow_contents()
         contents["bootstrap-private-owner.yml"] = contents[

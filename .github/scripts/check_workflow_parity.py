@@ -16,6 +16,7 @@ WORKFLOWS = ROOT / ".github" / "workflows"
 EXPECTED = {
     "bootstrap-private-owner.yml",
     "ci.yml",
+    "family-office-release.yml",
     "frontend-runtime-smoke.yml",
     "production-app-smoke.yml",
     "production-data-remediation.yml",
@@ -434,6 +435,78 @@ def validate_workflow_contract(contents: dict[str, str]) -> None:
         "bootstrap-private-owner.yml",
     )
 
+    family_office = contents["family-office-release.yml"]
+    family_validate = section(
+        family_office,
+        "  validate:\n",
+        "\n  prepare:\n",
+    )
+    family_prepare = section(
+        family_office,
+        "  prepare:\n",
+        "\n  mutate-production:\n",
+    )
+    family_mutate = family_office[family_office.index("  mutate-production:\n") :]
+    for untrusted_job, label in (
+        (family_validate, "validate"),
+        (family_prepare, "prepare"),
+    ):
+        forbid(untrusted_job, "secrets.", f"family-office-release.yml {label}")
+        forbid(
+            untrusted_job,
+            "environment: Production",
+            f"family-office-release.yml {label}",
+        )
+    require(family_prepare, "needs: validate", "family-office-release.yml prepare")
+    require(family_mutate, "environment: Production", "family-office-release.yml")
+    require(
+        family_office,
+        "default: false",
+        "family-office-release.yml mutate_production",
+    )
+    require(
+        family_mutate,
+        "github.event_name == 'workflow_dispatch' && inputs.mutate_production",
+        "family-office-release.yml mutate-production",
+    )
+    require(family_mutate, "ASTROCYTE_AUTHORIZATION_HMAC_KEY", "family-office-release.yml")
+    require(family_mutate, "ASTROCYTE_MUTATION_GATE", "family-office-release.yml")
+    require(
+        family_mutate,
+        "ASTROCYTE_FAMILY_OFFICE_PRODUCTION_GATE",
+        "family-office-release.yml",
+    )
+    require(family_office, "recent ISOLATED_PROJECT receipt", "family-office-release.yml")
+    require(family_prepare, "family_office_release_gate.py", "family-office-release.yml")
+    require(family_mutate, "check_mutation_contract.py", "family-office-release.yml")
+    require(family_mutate, "--workflow family-office-release", "family-office-release.yml")
+    require(family_mutate, "--replay-phase claim", "family-office-release.yml")
+    require(family_mutate, "--replay-phase enforce", "family-office-release.yml")
+    require(family_mutate, "retention-days: 30", "family-office-release.yml")
+    require_order(
+        family_mutate,
+        "Enforce one-shot authorization immediately before provider access",
+        "Refuse provider mutation while Production contract is HTTP 503",
+        "family-office-release.yml mutate-production",
+    )
+    require(
+        family_mutate,
+        "FAMILY_OFFICE_PRODUCTION_HTTP_503: no provider mutation command is enabled.",
+        "family-office-release.yml",
+    )
+    for forbidden_provider_input in (
+        "SUPABASE_DB_URL",
+        "DATABASE_URL",
+        "SUPABASE_SERVICE_KEY",
+        "VERCEL_TOKEN",
+    ):
+        forbid(
+            family_office,
+            forbidden_provider_input,
+            "family-office-release.yml provider-free contract",
+        )
+    _check_action_pins("family-office-release.yml", family_office)
+
     parity_on = section(contents["workflow-parity.yml"], "on:\n", "\npermissions:")
     require(parity_on, "pull_request:", "workflow-parity.yml")
     require(parity_on, "push:", "workflow-parity.yml")
@@ -445,6 +518,11 @@ def validate_workflow_contract(contents: dict[str, str]) -> None:
         contents["workflow-parity.yml"],
         "python3 -m unittest discover -s .github/tests -p 'test_*.py'",
         "workflow-parity.yml",
+    )
+    require(
+        contents["workflow-parity.yml"],
+        "fetch-depth: 0",
+        "workflow-parity.yml pinned candidate history",
     )
     _check_required_actionlint(contents["workflow-parity.yml"])
     _check_action_pins("workflow-parity.yml", contents["workflow-parity.yml"])
