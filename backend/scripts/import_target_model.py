@@ -19,6 +19,7 @@ if str(BACKEND_ROOT) not in sys.path:
     sys.path.append(str(BACKEND_ROOT))
 
 from supabase_key_guard import require_backend_supabase_key  # noqa: E402
+from owner_scope import owner_scoped_identifier, require_owner_user_id  # noqa: E402
 
 
 @dataclass(frozen=True)
@@ -454,10 +455,18 @@ def _chunks(rows: list[dict[str, Any]], size: int = 500):
         yield rows[index:index + size]
 
 
-def apply_target_model(report: dict[str, Any], *, supabase_client: Any) -> dict[str, Any]:
+def apply_target_model(
+    report: dict[str, Any],
+    *,
+    supabase_client: Any,
+    owner_user_id: str,
+) -> dict[str, Any]:
+    owner = require_owner_user_id(owner_user_id)
+    model_id = owner_scoped_identifier(owner, "target_model", report["kind"].lower(), "active")
     now = datetime.now(timezone.utc).isoformat()
     model_payload = {
-        "id": report["model_id"],
+        "id": model_id,
+        "owner_user_id": owner,
         "portfolio_scope": report["portfolio_scope"],
         "model_name": report["model_name"],
         "source_file": report["source_file"],
@@ -469,14 +478,30 @@ def apply_target_model(report: dict[str, Any], *, supabase_client: Any) -> dict[
         "report_json": report["report_json"],
         "updated_at": now,
     }
-    supabase_client.table("target_models").upsert(model_payload, on_conflict="id").execute()
+    supabase_client.table("target_models").upsert(
+        model_payload,
+        on_conflict="owner_user_id,id",
+    ).execute()
 
     for table in ("target_buckets", "target_envelope_lines", "target_model_audit_holdings"):
-        supabase_client.table(table).delete().eq("model_id", report["model_id"]).execute()
+        (
+            supabase_client
+            .table(table)
+            .delete()
+            .eq("owner_user_id", owner)
+            .eq("model_id", model_id)
+            .execute()
+        )
 
-    bucket_payloads = [_payload(row) for row in report["buckets"]]
-    envelope_payloads = [_payload(row) for row in report["envelope_lines"]]
-    audit_payloads = [_payload(row) for row in report["audit_holdings"]]
+    def owner_payload(row: Any) -> dict[str, Any]:
+        payload = _payload(row)
+        payload["owner_user_id"] = owner
+        payload["model_id"] = model_id
+        return payload
+
+    bucket_payloads = [owner_payload(row) for row in report["buckets"]]
+    envelope_payloads = [owner_payload(row) for row in report["envelope_lines"]]
+    audit_payloads = [owner_payload(row) for row in report["audit_holdings"]]
 
     for chunk in _chunks(bucket_payloads):
         supabase_client.table("target_buckets").insert(chunk).execute()
@@ -486,7 +511,8 @@ def apply_target_model(report: dict[str, Any], *, supabase_client: Any) -> dict[
         supabase_client.table("target_model_audit_holdings").insert(chunk).execute()
 
     return {
-        "model_upserted": report["model_id"],
+        "model_upserted": model_id,
+        "owner_user_id": owner,
         "buckets_inserted": len(bucket_payloads),
         "envelope_lines_inserted": len(envelope_payloads),
         "audit_holdings_inserted": len(audit_payloads),
@@ -499,6 +525,7 @@ def run_import(
     kind: str,
     dry_run: bool = True,
     supabase_client: Any | None = None,
+    owner_user_id: str | None = None,
 ) -> dict[str, Any]:
     report = parse_target_model(input_path, kind=kind)
     write_report = {
@@ -510,7 +537,11 @@ def run_import(
     if not dry_run:
         if supabase_client is None:
             raise RuntimeError("A Supabase client is required when dry_run=False")
-        write_report = apply_target_model(report, supabase_client=supabase_client)
+        write_report = apply_target_model(
+            report,
+            supabase_client=supabase_client,
+            owner_user_id=require_owner_user_id(owner_user_id),
+        )
 
     return {
         "ok": report["ok"],
@@ -537,11 +568,18 @@ def _parse_args() -> argparse.Namespace:
     parser.add_argument("--file", required=True, help="Target model .xlsx file")
     parser.add_argument("--dry-run", action="store_true", help="Validate and report without writing Supabase")
     parser.add_argument("--apply", action="store_true", help="Write target model to Supabase")
+    parser.add_argument(
+        "--owner-user-id",
+        default=None,
+        help="Explicit authenticated owner UUID; required with --apply",
+    )
     args = parser.parse_args()
     if args.dry_run and args.apply:
         parser.error("--dry-run and --apply are mutually exclusive")
     if not args.dry_run and not args.apply:
         args.dry_run = True
+    if args.apply and not args.owner_user_id:
+        parser.error("--owner-user-id is required with --apply")
     return args
 
 
@@ -549,7 +587,13 @@ def main() -> int:
     args = _parse_args()
     try:
         client = _build_supabase_client() if args.apply else None
-        report = run_import(args.file, kind=args.kind, dry_run=args.dry_run, supabase_client=client)
+        report = run_import(
+            args.file,
+            kind=args.kind,
+            dry_run=args.dry_run,
+            supabase_client=client,
+            owner_user_id=args.owner_user_id,
+        )
     except Exception as exc:
         report = {
             "ok": False,

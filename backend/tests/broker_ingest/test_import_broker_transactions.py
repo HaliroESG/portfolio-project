@@ -2,6 +2,8 @@ from datetime import date
 
 from scripts.import_broker_transactions import run_import
 
+OWNER_A = "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa"
+
 
 class _FakeTable:
     def __init__(self):
@@ -109,14 +111,16 @@ def test_run_import_apply_upserts_with_source_filename(tmp_path):
         envelope="CTO",
         dry_run=False,
         supabase_client=fake,
+        owner_user_id=OWNER_A,
     )
 
     assert report["dry_run"] is False
     assert report["upserted_count"] == 1
     assert fake.table_obj.name == "broker_transactions"
-    assert fake.table_obj.on_conflict == "idempotency_key"
+    assert fake.table_obj.on_conflict == "owner_user_id,idempotency_key"
     assert fake.table_obj.payloads[0]["source_file"] == "fortuneo.csv"
-    assert fake.table_obj.payloads[0]["idempotency_key"] == "FORTUNEO:acct-1:op-1"
+    assert fake.table_obj.payloads[0]["owner_user_id"] == OWNER_A
+    assert fake.table_obj.payloads[0]["idempotency_key"] == f"{OWNER_A}:FORTUNEO:acct-1:op-1"
 
 
 def test_run_import_can_compare_positions_snapshot(tmp_path):
@@ -163,6 +167,7 @@ CW8,FR0010756098,10,100.62,EUR
         persist_reconciliation=True,
         reconciliation_date=date(2026, 5, 11),
         supabase_client=fake,
+        owner_user_id=OWNER_A,
     )
 
     assert report["reconciliation_persisted"] == {
@@ -172,7 +177,7 @@ CW8,FR0010756098,10,100.62,EUR
     }
     assert fake.tables["broker_transactions"].operations[0][0] == "upsert"
     run_payload = fake.tables["broker_reconciliation_runs"].operations[0][1]
-    assert run_payload["idempotency_key"] == "FORTUNEO:acct-1:2026-05-11:fortuneo.csv:positions.csv"
+    assert run_payload["idempotency_key"] == f"{OWNER_A}:FORTUNEO:acct-1:2026-05-11:fortuneo.csv:positions.csv"
 
 
 def test_run_import_rejects_reconciliation_persistence_in_dry_run(tmp_path):

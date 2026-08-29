@@ -70,6 +70,8 @@ drop index if exists public.fo_manual_holdings_owner_id_uq;
 drop index if exists public.fo_ips_policies_owner_id_uq;
 drop index if exists public.fo_decisions_owner_id_uq;
 drop index if exists public.fo_order_drafts_owner_id_uq;
+drop index if exists public.broker_transactions_owner_idempotency_uq;
+drop index if exists public.broker_reconciliation_runs_owner_idempotency_uq;
 
 do $$
 declare

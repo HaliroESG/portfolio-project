@@ -364,6 +364,39 @@ begin
 end;
 $$;
 
+-- Active legacy root writers use owner-composite conflict targets. Their
+-- idempotency values are also owner-namespaced, so older global unique indexes
+-- remain compatible while the write contract becomes explicitly tenant-safe.
+do $$
+declare
+  table_regclass regclass;
+begin
+  table_regclass := to_regclass('public.broker_transactions');
+  if table_regclass is not null
+    and exists (
+      select 1 from pg_attribute
+      where attrelid = table_regclass
+        and attname = 'idempotency_key' and not attisdropped
+    )
+  then
+    create unique index if not exists broker_transactions_owner_idempotency_uq
+      on public.broker_transactions (owner_user_id, idempotency_key);
+  end if;
+
+  table_regclass := to_regclass('public.broker_reconciliation_runs');
+  if table_regclass is not null
+    and exists (
+      select 1 from pg_attribute
+      where attrelid = table_regclass
+        and attname = 'idempotency_key' and not attisdropped
+    )
+  then
+    create unique index if not exists broker_reconciliation_runs_owner_idempotency_uq
+      on public.broker_reconciliation_runs (owner_user_id, idempotency_key);
+  end if;
+end;
+$$;
+
 -- Every known legacy child-parent edge is owner-composite. The catalog-driven
 -- guards let this migration cover older deployments where optional legacy
 -- tables/columns are absent, while refusing a present contaminated edge.

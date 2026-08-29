@@ -2,6 +2,7 @@ import assert from 'node:assert/strict'
 
 const { commandAvailability } = await import('../lib/commandAvailability.ts')
 const { assertOwnerIsolation, familyOfficeSWRKey, OwnerIsolationError } = await import('../lib/ownerIsolation.ts')
+const { ownerScopedSWRKey } = await import('../lib/useOwnerScopedSWR.ts')
 
 const configuredProduction = commandAvailability({
   commandApiUrl: 'https://configured-but-unused.invalid',
@@ -34,5 +35,7 @@ assert.throws(
   (error) => error instanceof OwnerIsolationError && error.code === 'CROSS_OWNER_DATA_REFUSED',
 )
 assert.notEqual(familyOfficeSWRKey('owner-a'), familyOfficeSWRKey('owner-b'))
+assert.notDeepEqual(ownerScopedSWRKey('targets', 'owner-a'), ownerScopedSWRKey('targets', 'owner-b'))
+assert.throws(() => ownerScopedSWRKey('targets', ''), /owner identity/i)
 
 console.log('two-owner UI isolation and Production command guard tests: PASS')

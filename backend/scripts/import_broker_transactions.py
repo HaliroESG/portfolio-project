@@ -24,6 +24,7 @@ from broker_ingest.reconciliation import (  # noqa: E402
 from broker_ingest.sync_reconciliation import persist_reconciliation_report  # noqa: E402
 from broker_ingest.sync_transactions import upsert_canonical_transactions  # noqa: E402
 from supabase_key_guard import require_backend_supabase_key  # noqa: E402
+from owner_scope import require_owner_user_id  # noqa: E402
 
 
 ParserFn = Callable[[str | Path, str, str | None], list[CanonicalTransaction]]
@@ -76,12 +77,14 @@ def build_import_report(
     dry_run: bool,
     upserted_count: int,
     positions_file: str | Path | None = None,
+    owner_user_id: str | None = None,
 ) -> dict[str, Any]:
     broker_positions = parse_broker_positions_csv(positions_file) if positions_file else None
     position_affecting_count = len([tx for tx in transactions if tx.side in {"BUY", "SELL"}])
     return {
         "broker": broker.upper(),
         "account_id": account_id,
+        "owner_user_id": owner_user_id,
         "source_file": Path(source_file).name,
         "dry_run": dry_run,
         "parsed_count": len(transactions),
@@ -104,11 +107,13 @@ def run_import(
     persist_reconciliation: bool = False,
     reconciliation_date: date | None = None,
     supabase_client: Any | None = None,
+    owner_user_id: str | None = None,
 ) -> dict[str, Any]:
     if persist_reconciliation and dry_run:
         raise RuntimeError("persist_reconciliation requires dry_run=False")
     if persist_reconciliation and not positions_file:
         raise RuntimeError("persist_reconciliation requires positions_file")
+    owner = require_owner_user_id(owner_user_id) if not dry_run else None
 
     broker_key = broker.lower()
     parser = PARSERS.get(broker_key)
@@ -129,6 +134,7 @@ def run_import(
             upserted_count = upsert_canonical_transactions(
                 client,
                 transactions,
+                owner_user_id=owner,
                 source_file=path.name,
             )
         except Exception as exc:
@@ -144,6 +150,7 @@ def run_import(
         dry_run=dry_run,
         upserted_count=upserted_count,
         positions_file=positions_file,
+        owner_user_id=owner,
     )
     if persist_reconciliation:
         try:
@@ -151,6 +158,7 @@ def run_import(
                 client,
                 report,
                 reconciliation_date=reconciliation_date or date.today(),
+                owner_user_id=owner,
                 source_file=path.name,
                 positions_file=str(positions_file) if positions_file else None,
             )
@@ -204,6 +212,11 @@ def _parse_args() -> argparse.Namespace:
     parser.add_argument("--dry-run", action="store_true", help="Parse and report without writing Supabase")
     parser.add_argument("--apply", action="store_true", help="Write parsed transactions to Supabase")
     parser.add_argument(
+        "--owner-user-id",
+        default=None,
+        help="Explicit authenticated owner UUID; required with --apply",
+    )
+    parser.add_argument(
         "--persist-reconciliation",
         action="store_true",
         help="Persist reconciliation run/items; requires --apply and --positions-file",
@@ -223,6 +236,8 @@ def _parse_args() -> argparse.Namespace:
         parser.error("--persist-reconciliation requires --apply")
     if args.persist_reconciliation and not args.positions_file:
         parser.error("--persist-reconciliation requires --positions-file")
+    if args.apply and not args.owner_user_id:
+        parser.error("--owner-user-id is required with --apply")
     return args
 
 
@@ -237,6 +252,7 @@ def main() -> None:
         positions_file=args.positions_file,
         persist_reconciliation=args.persist_reconciliation,
         reconciliation_date=_parse_reconciliation_date(args.reconciliation_date),
+        owner_user_id=args.owner_user_id,
     )
     if args.json:
         print(json.dumps(report, indent=2, sort_keys=True))

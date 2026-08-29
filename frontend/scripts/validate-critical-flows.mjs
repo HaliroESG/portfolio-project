@@ -295,6 +295,8 @@ try {
   const dashboard = read('frontend/app/page.tsx')
   const familyOfficeData = read('frontend/lib/familyOfficeData.ts')
   const familyOfficeHook = read('frontend/lib/useFamilyOfficeBundle.ts')
+  const ownerIdentityHook = read('frontend/lib/useOwnerIdentity.ts')
+  const ownerScopedHook = read('frontend/lib/useOwnerScopedSWR.ts')
   addCheck(
     'frontend.dashboard.family_office_shared_cache',
     hasAll(dashboard, [
@@ -309,7 +311,10 @@ try {
     hasAll(familyOfficeHook, [
       'familyOfficeSWRKey(ownerUserId)',
       'loadFamilyOfficeBundle(supabase)',
-      'onAuthStateChange',
+      "result.data?.ownerUserId === ownerUserId",
+    ]) && hasAll(ownerIdentityHook, ['getSession()', 'onAuthStateChange']) && hasAll(ownerScopedHook, [
+      'ownerScopedSWRKey(surface, ownerUserId, ...parts)',
+      'result.data?.ownerUserId === ownerUserId',
     ]),
     'Family Office cache keys must change with the authenticated owner and reject missing identity.'
   )
@@ -327,6 +332,21 @@ try {
   )
 
   const dataHealth = read('frontend/components/DataHealthPanel.tsx')
+  const targetsPage = read('frontend/app/targets/page.tsx')
+  const arbitragePage = read('frontend/app/arbitrage/page.tsx')
+  const governanceWidget = read('frontend/components/GovernanceWidget.tsx')
+  addCheck(
+    'frontend.private_legacy_surfaces.owner_transition_contract',
+    [targetsPage, arbitragePage, governanceWidget, dataHealth, geoPage].every((surface) => (
+      surface.includes('useOwnerIdentity') && surface.includes('useOwnerScopedSWR')
+    )) && hasAll(targetsPage, ['useOwnerBoundState', "'targets-portfolios'", "'targets-positions'"]) &&
+      hasAll(arbitragePage, ['useOwnerBoundState', "'arbitrage-portfolios'", "'arbitrage-portfolio-decision-items'"]) &&
+      hasAll(governanceWidget, ["'governance-widget'", ".eq('owner_user_id', requestedOwnerUserId)"]) &&
+      hasAll(dataHealth, ['useOwnerBoundState', "'data-health-panel'", ".eq('owner_user_id', ownerUserId)"]) &&
+      hasAll(geoPage, ['useOwnerBoundState', "'geo-portfolio-aggregation'", 'requestedOwnerUserId']) &&
+      hasAll(portfolioData, ['loadPortfolioAggregation(', 'ownerUserId,', 'assertOwnerIsolation(ownerUserId']),
+    'Every private legacy surface must use the shared owner identity, an owner-keyed request, and synchronous owner-change rendering guards.'
+  )
   addCheck(
     'frontend.data_health.threshold_and_trend_semantics',
     hasAll(dataHealth, [
@@ -341,8 +361,6 @@ try {
     'Data operations should classify threshold states, expose ETL trends, and provide action hints.'
   )
 
-  const targetsPage = read('frontend/app/targets/page.tsx')
-  const arbitragePage = read('frontend/app/arbitrage/page.tsx')
   const supportsPage = read('frontend/app/supports/page.tsx')
   const sidebar = read('frontend/components/Sidebar.tsx')
   addCheck(

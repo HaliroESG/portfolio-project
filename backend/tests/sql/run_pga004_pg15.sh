@@ -128,6 +128,10 @@ bootstrap legacy_16_graph
 psql_db legacy_16_graph -f "$REPO_ROOT/backend/tests/sql/pga004_legacy_fixture.sql" >/dev/null
 apply_security_and_patch legacy_16_graph
 psql_db legacy_16_graph -f "$REPO_ROOT/backend/tests/sql/pga004_owner_isolation_test.sql"
+python3.11 "$REPO_ROOT/backend/tests/sql/pga004_writer_pg_test.py" \
+  --psql "$PG_BIN/psql" \
+  --socket "$PG_SOCKET" \
+  --database legacy_16_graph
 
 bootstrap rollback_graph
 psql_db rollback_graph -f "$REPO_ROOT/backend/tests/sql/pga004_legacy_fixture.sql" >/dev/null
@@ -199,6 +203,20 @@ psql_db contaminated_graph -f "$REPO_ROOT/backend/sql/20260713_04_family_office_
 psql_db contaminated_graph -f "$REPO_ROOT/backend/sql/20260713_05_family_office_policy_cleanup_indexes.sql" >/dev/null
 
 set +e
+psql_db contaminated_graph -f "$REPO_ROOT/backend/sql/20260829_family_office_owner_isolation_preflight.sql" >"$TMP_ROOT/contaminated-preflight.log" 2>&1
+contaminated_preflight_exit=$?
+set -e
+if [[ "$contaminated_preflight_exit" -eq 0 ]]; then
+  printf 'FAIL: contaminated preflight unexpectedly succeeded\n' >&2
+  exit 1
+fi
+if ! rg -q 'canonical_cross_owner=1' "$TMP_ROOT/contaminated-preflight.log"; then
+  printf 'FAIL: contaminated preflight did not report the canonical cross-owner count\n' >&2
+  exit 1
+fi
+printf 'contaminated_preflight_exit=%s canonical_cross_owner=1\n' "$contaminated_preflight_exit"
+
+set +e
 psql_db contaminated_graph -f "$REPO_ROOT/backend/sql/20260829_family_office_owner_isolation.sql" >"$TMP_ROOT/contaminated.log" 2>&1
 contaminated_exit=$?
 set -e
@@ -230,5 +248,62 @@ end;
 $$;
 select 'PGA-004 contaminated graph atomic rollback: PASS' as result;
 SQL
+
+bootstrap legacy_preflight_contaminated
+psql_db legacy_preflight_contaminated -f "$REPO_ROOT/backend/tests/sql/pga004_legacy_fixture.sql" >/dev/null
+psql_db legacy_preflight_contaminated <<'SQL' >/dev/null
+alter table auth.users disable trigger fo_validate_owner_before_insert;
+insert into auth.users (id, email, raw_user_meta_data)
+values ('bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb', 'owner-b@example.invalid', '{}');
+alter table auth.users enable trigger fo_validate_owner_before_insert;
+do $$
+declare object_name text;
+begin
+  foreach object_name in array array[
+    'portfolios', 'portfolio_positions', 'valuation_snapshots',
+    'governance_targets', 'decision_journal', 'target_portfolios',
+    'target_envelope_weights', 'broker_transactions',
+    'broker_reconciliation_runs', 'broker_reconciliation_items',
+    'broker_position_snapshot_runs', 'broker_position_snapshot_items',
+    'target_models', 'target_buckets', 'target_envelope_lines',
+    'target_model_audit_holdings'
+  ] loop
+    execute format('alter table public.%I add column owner_user_id uuid', object_name);
+    execute format(
+      'update public.%I set owner_user_id = %L::uuid',
+      object_name, 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa'
+    );
+  end loop;
+end;
+$$;
+update public.portfolio_positions
+set owner_user_id = 'bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb'
+where ticker = 'AAA';
+update public.broker_transactions
+set owner_user_id = null;
+insert into public.broker_transactions (account_id, idempotency_key, owner_user_id)
+values ('account-unknown', 'txn-unknown', 'cccccccc-cccc-4ccc-8ccc-cccccccccccc');
+SQL
+set +e
+psql_db legacy_preflight_contaminated -f "$REPO_ROOT/backend/sql/20260829_family_office_owner_isolation_preflight.sql" >"$TMP_ROOT/legacy-contaminated-preflight.log" 2>&1
+legacy_preflight_exit=$?
+set -e
+if [[ "$legacy_preflight_exit" -eq 0 ]]; then
+  printf 'FAIL: legacy contaminated preflight unexpectedly succeeded\n' >&2
+  exit 1
+fi
+if ! rg -q 'legacy_edges_checked=13 legacy_cross_owner=1' "$TMP_ROOT/legacy-contaminated-preflight.log"; then
+  printf 'FAIL: legacy contaminated preflight did not report 13 edges and one cross-owner row\n' >&2
+  exit 1
+fi
+if ! rg -q 'null_owner=1' "$TMP_ROOT/legacy-contaminated-preflight.log"; then
+  printf 'FAIL: legacy contaminated preflight did not report the NULL owner row\n' >&2
+  exit 1
+fi
+if ! rg -q 'unknown_owner=1' "$TMP_ROOT/legacy-contaminated-preflight.log"; then
+  printf 'FAIL: legacy contaminated preflight did not report the unknown owner row\n' >&2
+  exit 1
+fi
+printf 'legacy_contaminated_preflight_exit=%s legacy_edges_checked=13 legacy_cross_owner=1 null_owner=1 unknown_owner=1\n' "$legacy_preflight_exit"
 
 printf 'cleanup_contract=ephemeral_cluster_and_exact_tmp_prefix\n'

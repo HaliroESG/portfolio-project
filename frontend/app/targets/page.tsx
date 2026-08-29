@@ -1,12 +1,15 @@
 "use client"
 
-import React, { useMemo, useState } from 'react'
-import useSWR from 'swr'
+import React, { useMemo } from 'react'
 import { Database, FileSpreadsheet, LockKeyhole, Target } from 'lucide-react'
 import { AppShell } from '../../components/AppShell'
 import { EmptyState } from '../../components/EmptyState'
 import { supabase } from '../../lib/supabase'
 import { cn } from '../../lib/utils'
+import { assertOwnerIsolation } from '../../lib/ownerIsolation'
+import { useOwnerIdentity } from '../../lib/useOwnerIdentity'
+import { useOwnerBoundState } from '../../lib/useOwnerBoundState'
+import { useOwnerScopedSWR } from '../../lib/useOwnerScopedSWR'
 import type { PortfolioScope, TargetBucketRow, TargetEnvelopeLineRow, TargetModelRow } from '../../types'
 
 interface PortfolioRow {
@@ -291,20 +294,33 @@ function resolveDataState(
 }
 
 export default function TargetsPage() {
-  const [selectedPortfolioIdOverride, setSelectedPortfolioIdOverride] = useState<string>('')
-  const [selectedScope, setSelectedScope] = useState<PortfolioScope>('PERSO')
+  const { ownerUserId, error: ownerError } = useOwnerIdentity()
+  const [selectedPortfolioIdOverride, setSelectedPortfolioIdOverride] = useOwnerBoundState(ownerUserId, '')
+  const [selectedScope, setSelectedScope] = useOwnerBoundState<PortfolioScope>(ownerUserId, 'PERSO')
 
-  const { data: portfolios } = useSWR('portfolios', async () => {
-    const { data, error } = await supabase.from('portfolios').select('id,owner_user_id,name')
-    if (error) throw error
-    return (data ?? []) as PortfolioRow[]
-  })
+  const { data: portfolios, error: portfolioError } = useOwnerScopedSWR(
+    ownerUserId,
+    'targets-portfolios',
+    [],
+    async (requestedOwnerUserId) => {
+      const { data, error } = await supabase
+        .from('portfolios')
+        .select('id,owner_user_id,name')
+        .eq('owner_user_id', requestedOwnerUserId)
+      if (error) throw error
+      const rows = (data ?? []) as PortfolioRow[]
+      assertOwnerIsolation(requestedOwnerUserId, [rows])
+      return rows
+    },
+  )
 
   const selectedPortfolioId = selectedPortfolioIdOverride || portfolios?.[0]?.id || ''
 
-  const { data: positions } = useSWR(
-    selectedPortfolioId ? ['positions', selectedPortfolioId] : null,
-    async () => {
+  const { data: positions, error: positionsError } = useOwnerScopedSWR(
+    selectedPortfolioId ? ownerUserId : null,
+    'targets-positions',
+    [selectedPortfolioId],
+    async (requestedOwnerUserId) => {
       const extendedSelector = [
         'owner_user_id',
         'portfolio_id',
@@ -339,37 +355,48 @@ export default function TargetsPage() {
       const { data, error } = await supabase
         .from('portfolio_positions')
         .select(extendedSelector)
+        .eq('owner_user_id', requestedOwnerUserId)
         .eq('portfolio_id', selectedPortfolioId)
         .order('ticker', { ascending: true })
       if (error) {
         const fallback = await supabase
           .from('portfolio_positions')
           .select(legacySelector)
+          .eq('owner_user_id', requestedOwnerUserId)
           .eq('portfolio_id', selectedPortfolioId)
           .order('ticker', { ascending: true })
-        if (fallback.error) throw error
-        return (fallback.data ?? []) as unknown as PositionRow[]
+        if (fallback.error) throw fallback.error
+        const rows = (fallback.data ?? []) as unknown as PositionRow[]
+        assertOwnerIsolation(requestedOwnerUserId, [rows])
+        return rows
       }
-      return (data ?? []) as unknown as PositionRow[]
+      const rows = (data ?? []) as unknown as PositionRow[]
+      assertOwnerIsolation(requestedOwnerUserId, [rows])
+      return rows
     }
   )
 
-  const { data: brokerSnapshotRuns } = useSWR(
-    selectedPortfolioId ? ['broker-position-snapshot-runs', selectedPortfolioId] : null,
-    async (): Promise<BrokerSnapshotRunResult> => {
+  const { data: brokerSnapshotRuns } = useOwnerScopedSWR(
+    selectedPortfolioId ? ownerUserId : null,
+    'targets-broker-position-snapshot-runs',
+    [selectedPortfolioId],
+    async (requestedOwnerUserId): Promise<BrokerSnapshotRunResult> => {
       const { data, error } = await supabase
         .from('broker_position_snapshot_runs')
         .select('owner_user_id,broker,account_id,portfolio_id,envelope,as_of_date,source_file,position_count,created_at,updated_at')
+        .eq('owner_user_id', requestedOwnerUserId)
         .eq('portfolio_id', selectedPortfolioId)
         .order('as_of_date', { ascending: false })
         .order('created_at', { ascending: false })
         .limit(12)
       if (error) return { rows: [], error: error.message }
-      return { rows: (data ?? []) as BrokerSnapshotRunRow[], error: null }
+      const rows = (data ?? []) as BrokerSnapshotRunRow[]
+      assertOwnerIsolation(requestedOwnerUserId, [rows])
+      return { rows, error: null }
     }
   )
 
-  const { data: marketRows } = useSWR('targets-market-watch', async () => {
+  const { data: marketRows } = useOwnerScopedSWR(ownerUserId, 'targets-market-watch', [], async () => {
     const { data, error } = await supabase
       .from('market_watch')
       .select('ticker,last_price,currency,data_status,last_update')
@@ -378,54 +405,71 @@ export default function TargetsPage() {
     return (data ?? []) as MarketRow[]
   })
 
-  const { data: currencies } = useSWR('targets-currencies', async () => {
+  const { data: currencies } = useOwnerScopedSWR(ownerUserId, 'targets-currencies', [], async () => {
     const { data, error } = await supabase.from('currencies').select('id,rate_to_eur')
     if (error) throw error
     return (data ?? []) as CurrencyRow[]
   })
 
-  const { data: targetModels = [], error: targetModelError } = useSWR('target-models', async () => {
+  const { data: targetModels = [], error: targetModelError } = useOwnerScopedSWR(
+    ownerUserId,
+    'targets-target-models',
+    [],
+    async (requestedOwnerUserId) => {
     const { data, error } = await supabase
       .from('target_models')
       .select('id,owner_user_id,portfolio_scope,model_name,source_file,source_kind,as_of_date,is_active,target_total_pct,status,report_json,imported_at,updated_at')
+      .eq('owner_user_id', requestedOwnerUserId)
       .eq('is_active', true)
       .order('updated_at', { ascending: false })
     if (error) throw error
-    return ((data ?? []) as unknown as RawRow[])
+    const rows = ((data ?? []) as unknown as RawRow[])
       .map(parseTargetModel)
       .filter((row): row is TargetModelRow => row !== null)
+    assertOwnerIsolation(requestedOwnerUserId, [rows])
+    return rows
   })
 
   const selectedTargetModel = targetModels.find((model) => model.portfolio_scope === selectedScope) ?? null
 
-  const { data: targetBuckets = [] } = useSWR(
-    selectedTargetModel ? ['target-buckets', selectedTargetModel.id] : null,
-    async () => {
+  const { data: targetBuckets = [] } = useOwnerScopedSWR(
+    selectedTargetModel ? ownerUserId : null,
+    'targets-target-buckets',
+    [selectedTargetModel?.id ?? ''],
+    async (requestedOwnerUserId) => {
       const { data, error } = await supabase
         .from('target_buckets')
         .select('id,owner_user_id,model_id,portfolio_scope,bucket_key,bucket_label,parent_bucket_key,target_weight_pct,lower_band_pct,upper_band_pct,source_sheet,source_row,updated_at')
+        .eq('owner_user_id', requestedOwnerUserId)
         .eq('model_id', selectedTargetModel!.id)
         .order('source_row', { ascending: true })
       if (error) throw error
-      return ((data ?? []) as unknown as RawRow[])
+      const rows = ((data ?? []) as unknown as RawRow[])
         .map(parseTargetBucket)
         .filter((row): row is TargetBucketRow => row !== null)
+      assertOwnerIsolation(requestedOwnerUserId, [rows])
+      return rows
     }
   )
 
-  const { data: targetEnvelopeLines = [] } = useSWR(
-    selectedTargetModel ? ['target-envelope-lines', selectedTargetModel.id] : null,
-    async () => {
+  const { data: targetEnvelopeLines = [] } = useOwnerScopedSWR(
+    selectedTargetModel ? ownerUserId : null,
+    'targets-target-envelope-lines',
+    [selectedTargetModel?.id ?? ''],
+    async (requestedOwnerUserId) => {
       const { data, error } = await supabase
         .from('target_envelope_lines')
         .select('id,owner_user_id,model_id,portfolio_scope,envelope,ticker,isin,instrument,asset_class,region,currency,target_weight_pct,target_value_eur,notes,source_sheet,source_row,updated_at')
+        .eq('owner_user_id', requestedOwnerUserId)
         .eq('model_id', selectedTargetModel!.id)
         .order('envelope', { ascending: true })
         .order('source_row', { ascending: true })
       if (error) throw error
-      return ((data ?? []) as unknown as RawRow[])
+      const rows = ((data ?? []) as unknown as RawRow[])
         .map(parseTargetEnvelopeLine)
         .filter((row): row is TargetEnvelopeLineRow => row !== null)
+      assertOwnerIsolation(requestedOwnerUserId, [rows])
+      return rows
     }
   )
 
@@ -582,6 +626,8 @@ export default function TargetsPage() {
     }
   }, [positions])
 
+  const privateReadError = ownerError ?? portfolioError ?? positionsError ?? targetModelError
+
   return (
     <AppShell lastSync={lastSync} lastSyncIso={lastSyncIso} className="bg-slate-50">
       <main className="p-3 sm:p-6 lg:p-10">
@@ -669,9 +715,11 @@ export default function TargetsPage() {
               </div>
             </div>
 
-            {targetModelError ? (
+            {privateReadError ? (
               <div className="mt-4 rounded-lg border border-amber-300 bg-amber-50 px-4 py-3 text-xs font-mono text-amber-800 dark:border-amber-900/60 dark:bg-amber-950/20 dark:text-amber-300">
-                Target model schema unavailable. Apply `20260526_supports_targets_advice.sql`, then run `import_target_model.py`.
+                {targetModelError && !ownerError && !portfolioError && !positionsError
+                  ? 'Target model schema unavailable. Apply `20260526_supports_targets_advice.sql`, then run `import_target_model.py`.'
+                  : 'Private targets data unavailable for the authenticated owner. No cross-owner fallback was used.'}
               </div>
             ) : selectedTargetModel ? (
               <div className="mt-4 space-y-4">

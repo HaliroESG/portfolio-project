@@ -4,8 +4,11 @@ from datetime import date, datetime
 from pathlib import Path
 from typing import Any
 
+from owner_scope import owner_scoped_identifier, require_owner_user_id
+
 
 def _run_idempotency_key(
+    owner_user_id: str,
     broker: str,
     account_id: str,
     reconciliation_date: date,
@@ -14,13 +17,14 @@ def _run_idempotency_key(
 ) -> str:
     source_name = Path(source_file).name if source_file else "-"
     positions_name = Path(positions_file).name if positions_file else "-"
-    return ":".join([
+    return owner_scoped_identifier(
+        owner_user_id,
         broker.upper(),
         account_id,
         reconciliation_date.isoformat(),
         source_name,
         positions_name,
-    ])
+    )
 
 
 def _run_status(report: dict[str, Any]) -> str:
@@ -43,11 +47,14 @@ def _run_payload(
     reconciliation_date: date,
     source_file: str | None,
     positions_file: str | None,
+    owner_user_id: str,
 ) -> dict[str, Any]:
+    owner = require_owner_user_id(owner_user_id)
     reconciliation = report["reconciliation"]
     position_count = len(reconciliation.get("positions", [])) + len(reconciliation.get("ledger_only", []))
     updated_at = datetime.utcnow().isoformat()
     return {
+        "owner_user_id": owner,
         "broker": report["broker"],
         "account_id": report["account_id"],
         "reconciliation_date": reconciliation_date.isoformat(),
@@ -60,6 +67,7 @@ def _run_payload(
         "state_counts": reconciliation.get("state_counts", {}),
         "report_json": report,
         "idempotency_key": _run_idempotency_key(
+            owner,
             report["broker"],
             report["account_id"],
             reconciliation_date,
@@ -70,8 +78,13 @@ def _run_payload(
     }
 
 
-def _item_payload(run_id: str, row: dict[str, Any]) -> dict[str, Any]:
+def _item_payload(
+    owner_user_id: str,
+    run_id: str,
+    row: dict[str, Any],
+) -> dict[str, Any]:
     return {
+        "owner_user_id": require_owner_user_id(owner_user_id),
         "run_id": run_id,
         "instrument_key": row["instrument_key"],
         "symbol": row.get("symbol"),
@@ -91,19 +104,22 @@ def persist_reconciliation_report(
     supabase_client: Any,
     report: dict[str, Any],
     reconciliation_date: date,
+    owner_user_id: str,
     source_file: str | None = None,
     positions_file: str | None = None,
 ) -> dict[str, Any]:
+    owner = require_owner_user_id(owner_user_id)
     run_payload = _run_payload(
         report,
         reconciliation_date=reconciliation_date,
         source_file=source_file,
         positions_file=positions_file,
+        owner_user_id=owner,
     )
     response = (
         supabase_client
         .table("broker_reconciliation_runs")
-        .upsert(run_payload, on_conflict="idempotency_key")
+        .upsert(run_payload, on_conflict="owner_user_id,idempotency_key")
         .execute()
     )
     data = getattr(response, "data", response.get("data") if isinstance(response, dict) else None)
@@ -115,12 +131,13 @@ def persist_reconciliation_report(
 
     reconciliation = report["reconciliation"]
     rows = list(reconciliation.get("positions", [])) + list(reconciliation.get("ledger_only", []))
-    item_payloads = [_item_payload(run_id, row) for row in rows]
+    item_payloads = [_item_payload(owner, run_id, row) for row in rows]
 
     (
         supabase_client
         .table("broker_reconciliation_items")
         .delete()
+        .eq("owner_user_id", owner)
         .eq("run_id", run_id)
         .execute()
     )
