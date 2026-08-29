@@ -1,0 +1,109 @@
+schema_version: astrocyte_security_handoff_v1
+generated_at_utc: "2026-08-29T09:08:41Z"
+status: LOCAL_GATES_GREEN_PR_DRAFT
+
+lease:
+  workstream: portfolio-astrocyte-security-pga-005-039-v1
+  owner_thread_id: "01a04cb9-b119-7150-8a8f-909285412554"
+  registry: /Users/oliviersoudee/.codex/haliro-execution-governor/portfolio-project-workstreams.json
+  profile: high-risk-train
+  decision_at_handoff: CONTINUE
+  terminal_result_planned: complete
+
+git:
+  base_sha: "6a8ede970c0b9041a6e04f8b081b286e9ecb8499"
+  base_description: origin/main after merge pull request 9
+  branch: codex/astrocyte-security-pga-005-039-v1
+  code_commit: "dd9dc05fb88844b7a912c527b37917c4954ec07c"
+  code_tree: "e9499cd158d0921ea9181db7691b7706f5105b40"
+  diff_sha256: "53834f2a9e6a8150554dafeedf0ca49ba85206542c4dbfdfd77dadfc0a6b950b"
+  diff_summary:
+    files_changed: 5
+    insertions: 716
+    deletions: 63
+  pull_request:
+    number: 10
+    url: https://github.com/HaliroESG/portfolio-project/pull/10
+    state: OPEN_DRAFT
+    ready: false
+    merged: false
+
+impact:
+  backend_writes: CODE_ONLY_NO_RUNTIME_WRITE
+  supabase_schema_or_data: UNCHANGED
+  frontend_typed_reads: UNCHANGED
+  frontend_ui_states: UNCHANGED
+  vercel_configuration: UNCHANGED
+  migration_required: false
+
+findings:
+  - id: PGA-005-MANUAL-HOLDING
+    baseline: CROSS_OWNER_PORTFOLIO_ACCEPTED_AND_INSERTED
+    resolution: OWNER_PORTFOLIO_REQUIRED_BEFORE_AUDIT_AND_INSERT
+  - id: PGA-005-MONTHLY-CLOSE
+    baseline: FOREIGN_CLOSED_CLOSE_RETURNED_BEFORE_OWNER_CHECK
+    resolution: OWNER_CHECK_PRECEDES_CLOSED_CLOSE_REPLAY
+  - id: PGA-005-AUDIT-REPLAY
+    baseline: UNSCOPED_COMPLETED_AUDIT_COULD_RETURN_TAINTED_STATE
+    resolution: COMMAND_TYPE_AND_REQUEST_FINGERPRINT_REQUIRED_FOR_REPLAY
+  - id: PGA-039-DETERMINISM
+    baseline: EXACT_DEDUPLICATION_TIES_DEPENDED_ON_INPUT_ORDER
+    resolution: INSTRUMENT_KEY_IS_THE_STABLE_FINAL_TIE_BREAKER
+
+tests:
+  summary_sha256: "c5103edc24ce642f6b7012bbc0b46ba9cce4651a747c10447910d54d0c302a61"
+  backend_pytest:
+    status: PASS
+    command: python3.11 -m pytest -q
+    result: 142 passed
+  backend_py_compile:
+    status: PASS
+    command: python3.11 -m py_compile api.py family_office/*.py equity_screener.py
+  frontend_lint:
+    status: PASS
+    command: npm run lint
+  frontend_typescript:
+    status: PASS
+    command: npx tsc --noEmit
+  frontend_build:
+    status: PASS
+    command: npm run build
+  frontend_tests:
+    status: PASS
+    command: npm run test:frontend
+  critical_flows:
+    status: PASS
+    command: node scripts/validate-critical-flows.mjs
+    result: 28 checks
+  workflow_parity:
+    status: PASS
+    command: python3 .github/scripts/check_workflow_parity.py
+  workflow_yaml_parse:
+    status: PASS
+  git_diff_check:
+    status: PASS
+  supabase_smoke:
+    status: NOT_RUN
+    reason: No Supabase read or schema contract changed; live runtime access was outside authority.
+
+file_hashes_sha256:
+  .github/workflows/trident-supabase.yml: "b8d29385abe59ec0017853e7c6e51e706fc2ece69c73e346e761f3f408683512"
+  backend/api.py: "9fc14a5119731dd6b5dd609a2a4889b4d2981b8fdb5e00c7ff31c2982c80fb3d"
+  backend/equity_screener.py: "d2862a9759132174bcd0cd1051fb1fbfdecf266405a32b27e07849c7402aaf88"
+  backend/family_office/commands.py: "4c028b3c3ac988ed8b782c750cb28569c84b1c2f170d5512d37f7ade55c409c5"
+  backend/tests/test_security_golden.py: "4a62d7306599d9d225121f07da00556fdc833eca251003112f29abe4b744d26d"
+
+changes:
+  - Authorization callbacks now run before command replay, audit acceptance, and execution.
+  - Idempotency keys are bound to command type and canonical request SHA-256.
+  - Owner-scoped resources revalidate their portfolio relationship at the service-role boundary.
+  - The golden suite covers identity, cross-owner refusal, replay, isolation, QA, score, and deterministic ranking.
+  - Pull requests execute the non-mutating validate job; the Supabase gate is skipped on pull requests.
+
+risks:
+  - Legacy audit rows without a request fingerprint fail closed and require a new idempotency key.
+  - Authorization adds narrow service-role reads before commands.
+  - npm ci reported 8 pre-existing dependency findings; this workstream did not alter dependencies.
+
+blocked: []
+next_single_action: Review draft pull request 10 and keep it draft until controller acceptance.
