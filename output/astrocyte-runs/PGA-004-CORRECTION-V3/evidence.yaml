@@ -1,0 +1,85 @@
+schema_version: astrocyte_evidence_v3
+run_id: PGA-004-CORRECTION-V3
+sealed_at_utc: '2026-08-29T14:32:46Z'
+route:
+  mode: solo
+  model: gpt-5.6-sol
+  reasoning_effort: high
+  auxiliary_agents: 0
+governor:
+  registry: /Users/oliviersoudee/.codex/haliro-execution-governor/portfolio-project-workstreams.json
+  workstream: portfolio-astrocyte-pga-004-correction-v3
+  owner_thread_id: 01a04d1b-f815-7731-9d15-2449bfa7bb0a
+  checkpoint_after_code_ci:
+    decision: CHECKPOINT_REQUIRED
+    full_ci_runs: 1
+    review_cycles: 0
+    blocker_count_historical: 1
+git:
+  repository: HaliroESG/portfolio-project
+  pull_request: 12
+  state_at_code_check: OPEN_DRAFT
+  branch: codex/portfolio-astrocyte-pga-004-correction-v1
+  base_sha: 3828d6d7851958f6e832896ce908c60097f67f90
+  merge_base_sha: 3828d6d7851958f6e832896ce908c60097f67f90
+  previous_remote_head_sha: 6cb735e0ef551053b50fc1318ebbde029575a444
+  code_commit_sha: 31d0561f44234f5a48af3284a441e567ae6ed2d4
+  code_tree_sha: ef05b0b2c0416ffbf610f706188688e8fe4a877c
+upstream_review:
+  verdict: FAIL
+  review_md_sha256_announced_and_observed: 446d75ed6da72d5cb5a7029b64d939021ea4910931a6a50737262164483237e5
+  handoff_yaml_sha256_announced: 34745c945d0a7d97e6dbb5e57efc32110aea704f05d8113a25f545a709d20e97
+  handoff_yaml_sha256_observed: 82c2895c6fe6172bcbda2fbb721a4aa96c2770ca8ceddd1d8f8a76d1251b1e4d
+  sha256sums_sha256_announced: a9556c906f81fe20cc17a31060021e5fac3257d05d6552b38c62d0a66e2c58d4
+  sha256sums_sha256_observed: abb9eddbc9e7fcc95e029367e631036f154c81e077cf267235cbff9048773115
+  internal_sha256sums_check: PASS
+  explicit_owner_instruction_to_proceed: true
+local_validation:
+  postgresql_15_19_harness: PASS
+  backend_pytest: PASS_149
+  backend_py_compile: PASS
+  frontend_lint: PASS
+  frontend_tsc_no_emit: PASS
+  frontend_test_frontend: PASS
+  frontend_owner_transition_five_mounted_surfaces: PASS
+  frontend_orders_transition_mounted: PASS
+  frontend_contract_check: PASS
+  frontend_critical_flow_contracts: PASS
+  frontend_runtime_budgets: PASS_8
+  frontend_build: PASS_20_ROUTES
+  supabase_smoke_from_tmp_without_repo_env: FAIL_CLOSED_EXPECTED_EXIT_2
+  actionlint_1_7_7: PASS
+  workflow_parity_inventory: PASS_10_WORKFLOWS
+  workflow_contract_unittest: PASS_30
+github_code_commit_checks:
+  head_sha: 31d0561f44234f5a48af3284a441e567ae6ed2d4
+  frontend_ci:
+    run_id: 33257807602
+    job_id: 99114466695
+    conclusion: SUCCESS
+  workflow_parity:
+    run_id: 33257807600
+    job_id: 99114466730
+    conclusion: SUCCESS
+  trident_validate:
+    run_id: 33257807595
+    job_id: 99114466815
+    conclusion: SUCCESS
+    production_mutation_job: SKIPPED
+safety:
+  production_reads: 0
+  production_writes: 0
+  production_config_reads: 0
+  direct_supabase_calls: 0
+  supabase_migrations_applied: 0
+  direct_vercel_calls: 0
+  vercel_runtime_opened: 0
+  automatic_preview_statuses_observed_after_github_push: true
+  broker_commands_enabled: 0
+  spend_authorized_or_incurred: false
+epistemic_boundary:
+  provider_schema_compatibility: UNKNOWN_NOT_READ
+  provider_row_contamination: UNKNOWN_NOT_READ
+  provider_lock_duration: UNKNOWN_NOT_MEASURED
+  real_authenticated_A_B_browser: NOT_RUN_NO_AUTHORIZED_NON_PRODUCTION_TARGET
+  production_guard_runtime_configuration: UNKNOWN_NOT_READ

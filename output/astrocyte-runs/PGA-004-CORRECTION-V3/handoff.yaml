@@ -1,0 +1,56 @@
+schema_version: astrocyte_handoff_v3
+run_id: PGA-004-CORRECTION-V3
+status: READY_FOR_INDEPENDENT_REREVIEW
+release_disposition: REREVIEW_REQUIRED
+ready_authorized: false
+merge_authorized: false
+migration_authorized: false
+candidate:
+  repository: HaliroESG/portfolio-project
+  pull_request: 12
+  branch: codex/portfolio-astrocyte-pga-004-correction-v1
+  base_sha: 3828d6d7851958f6e832896ce908c60097f67f90
+  merge_base_sha: 3828d6d7851958f6e832896ce908c60097f67f90
+  code_commit_sha: 31d0561f44234f5a48af3284a441e567ae6ed2d4
+  code_tree_sha: ef05b0b2c0416ffbf610f706188688e8fe4a877c
+  exact_final_pr_head: TO_BE_BOUND_BY_FINAL_PUSH_AND_PR_DESCRIPTION
+  exact_final_pr_head_policy: reviewer must verify refs/pull/12/head equals the final PR description before reviewing
+review_inputs:
+  review_md_sha256: 446d75ed6da72d5cb5a7029b64d939021ea4910931a6a50737262164483237e5
+  handoff_yaml_sha256_observed: 82c2895c6fe6172bcbda2fbb721a4aa96c2770ca8ceddd1d8f8a76d1251b1e4d
+  sha256sums_sha256_observed: abb9eddbc9e7fcc95e029367e631036f154c81e077cf267235cbff9048773115
+  announced_hash_mismatch_preserved: true
+findings_addressed:
+  P1_01_private_legacy_reader_transition: IMPLEMENTED_AND_MOUNTED_TEST_PASS
+  P2_01_active_writer_multi_owner_contract: IMPLEMENTED_AND_REAL_WRITER_PG15_PASS
+  P2_02_read_only_preflight_counts: IMPLEMENTED_AND_CONTAMINATED_PREFLIGHT_REFUSAL_PASS
+required_counts:
+  canonical_owner_composite_fks: 27
+  canonical_direct_owner_profile_fks: 22
+  canonical_owner_related_total: 49
+  legacy_private_tables: 16
+  legacy_owner_composite_fks: 13
+  legacy_direct_owner_profile_fks: 16
+  preflight_canonical_edges: 27
+  preflight_legacy_edges: 13
+production_guard:
+  expected_behavior: all business routes under /v1 remain HTTP 503 in Production independently of configuration
+  preserved: true
+  backend_full_pytest: PASS_149
+github_code_commit_checks:
+  frontend_ci_run: 33257807602
+  workflow_parity_run: 33257807600
+  trident_validate_run: 33257807595
+  production_mutation: SKIPPED
+  result: PASS
+independent_review_requirements:
+  - verify final refs/pull/12/head, origin branch and PR description exact SHA agree
+  - verify PR remains draft and base is main at 3828d6d7851958f6e832896ce908c60097f67f90
+  - verify the upstream announced-versus-observed hash mismatch and explicit instruction to proceed
+  - rerun backend/tests/sql/run_pga004_pg15.sh on PostgreSQL 15+
+  - inspect all owner-scoped reader keys, result guards, owner assertions and mounted A to B tests
+  - exercise all three real writers with A/B collisions
+  - verify preflight NULL, unknown, 27 canonical and 13 legacy counts before migration
+  - verify required checks on the final artifact-bearing head
+  - do not merge or apply any migration as part of review
+next_single_action: independent exact-head V3 rereview of draft PR 12
