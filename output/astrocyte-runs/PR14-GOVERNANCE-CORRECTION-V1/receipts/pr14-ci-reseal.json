@@ -1,0 +1,34 @@
+{
+  "schema_version": "astrocyte_pr14_final_ci_reseal_v1",
+  "generated_at": "2026-08-31T11:39:35Z",
+  "pr": 14,
+  "base_sha": "3828d6d7851958f6e832896ce908c60097f67f90",
+  "head_sha": "bd1bd27330031fa990993f8537865c2e2e3bfb43",
+  "tree_sha": "074b71dffbc508bb32efb6699c663006d9bbbd00",
+  "merge_sha": "a3d07b1d9184a0a7f4ee4f750d2e43b5f8a3bd2f",
+  "merged_at": "2026-08-29T21:07:47Z",
+  "review": {
+    "verdict": "FAIL",
+    "ship": "FIX_FIRST",
+    "review_sha256": "2100a8a73ce9bade8e2c69d2880731853ae85286a8d52847f159c16a17b8abdd",
+    "handoff_sha256": "9c960380525f963ee5c507f507ebebb5e814579c1a95bcce0a51cf2c1d15850a",
+    "original_producer_packet_sha256": "2c834ae47e9946ae39237f22a0ce12a45ce2b987bfa82d015b3fa46858a745cd"
+  },
+  "exact_head_runs": [
+    {"id": 33272996200, "workflow": "Frontend CI", "event": "pull_request", "conclusion": "success", "jobs": [{"name": "frontend-contract-check", "conclusion": "success"}]},
+    {"id": 33272996214, "workflow": "Workflow Parity", "event": "pull_request", "conclusion": "success", "jobs": [{"name": "workflow-contract", "conclusion": "success"}]},
+    {"id": 33272996217, "workflow": "Family Office Release Gate", "event": "pull_request", "conclusion": "success", "jobs": [{"name": "Validate pinned contracts", "conclusion": "success"}, {"name": "Prepare local isolated restore evidence", "conclusion": "success"}, {"name": "Mutate Production (fail-closed HTTP 503)", "conclusion": "skipped"}]},
+    {"id": 33272996228, "workflow": "Trident Supabase Deploy Gate", "event": "pull_request", "conclusion": "success", "jobs": [{"name": "validate", "conclusion": "success"}, {"name": "prepare-runtime", "conclusion": "skipped"}, {"name": "mutate-production", "conclusion": "skipped"}]}
+  ],
+  "post_merge_runs": [
+    {"id": 33275263284, "workflow": "Frontend CI", "event": "push", "head_sha": "a3d07b1d9184a0a7f4ee4f750d2e43b5f8a3bd2f", "conclusion": "success"},
+    {"id": 33275263299, "workflow": "Workflow Parity", "event": "push", "head_sha": "a3d07b1d9184a0a7f4ee4f750d2e43b5f8a3bd2f", "conclusion": "success"},
+    {"id": 33275263320, "workflow": "Family Office Release Gate", "event": "push", "head_sha": "a3d07b1d9184a0a7f4ee4f750d2e43b5f8a3bd2f", "conclusion": "success", "mutation_job": "skipped"}
+  ],
+  "later_scheduled_observations": [
+    {"id": 33294574568, "created_at": "2026-08-30T05:23:09Z", "conclusion": "failure", "cause": "scheduler heartbeat shallow checkout omitted pinned PR12 commit"},
+    {"id": 33360522740, "created_at": "2026-08-31T05:25:59Z", "conclusion": "failure", "cause": "scheduler heartbeat shallow checkout omitted pinned PR12 commit"}
+  ],
+  "qualification": "PR14 exact-head and release-relevant post-merge CI completed successfully; later scheduled shallow-history failures are disclosed and corrected by the separate governance code commit.",
+  "provider_actions": "NONE"
+}

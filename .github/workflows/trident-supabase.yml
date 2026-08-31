@@ -106,6 +106,7 @@ concurrency:
 
 jobs:
   validate:
+    name: Trident / validate
     runs-on: ubuntu-latest
 
     steps:

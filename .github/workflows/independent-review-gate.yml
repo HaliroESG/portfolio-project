@@ -1,0 +1,51 @@
+name: ASTROCYTE Independent Review Gate
+
+on:
+  pull_request_target:
+    types:
+      - opened
+      - reopened
+      - synchronize
+      - ready_for_review
+  pull_request_review:
+    types:
+      - submitted
+      - edited
+      - dismissed
+
+permissions:
+  contents: read
+  pull-requests: read
+  statuses: write
+
+concurrency:
+  group: astrocyte-independent-review-${{ github.event.pull_request.number }}
+  cancel-in-progress: false
+
+jobs:
+  exact-head-independent-review:
+    name: Emit exact-head independent review context
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Checkout trusted default-branch verifier only
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          ref: ${{ github.event.repository.default_branch }}
+          persist-credentials: false
+      - name: Set up Python
+        uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065 # v5
+        with:
+          python-version: "3.11"
+      - name: Evaluate authenticated exact-head human review and emit status
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+        run: python3.11 .github/scripts/check_independent_review.py
+      - name: Upload sanitized independent-review receipt
+        if: ${{ always() }}
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: astrocyte-independent-review-${{ github.event.pull_request.number }}-${{ github.event.pull_request.head.sha }}
+          path: ${{ runner.temp }}/astrocyte-independent-review-receipt.json
+          if-no-files-found: error
+          retention-days: 30

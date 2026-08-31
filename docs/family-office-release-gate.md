@@ -85,3 +85,65 @@ The Production job currently ends with
 credential and no provider mutation command. `ASTROCYTE_AUTHORIZATION_HMAC_KEY`,
 the independent issuer and Production gates are referenced as prerequisites;
 this repository change does not create or configure them.
+
+## PR14 governance release hold
+
+PR14 was squash-merged as `a3d07b1d9184a0a7f4ee4f750d2e43b5f8a3bd2f`
+before its independent review completed. That later review returned
+`FAIL / FIX_FIRST`. `.github/family-office-release-hold-v1.json` binds the hold
+to the exact merged head and tree plus the sealed review and handoff hashes.
+
+The `mutate-production` job checks this hold immediately after the trusted
+checkout and before any HMAC, anti-replay or provider prerequisite. Active hold
+enforcement exits 78 with `FAMILY_OFFICE_PRODUCTION_HTTP_503`. The mutation
+authorization verifier also checks the same hold before parsing an authorization
+manifest. Clearing or weakening the hold requires a separate reviewed change,
+a fresh independent review and explicit controller authority; this PR does not
+provide such clearance.
+
+## Required PR contexts and independent review
+
+`.github/required-pr-governance-v1.json` records the desired main-protection
+contract without claiming that GitHub has been configured. Family Office
+validate/prepare and Trident validate run on every PR with stable names. Family
+Office prepare uses an unconditional job entry and fails if validate was not
+successful, so the required context cannot disappear or become a skipped
+downstream success after an upstream failure.
+
+When the controller activates the contract, every context must be bound to the
+GitHub Actions source app rather than accepted by name alone. The numeric app ID
+is deliberately not guessed in this repository and must be resolved from the
+repository's authenticated check metadata at activation time.
+
+The independent-review workflow is intentionally based on
+`pull_request_target` and the trusted default-branch verifier. It never checks
+out or executes PR code. It reads native GitHub review metadata and accepts only
+a current exact-head `APPROVED` review from a human repository
+owner/member/collaborator who is not the PR author. Current exact-head change
+requests block; bots, outsiders, self-review, stale commits, labels and review
+body text never grant authority. The workflow posts the stable
+`ASTROCYTE Independent Review` commit status and uploads a sanitized canonical
+receipt whose SHA-256 is included in the status description.
+
+There is an unavoidable bootstrap boundary: GitHub executes a
+`pull_request_target` workflow from the default branch. The workflow introduced
+by this correction therefore cannot attest its own introducing PR. That PR must
+receive a separate independent review under the controller before merge. Once
+the trusted workflow exists on `main`, the controller may separately configure
+the six contexts and one required approval from the versioned contract. This
+repository change does not modify branch protection or create an approval.
+
+## Governance-branch Preview boundary
+
+Vercel created two automatic Preview deployments when this governance branch
+was first published: one for `frontend` and one for `quant-terminal-ui`. They
+were Git-integration side effects, not agent-requested deployments, and they do
+not constitute Production evidence.
+
+The root and `frontend` `vercel.json` files now set
+`git.deploymentEnabled["codex/*governance*"]` to `false`. The duplicate static
+configuration deliberately covers both possible Vercel project roots. It is
+branch-bounded: unspecified branches retain Vercel's default deployment
+behavior, so this control does not disable or promote `main`, Production, or
+ordinary product Preview deployments. Its effectiveness must be verified from
+GitHub/Vercel deployment metadata on the next governance-branch commit.

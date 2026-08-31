@@ -10,6 +10,8 @@ import json
 import math
 import os
 import re
+import subprocess
+import sys
 import time
 import urllib.error
 import urllib.parse
@@ -17,7 +19,6 @@ import urllib.request
 from datetime import date, datetime, timedelta, timezone
 from pathlib import Path
 from typing import Any, Callable, Optional
-
 
 SCHEMA_VERSION = "astrocyte_mutation_authorization_v2"
 RECEIPT_SCHEMA_VERSION = "astrocyte_restore_drill_receipt_v1"
@@ -72,6 +73,29 @@ REQUIRED_RECEIPT_FIELDS = {
 
 class ReceiptError(ValueError):
     """Raised when a restore receipt fails closed."""
+
+
+def _enforce_family_office_release_hold() -> None:
+    hold_verifier = Path(__file__).resolve().with_name(
+        "check_family_office_release_hold.py"
+    )
+    if hold_verifier.is_symlink() or not hold_verifier.is_file():
+        raise ContractError("Family Office release hold verifier is unavailable")
+    try:
+        result = subprocess.run(
+            [sys.executable, "-I", "-S", str(hold_verifier), "--enforce-mutation"],
+            env={},
+            text=True,
+            capture_output=True,
+            check=False,
+            timeout=5,
+        )
+    except (OSError, subprocess.TimeoutExpired) as exc:
+        raise ContractError("Family Office release hold verification failed closed") from exc
+    detail = result.stderr.strip().removeprefix("::error::")
+    if result.returncode != 78 or "FAMILY_OFFICE_PRODUCTION_HTTP_503" not in detail:
+        raise ContractError("Family Office release hold verification failed closed")
+    raise ContractError(detail)
 
 
 def canonical_json(value: Any) -> str:
@@ -574,6 +598,8 @@ def main() -> None:
     args = parser.parse_args()
 
     try:
+        if args.workflow == "family-office-release" and not args.hash_only:
+            _enforce_family_office_release_hold()
         raw_manifest = os.environ.get("AUTHORIZATION_MANIFEST", "")
         if args.manifest_file:
             path = Path(args.manifest_file)

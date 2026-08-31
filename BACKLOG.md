@@ -567,6 +567,21 @@ Release-gate preparation (separate candidate, not Production evidence):
   refusal until the independent issuer, HMAC key, Production environment gates
   and recent provider-native restore receipt are separately configured and
   authorized.
+- PR14 merged before its independent `FAIL / FIX_FIRST` review. Its exact head
+  `bd1bd27330031fa990993f8537865c2e2e3bfb43`, tree `074b71dffbc508bb32efb6699c663006d9bbbd00`
+  and squash merge `a3d07b1d9184a0a7f4ee4f750d2e43b5f8a3bd2f` therefore remain under an
+  explicit repository release hold. Every repository-native Family Office
+  release mutation continues to terminate with HTTP 503.
+- The desired main-protection contract is versioned but deliberately marked
+  `NOT_CONFIGURED_BY_THIS_CHANGE`: one approval plus the existing frontend and
+  parity contexts, dedicated Family Office validate/prepare, Trident validate,
+  and an exact-head authenticated independent-review context. Each required
+  context must be bound to the GitHub Actions source app, with its numeric app
+  ID resolved at activation time. Applying that GitHub configuration remains a
+  separate controller action.
+- The independent-review context is derived only from a current native GitHub
+  approval by a human repository member/collaborator who is not the PR author.
+  Labels, comment bodies, bots, self-reviews and stale-head reviews do not count.
 
 Deferred scope:
 - Tax lots and realized-tax reporting by PEA/PER/CTO/AV.

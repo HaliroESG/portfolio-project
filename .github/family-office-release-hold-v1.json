@@ -1,0 +1,27 @@
+{
+  "schema_version": "astrocyte_family_office_release_hold_v1",
+  "status": "ACTIVE",
+  "scope": "FAMILY_OFFICE_RELEASE_MUTATION",
+  "reason": "PR14_INDEPENDENT_REVIEW_FIX_FIRST",
+  "subject": {
+    "pr": 14,
+    "head_sha": "bd1bd27330031fa990993f8537865c2e2e3bfb43",
+    "tree_sha": "074b71dffbc508bb32efb6699c663006d9bbbd00",
+    "merge_sha": "a3d07b1d9184a0a7f4ee4f750d2e43b5f8a3bd2f"
+  },
+  "independent_review": {
+    "verdict": "FAIL",
+    "ship": "FIX_FIRST",
+    "review_sha256": "2100a8a73ce9bade8e2c69d2880731853ae85286a8d52847f159c16a17b8abdd",
+    "handoff_sha256": "9c960380525f963ee5c507f507ebebb5e814579c1a95bcce0a51cf2c1d15850a",
+    "producer_packet_sha256": "2c834ae47e9946ae39237f22a0ce12a45ce2b987bfa82d015b3fa46858a745cd"
+  },
+  "mutation_allowed": false,
+  "provider_actions_allowed": false,
+  "clearance_contract": {
+    "requires_fresh_independent_review": true,
+    "requires_exact_head_context": "ASTROCYTE Independent Review",
+    "requires_controller_authority": true,
+    "requires_separate_reviewed_change": true
+  }
+}
