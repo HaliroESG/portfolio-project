@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import copy
+import json
 import os
 import subprocess
 import sys
@@ -288,6 +289,20 @@ class WorkflowGovernanceTests(unittest.TestCase):
         )
         with self.assertRaisesRegex(AssertionError, "pinned candidate history"):
             validate_workflow_contract(contents)
+
+    def test_governance_branches_disable_vercel_git_deployments(self) -> None:
+        expected = {
+            "$schema": "https://openapi.vercel.sh/vercel.json",
+            "git": {"deploymentEnabled": {"codex/*governance*": False}},
+        }
+        for config_path in (ROOT / "vercel.json", ROOT / "frontend" / "vercel.json"):
+            with self.subTest(config_path=config_path.relative_to(ROOT)):
+                self.assertTrue(config_path.is_file())
+                self.assertFalse(config_path.is_symlink())
+                self.assertEqual(
+                    json.loads(config_path.read_text(encoding="utf-8")),
+                    expected,
+                )
 
 
 if __name__ == "__main__":

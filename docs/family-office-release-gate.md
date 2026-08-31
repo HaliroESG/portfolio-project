@@ -132,3 +132,18 @@ receive a separate independent review under the controller before merge. Once
 the trusted workflow exists on `main`, the controller may separately configure
 the six contexts and one required approval from the versioned contract. This
 repository change does not modify branch protection or create an approval.
+
+## Governance-branch Preview boundary
+
+Vercel created two automatic Preview deployments when this governance branch
+was first published: one for `frontend` and one for `quant-terminal-ui`. They
+were Git-integration side effects, not agent-requested deployments, and they do
+not constitute Production evidence.
+
+The root and `frontend` `vercel.json` files now set
+`git.deploymentEnabled["codex/*governance*"]` to `false`. The duplicate static
+configuration deliberately covers both possible Vercel project roots. It is
+branch-bounded: unspecified branches retain Vercel's default deployment
+behavior, so this control does not disable or promote `main`, Production, or
+ordinary product Preview deployments. Its effectiveness must be verified from
+GitHub/Vercel deployment metadata on the next governance-branch commit.
