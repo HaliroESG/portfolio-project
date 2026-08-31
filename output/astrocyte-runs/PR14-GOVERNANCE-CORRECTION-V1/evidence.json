@@ -1,0 +1,31 @@
+{
+  "schema_version": "astrocyte_pr14_governance_correction_evidence_v1",
+  "status": "PASS_PENDING_INDEPENDENT_REVIEW_AND_AUTOMATIC_CI",
+  "generated_at": "2026-08-31T11:39:35Z",
+  "required_base_sha": "a3d07b1d9184a0a7f4ee4f750d2e43b5f8a3bd2f",
+  "correction_code_sha": "333e24a0f01deaf811031afc5a3318c1a8df382e",
+  "correction_code_tree": "48e408b1544c445bfe0c7d1463063ad8deee00c4",
+  "release_hold": {
+    "status": "ACTIVE",
+    "mutation_allowed": false,
+    "provider_actions_allowed": false,
+    "production_contract": "FAMILY_OFFICE_PRODUCTION_HTTP_503"
+  },
+  "pr14_subject": {
+    "head_sha": "bd1bd27330031fa990993f8537865c2e2e3bfb43",
+    "tree_sha": "074b71dffbc508bb32efb6699c663006d9bbbd00",
+    "merge_sha": "a3d07b1d9184a0a7f4ee4f750d2e43b5f8a3bd2f",
+    "ci_receipt": "receipts/pr14-ci-reseal.json"
+  },
+  "local_validation_receipt": "receipts/local-validation.json",
+  "security": {
+    "scan_id": "90745dec-1315-4340-9362-469e61c695b5",
+    "reportable_findings": 0,
+    "coverage": "COMPLETE_WITH_EXPLICIT_EXACT_CODE_DELTA",
+    "inventory": "security-inventory.md"
+  },
+  "github_configuration_changed": false,
+  "provider_actions": "NONE",
+  "merge_authorized": false,
+  "next_single_action": "Independent read-only review of the draft PR at its exact final head; do not merge."
+}
