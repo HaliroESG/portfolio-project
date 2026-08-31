@@ -29,3 +29,11 @@ The native workbench inventory and terminal generator returned zero rows because
 ## Exclusions
 
 No provider/runtime/deployment/Preview/branch-protection configuration was inspected or changed. TAC advisory status was `unknown`; this did not authorize or block the scan.
+
+## Post-review bootstrap delta
+
+The statement above describes scan `90745dec-1315-4340-9362-469e61c695b5` at
+its original immutable scope. A later controller-authorized correction adds
+branch-bounded Vercel Git configuration and updates documentary evidence after
+two automatic Previews were observed. That delta is not covered by the original
+scan and requires a new exact-head security review before merge.

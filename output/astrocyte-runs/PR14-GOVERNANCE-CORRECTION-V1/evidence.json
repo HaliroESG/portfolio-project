@@ -1,10 +1,12 @@
 {
   "schema_version": "astrocyte_pr14_governance_correction_evidence_v1",
-  "status": "PASS_PENDING_INDEPENDENT_REVIEW_AND_AUTOMATIC_CI",
-  "generated_at": "2026-08-31T11:39:35Z",
+  "status": "PASS_PENDING_REVALIDATION_AFTER_GOVERNANCE_PREVIEW_CORRECTION",
+  "generated_at": "2026-08-31T13:19:08Z",
   "required_base_sha": "a3d07b1d9184a0a7f4ee4f750d2e43b5f8a3bd2f",
   "correction_code_sha": "333e24a0f01deaf811031afc5a3318c1a8df382e",
   "correction_code_tree": "48e408b1544c445bfe0c7d1463063ad8deee00c4",
+  "governance_preview_correction_sha": "e6b93e53b9a0769ee276784cf937daf31517de55",
+  "governance_preview_correction_tree": "de5ac2c397afdf1f48d2230d232759fd0959b938",
   "release_hold": {
     "status": "ACTIVE",
     "mutation_allowed": false,
@@ -17,7 +19,7 @@
     "merge_sha": "a3d07b1d9184a0a7f4ee4f750d2e43b5f8a3bd2f",
     "ci_receipt": "receipts/pr14-ci-reseal.json"
   },
-  "local_validation_receipt": "receipts/local-validation.json",
+  "local_validation_receipt": "receipts/pr15-bootstrap-local-validation.json",
   "security": {
     "scan_id": "90745dec-1315-4340-9362-469e61c695b5",
     "reportable_findings": 0,
@@ -25,7 +27,20 @@
     "inventory": "security-inventory.md"
   },
   "github_configuration_changed": false,
-  "provider_actions": "NONE",
+  "vercel_git_configuration": {
+    "mode": "STATIC_REPOSITORY_CONFIG",
+    "disabled_branch_pattern": "codex/*governance*",
+    "config_paths": ["vercel.json", "frontend/vercel.json"],
+    "unspecified_branches_keep_default": true
+  },
+  "prior_automatic_previews": {
+    "observed": true,
+    "count": 2,
+    "projects": ["frontend", "quant-terminal-ui"],
+    "agent_initiated": false,
+    "production": false
+  },
+  "provider_actions": "READ_ONLY_PREFLIGHT_ONLY_NO_RUNTIME_OR_PREVIEW_URL_ACCESS",
   "merge_authorized": false,
-  "next_single_action": "Independent read-only review of the draft PR at its exact final head; do not merge."
+  "next_single_action": "Validate and publish the bounded correction, prove no new governance-branch Preview deployment, then obtain an independent read-only review of the exact new head."
 }
