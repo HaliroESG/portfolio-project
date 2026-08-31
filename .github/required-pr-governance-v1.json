@@ -1,0 +1,36 @@
+{
+  "schema_version": "astrocyte_required_pr_governance_v1",
+  "branch": "main",
+  "activation_status": "NOT_CONFIGURED_BY_THIS_CHANGE",
+  "required_approving_review_count": 1,
+  "dismiss_stale_reviews": true,
+  "require_conversation_resolution": true,
+  "required_checks": [
+    "frontend-contract-check",
+    "workflow-contract",
+    "Family Office / validate",
+    "Family Office / prepare",
+    "Trident / validate",
+    "ASTROCYTE Independent Review"
+  ],
+  "required_check_source": {
+    "expected_app_slug": "github-actions",
+    "app_binding_required": true,
+    "app_id_status": "CONTROLLER_MUST_RESOLVE_BEFORE_ACTIVATION"
+  },
+  "independent_review": {
+    "context": "ASTROCYTE Independent Review",
+    "source": "AUTHENTICATED_GITHUB_REVIEW",
+    "exact_head_required": true,
+    "human_reviewer_required": true,
+    "reviewer_must_differ_from_author": true,
+    "trusted_associations": [
+      "COLLABORATOR",
+      "MEMBER",
+      "OWNER"
+    ],
+    "labels_or_comments_trusted": false,
+    "auto_approval": false
+  },
+  "bootstrap_limitation": "The trusted pull_request_target workflow must already exist on main; this introducing PR still requires separate manual independent review."
+}

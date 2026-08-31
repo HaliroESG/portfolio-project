@@ -18,6 +18,7 @@ EXPECTED = {
     "ci.yml",
     "family-office-release.yml",
     "frontend-runtime-smoke.yml",
+    "independent-review-gate.yml",
     "production-app-smoke.yml",
     "production-data-remediation.yml",
     "schedule.yml",
@@ -94,6 +95,15 @@ ACTIONLINT_ARCHIVE_URL = (
     "https://github.com/rhysd/actionlint/releases/download/v1.7.7/"
     "actionlint_1.7.7_linux_amd64.tar.gz"
 )
+REQUIRED_PR_GOVERNANCE = ROOT / ".github" / "required-pr-governance-v1.json"
+EXPECTED_REQUIRED_CHECKS = [
+    "frontend-contract-check",
+    "workflow-contract",
+    "Family Office / validate",
+    "Family Office / prepare",
+    "Trident / validate",
+    "ASTROCYTE Independent Review",
+]
 
 
 def section(text: str, start: str, end: str) -> str:
@@ -120,6 +130,79 @@ def require_order(text: str, before: str, after: str, path: str) -> None:
     require(text, after, path)
     if text.index(before) > text.index(after):
         raise AssertionError(f"{path}: {before!r} must precede {after!r}")
+
+
+def _strict_json_object(path: Path) -> dict[str, object]:
+    def reject_duplicates(pairs: list[tuple[str, object]]) -> dict[str, object]:
+        result: dict[str, object] = {}
+        for key, value in pairs:
+            if key in result:
+                raise AssertionError(f"{path.name}: duplicate JSON key {key!r}")
+            result[key] = value
+        return result
+
+    try:
+        value = json.loads(path.read_text(encoding="utf-8"), object_pairs_hook=reject_duplicates)
+    except (OSError, json.JSONDecodeError) as exc:
+        raise AssertionError(f"{path.name}: invalid JSON") from exc
+    if not isinstance(value, dict):
+        raise AssertionError(f"{path.name}: root must be an object")
+    return value
+
+
+def validate_required_pr_governance() -> None:
+    contract = _strict_json_object(REQUIRED_PR_GOVERNANCE)
+    expected_fields = {
+        "schema_version",
+        "branch",
+        "activation_status",
+        "required_approving_review_count",
+        "dismiss_stale_reviews",
+        "require_conversation_resolution",
+        "required_checks",
+        "required_check_source",
+        "independent_review",
+        "bootstrap_limitation",
+    }
+    if set(contract) != expected_fields:
+        raise AssertionError("required PR governance fields changed")
+    if contract["schema_version"] != "astrocyte_required_pr_governance_v1":
+        raise AssertionError("required PR governance schema changed")
+    if contract["branch"] != "main":
+        raise AssertionError("required PR governance must target main")
+    if contract["activation_status"] != "NOT_CONFIGURED_BY_THIS_CHANGE":
+        raise AssertionError("repository contract must not overclaim GitHub configuration")
+    if contract["required_approving_review_count"] != 1:
+        raise AssertionError("one independent approval must be required")
+    if contract["dismiss_stale_reviews"] is not True:
+        raise AssertionError("stale reviews must be dismissed")
+    if contract["require_conversation_resolution"] is not True:
+        raise AssertionError("review conversations must be resolved")
+    if contract["required_checks"] != EXPECTED_REQUIRED_CHECKS:
+        raise AssertionError("required PR check contract changed")
+    expected_source = {
+        "expected_app_slug": "github-actions",
+        "app_binding_required": True,
+        "app_id_status": "CONTROLLER_MUST_RESOLVE_BEFORE_ACTIVATION",
+    }
+    if contract["required_check_source"] != expected_source:
+        raise AssertionError("required PR checks must be bound to GitHub Actions")
+    review = contract["independent_review"]
+    expected_review = {
+        "context": "ASTROCYTE Independent Review",
+        "source": "AUTHENTICATED_GITHUB_REVIEW",
+        "exact_head_required": True,
+        "human_reviewer_required": True,
+        "reviewer_must_differ_from_author": True,
+        "trusted_associations": ["COLLABORATOR", "MEMBER", "OWNER"],
+        "labels_or_comments_trusted": False,
+        "auto_approval": False,
+    }
+    if review != expected_review:
+        raise AssertionError("independent review contract changed")
+    limitation = contract["bootstrap_limitation"]
+    if not isinstance(limitation, str) or "must already exist on main" not in limitation:
+        raise AssertionError("independent review bootstrap limitation is missing")
 
 
 RUBY_YAML_USES_PARSER = r"""
@@ -436,6 +519,9 @@ def validate_workflow_contract(contents: dict[str, str]) -> None:
     )
 
     family_office = contents["family-office-release.yml"]
+    family_on = section(family_office, "on:\n", "\npermissions:")
+    family_pr = section(family_on, "  pull_request:\n", "  push:\n")
+    forbid(family_pr, "paths:", "family-office-release.yml pull_request")
     family_validate = section(
         family_office,
         "  validate:\n",
@@ -457,7 +543,20 @@ def validate_workflow_contract(contents: dict[str, str]) -> None:
             "environment: Production",
             f"family-office-release.yml {label}",
         )
+    require(family_validate, "name: Family Office / validate", "family-office-release.yml")
+    require(family_prepare, "name: Family Office / prepare", "family-office-release.yml")
     require(family_prepare, "needs: validate", "family-office-release.yml prepare")
+    require(family_prepare, "if: ${{ always() }}", "family-office-release.yml prepare")
+    require(
+        family_prepare,
+        "Require Family Office validate PASS",
+        "family-office-release.yml prepare",
+    )
+    require(
+        family_prepare,
+        'test "$VALIDATE_RESULT" = "success"',
+        "family-office-release.yml prepare",
+    )
     require(family_mutate, "environment: Production", "family-office-release.yml")
     require(
         family_office,
@@ -483,6 +582,33 @@ def validate_workflow_contract(contents: dict[str, str]) -> None:
     require(family_mutate, "--replay-phase claim", "family-office-release.yml")
     require(family_mutate, "--replay-phase enforce", "family-office-release.yml")
     require(family_mutate, "retention-days: 30", "family-office-release.yml")
+    require(
+        family_validate,
+        "check_family_office_release_hold.py --validate",
+        "family-office-release.yml validate",
+    )
+    require(
+        family_mutate,
+        "Enforce active PR14 release hold before authorization",
+        "family-office-release.yml mutate-production",
+    )
+    require_order(
+        family_mutate,
+        "Enforce active PR14 release hold before authorization",
+        "Record trusted verifier digest before authorization",
+        "family-office-release.yml mutate-production",
+    )
+    require_order(
+        family_mutate,
+        "Enforce active PR14 release hold before authorization",
+        "Claim one-shot mutation authorization",
+        "family-office-release.yml mutate-production",
+    )
+    require(
+        family_mutate,
+        "check_family_office_release_hold.py --enforce-mutation",
+        "family-office-release.yml mutate-production",
+    )
     require_order(
         family_mutate,
         "Enforce one-shot authorization immediately before provider access",
@@ -506,6 +632,37 @@ def validate_workflow_contract(contents: dict[str, str]) -> None:
             "family-office-release.yml provider-free contract",
         )
     _check_action_pins("family-office-release.yml", family_office)
+
+    independent = contents["independent-review-gate.yml"]
+    independent_on = section(independent, "on:\n", "\npermissions:")
+    require(independent_on, "pull_request_target:", "independent-review-gate.yml")
+    require(independent_on, "pull_request_review:", "independent-review-gate.yml")
+    forbid(independent_on, "workflow_dispatch:", "independent-review-gate.yml")
+    forbid(independent, "secrets.", "independent-review-gate.yml")
+    require(independent, "pull-requests: read", "independent-review-gate.yml")
+    require(independent, "statuses: write", "independent-review-gate.yml")
+    require(independent, "cancel-in-progress: false", "independent-review-gate.yml")
+    require(
+        independent,
+        "Checkout trusted default-branch verifier only",
+        "independent-review-gate.yml",
+    )
+    require(
+        independent,
+        "ref: ${{ github.event.repository.default_branch }}",
+        "independent-review-gate.yml",
+    )
+    require(independent, "persist-credentials: false", "independent-review-gate.yml")
+    forbid(
+        independent,
+        "ref: ${{ github.event.pull_request.head.sha }}",
+        "independent-review-gate.yml",
+    )
+    require(independent, "check_independent_review.py", "independent-review-gate.yml")
+    require(independent, "GITHUB_TOKEN: ${{ github.token }}", "independent-review-gate.yml")
+    require(independent, "if: ${{ always() }}", "independent-review-gate.yml")
+    require(independent, "retention-days: 30", "independent-review-gate.yml")
+    _check_action_pins("independent-review-gate.yml", independent)
 
     parity_on = section(contents["workflow-parity.yml"], "on:\n", "\npermissions:")
     require(parity_on, "pull_request:", "workflow-parity.yml")
@@ -540,6 +697,11 @@ def validate_workflow_contract(contents: dict[str, str]) -> None:
     forbid(heartbeat, "secrets.", "schedule.yml scheduler heartbeat")
     forbid(heartbeat, "vars.", "schedule.yml scheduler heartbeat")
     forbid(heartbeat, "environment: Production", "schedule.yml scheduler heartbeat")
+    require(
+        heartbeat,
+        "fetch-depth: 0",
+        "schedule.yml scheduler heartbeat pinned candidate history",
+    )
     require(
         schedule,
         "  preflight:\n    if: ${{ github.event_name == 'workflow_dispatch' && inputs.scope != 'validate' }}",
@@ -610,7 +772,11 @@ def validate_workflow_contract(contents: dict[str, str]) -> None:
             raise AssertionError(f"{name}: post-migration check may not continue on error")
 
     trident = contents["trident-supabase.yml"]
+    trident_on = section(trident, "on:\n", "\npermissions:")
+    trident_pr = section(trident_on, "  pull_request:\n", "  push:\n")
+    forbid(trident_pr, "paths:", "trident-supabase.yml pull_request")
     validate_job = section(trident, "  validate:\n", "\n  mutate-production:")
+    require(validate_job, "name: Trident / validate", "trident-supabase.yml validate")
     forbid(
         validate_job,
         "environment: Production",
@@ -672,6 +838,7 @@ def main() -> None:
     contents = {
         name: (WORKFLOWS / name).read_text(encoding="utf-8") for name in EXPECTED
     }
+    validate_required_pr_governance()
     validate_workflow_contract(contents)
     print(f"workflow parity PASS: {len(actual)} workflow files")
 
