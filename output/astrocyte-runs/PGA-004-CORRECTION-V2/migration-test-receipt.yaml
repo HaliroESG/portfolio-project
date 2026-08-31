@@ -1,0 +1,38 @@
+schema_version: pga004_pg15_receipt_v2
+run_id: PGA-004-CORRECTION-V2
+candidate_code_commit: 3b1d9d75cca4e8880809f047ef5313b5edb0e96c
+base_sha: 3828d6d7851958f6e832896ce908c60097f67f90
+executed_locally: true
+provider_called: false
+supabase_migration_applied: false
+postgres:
+  version: PostgreSQL 15.19 Homebrew
+  command_from_repository_root: backend/tests/sql/run_pga004_pg15.sh
+  optional_binary_override: PGA004_PG_BIN=/path/to/postgresql-15/bin
+  fixture: backend/tests/sql/pga004_legacy_fixture.sql
+  fixture_legacy_table_count: 16
+  fixture_legacy_composite_edge_count: 13
+  isolation_test: backend/tests/sql/pga004_owner_isolation_test.sql
+  cleanup: trap stops ephemeral cluster and removes only /tmp/pga004-pg15.*
+  results:
+    clean_canonical_graph: PASS
+    canonical_owner_composite_fks: 27
+    canonical_direct_owner_profile_fks: 22
+    canonical_owner_related_fks: 49
+    legacy_16_table_graph: PASS
+    legacy_owner_composite_fks: 13
+    legacy_direct_owner_profile_fks: 16
+    legacy_A_B_rls_each_table: PASS
+    legacy_security_invoker_view_A_B: PASS
+    canonical_cross_owner_insert_rejected: PASS
+    legacy_cross_owner_insert_rejected: PASS
+    guarded_post_commit_rollback: PASS
+    contaminated_graph_migration_exit: 3
+    contaminated_graph_atomic_rollback: PASS
+hashes:
+  migration: ad11e810a6ce55bb8bebe23b6f99202266a08c8678b69d32f9dd7bdbc0523d6d
+  preflight: 4b561dead87446d57acbc36dd92510cd7ef65aa29f604c7281af78040cc60050
+  rollback: 3fc610b6d942237dfd4a08b37f398ddb33321392829593efd6f2fc9246f8b94d
+  fixture: a761cbdae6982d4e8e5a83cf365ff3d6de3f2f7ae47f78c4408d555ce1325de2
+  isolation_test: 58575f4c77badc168c8d9437d407e936d2bea310dee36fc1f11582638860eb48
+  harness: fb23c768eadee8ec7132502c53ff1d01ea3513dc96f6cae0bbc14fb2909f644a

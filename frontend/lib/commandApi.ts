@@ -1,4 +1,5 @@
 import { supabase } from './supabase'
+import { commandAvailability } from './commandAvailability'
 
 export class CommandApiError extends Error {
   constructor(message: string, readonly status: number) {
@@ -7,9 +8,15 @@ export class CommandApiError extends Error {
 }
 
 function apiUrl(path: string): string {
-  const base = process.env.NEXT_PUBLIC_COMMAND_API_URL
-  if (!base) throw new CommandApiError('Command API is not configured', 503)
-  return `${base.replace(/\/$/, '')}${path}`
+  const availability = commandAvailability({
+    commandApiUrl: process.env.NEXT_PUBLIC_COMMAND_API_URL,
+    familyOfficeEnvironment: process.env.NEXT_PUBLIC_FAMILY_OFFICE_ENVIRONMENT,
+    vercelEnvironment: process.env.NEXT_PUBLIC_VERCEL_ENV,
+  })
+  if (availability.status !== 'ENABLED') {
+    throw new CommandApiError(availability.message, availability.httpStatus)
+  }
+  return `${availability.baseUrl}${path}`
 }
 
 async function accessToken(): Promise<string> {
@@ -27,13 +34,14 @@ export async function command<T>(
     idempotencyKey?: string
   } = {}
 ): Promise<T> {
+  const url = apiUrl(path)
   const token = await accessToken()
   const headers: Record<string, string> = {
     Authorization: `Bearer ${token}`,
     'Idempotency-Key': options.idempotencyKey ?? crypto.randomUUID(),
   }
   if (!options.formData) headers['Content-Type'] = 'application/json'
-  const response = await fetch(apiUrl(path), {
+  const response = await fetch(url, {
     method: options.method ?? 'POST',
     headers,
     body: options.formData ?? (options.body === undefined ? undefined : JSON.stringify(options.body)),
@@ -49,8 +57,9 @@ export async function command<T>(
 }
 
 export async function authenticatedDownload(path: string): Promise<Blob> {
+  const url = apiUrl(path)
   const token = await accessToken()
-  const response = await fetch(apiUrl(path), { headers: { Authorization: `Bearer ${token}` } })
+  const response = await fetch(url, { headers: { Authorization: `Bearer ${token}` } })
   if (!response.ok) throw new CommandApiError('Export failed', response.status)
   return response.blob()
 }

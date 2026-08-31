@@ -11,6 +11,7 @@ import {
   TrendState,
 } from '../types'
 import { isSelectorSchemaError } from './supabaseSelectorErrors'
+import { assertOwnerIsolation, OwnerIsolationError } from './ownerIsolation'
 
 type JsonRecord = Record<string, unknown>
 
@@ -55,10 +56,12 @@ interface MarketWatchRow {
 
 interface PortfolioRow {
   id: string
+  owner_user_id: string
   name: string
 }
 
 interface PortfolioPositionRow {
+  owner_user_id: string
   portfolio_id: string
   ticker: string
   name: string | null
@@ -71,7 +74,8 @@ interface PortfolioPositionRow {
   geo_coverage: Record<string, number> | null
 }
 
-interface AggregationBundle {
+export interface AggregationBundle {
+  ownerUserId: string
   portfolioOptions: PortfolioOption[]
   assetsByPortfolio: Record<string, Asset[]>
   currencies: CurrencyPair[]
@@ -91,7 +95,6 @@ interface CountryAccumulator {
 }
 
 const DEFAULT_PORTFOLIO_ID = 'default'
-export const PORTFOLIO_AGGREGATION_SWR_KEY = 'portfolio-aggregation-v1'
 const SELECTOR_CACHE: Record<string, string> = {}
 const KNOWN_BAD_SELECTORS: Record<string, Set<string>> = {}
 const MARKET_WATCH_TECHNICAL_COLUMNS = [
@@ -405,14 +408,16 @@ async function detectMarketWatchTechnicalSchema(supabase: SupabaseClient): Promi
 
 function parsePortfolioRow(raw: JsonRecord): PortfolioRow | null {
   const id = readString(raw.id)
-  if (!id) return null
+  const ownerUserId = readString(raw.owner_user_id)
+  if (!id || !ownerUserId) return null
   const name = readString(raw.name) ?? `Portfolio ${id.slice(0, 6)}`
-  return { id, name }
+  return { id, owner_user_id: ownerUserId, name }
 }
 
 function parsePositionRow(raw: JsonRecord): PortfolioPositionRow | null {
   const ticker = readString(raw.ticker)?.toUpperCase()
-  if (!ticker) return null
+  const ownerUserId = readString(raw.owner_user_id)
+  if (!ticker || !ownerUserId) return null
 
   const portfolioId = readString(raw.portfolio_id) ?? DEFAULT_PORTFOLIO_ID
   const quantityCurrent = readNumber(raw.quantity_current) ?? readNumber(raw.quantity)
@@ -422,6 +427,7 @@ function parsePositionRow(raw: JsonRecord): PortfolioPositionRow | null {
   const coverage = readGeoCoverage(raw.geo_coverage)
 
   return {
+    owner_user_id: ownerUserId,
     portfolio_id: portfolioId,
     ticker,
     name: readString(raw.name),
@@ -439,7 +445,8 @@ async function selectWithFallback(
   supabase: SupabaseClient,
   table: string,
   selectors: string[],
-  orderBy?: { column: string; ascending?: boolean }
+  orderBy?: { column: string; ascending?: boolean },
+  ownerUserId?: string,
 ): Promise<JsonRecord[]> {
   const cachedSelector = SELECTOR_CACHE[table]
   const knownBadSelectors = KNOWN_BAD_SELECTORS[table] ?? new Set<string>()
@@ -450,6 +457,9 @@ async function selectWithFallback(
 
   for (const selector of orderedSelectors) {
     let query = supabase.from(table).select(selector)
+    if (ownerUserId) {
+      query = query.eq('owner_user_id', ownerUserId)
+    }
     if (orderBy) {
       query = query.order(orderBy.column, { ascending: orderBy.ascending ?? true })
     }
@@ -513,48 +523,35 @@ async function fetchCurrencyRows(supabase: SupabaseClient): Promise<CurrencyPair
     .filter((currency): currency is CurrencyPair => currency !== null)
 }
 
-async function fetchPortfolios(supabase: SupabaseClient): Promise<PortfolioRow[]> {
-  const rows = await selectWithFallback(supabase, 'portfolios', ['id,name', 'id'])
+async function fetchPortfolios(supabase: SupabaseClient, ownerUserId: string): Promise<PortfolioRow[]> {
+  const rows = await selectWithFallback(
+    supabase,
+    'portfolios',
+    ['id,owner_user_id,name', 'id,owner_user_id'],
+    undefined,
+    ownerUserId,
+  )
   return rows
     .map(parsePortfolioRow)
     .filter((portfolio): portfolio is PortfolioRow => portfolio !== null)
 }
 
-async function fetchPositions(supabase: SupabaseClient): Promise<PortfolioPositionRow[]> {
+async function fetchPositions(supabase: SupabaseClient, ownerUserId: string): Promise<PortfolioPositionRow[]> {
   const rows = await selectWithFallback(
     supabase,
     'portfolio_positions',
     [
-      'portfolio_id,ticker,name,instrument_type,currency,quantity_buy,quantity_current,pru,target_weight_pct,geo_coverage',
-      'portfolio_id,ticker,name,type,currency,quantity_buy,quantity,pru,target_pct,geo_coverage',
-      'portfolio_id,ticker,name,currency,quantity,geo_coverage',
-    ]
+      'owner_user_id,portfolio_id,ticker,name,instrument_type,currency,quantity_buy,quantity_current,pru,target_weight_pct,geo_coverage',
+      'owner_user_id,portfolio_id,ticker,name,type,currency,quantity_buy,quantity,pru,target_pct,geo_coverage',
+      'owner_user_id,portfolio_id,ticker,name,currency,quantity,geo_coverage',
+    ],
+    undefined,
+    ownerUserId,
   )
 
   return rows
     .map(parsePositionRow)
     .filter((position): position is PortfolioPositionRow => position !== null)
-}
-
-function buildFallbackPositions(marketRows: MarketWatchRow[]): PortfolioPositionRow[] {
-  return marketRows
-    .filter((row) => !!row.ticker)
-    .map((row) => {
-      const ticker = (row.ticker ?? '').toUpperCase()
-      const quantityCurrent = row.quantity ?? 1
-      return {
-        portfolio_id: row.portfolio_id ?? DEFAULT_PORTFOLIO_ID,
-        ticker,
-        name: row.name,
-        instrument_type: row.type,
-        currency: row.currency,
-        quantity_buy: row.quantity_buy ?? quantityCurrent,
-        quantity_current: quantityCurrent,
-        pru: row.pru,
-        target_weight_pct: row.target_weight_pct,
-        geo_coverage: row.geo_coverage,
-      }
-    })
 }
 
 function calculateLastSync(rows: MarketWatchRow[]): { display: string; iso: string | null } {
@@ -827,15 +824,20 @@ export function getFreshnessStatus(lastUpdateIso: string | null, staleAfterMinut
   return diffMinutes <= staleAfterMinutes ? 'FRESH' : 'STALE'
 }
 
-export async function loadPortfolioAggregation(supabase: SupabaseClient): Promise<AggregationBundle> {
+export async function loadPortfolioAggregation(
+  supabase: SupabaseClient,
+  ownerUserId: string,
+): Promise<AggregationBundle> {
+  if (!ownerUserId) throw new OwnerIsolationError('Authenticated owner identity is unavailable')
   const [marketRows, currencies, portfolios, persistedPositions] = await Promise.all([
     fetchMarketWatchRows(supabase),
     fetchCurrencyRows(supabase),
-    fetchPortfolios(supabase),
-    fetchPositions(supabase),
+    fetchPortfolios(supabase, ownerUserId),
+    fetchPositions(supabase, ownerUserId),
   ])
 
-  const positions = persistedPositions.length > 0 ? persistedPositions : buildFallbackPositions(marketRows)
+  assertOwnerIsolation(ownerUserId, [portfolios, persistedPositions])
+  const positions = persistedPositions
 
   const portfolioNameById = new Map<string, string>()
   portfolios.forEach((portfolio) => {
@@ -886,6 +888,7 @@ export async function loadPortfolioAggregation(supabase: SupabaseClient): Promis
   const lastSync = calculateLastSync(marketRows)
 
   return {
+    ownerUserId,
     portfolioOptions,
     assetsByPortfolio,
     currencies,

@@ -1,28 +1,41 @@
 "use client"
 
 import { Building2, Database, Landmark, Plus, Server, ShieldCheck } from 'lucide-react'
-import { FormEvent, useState } from 'react'
+import { FormEvent, useEffect, useState } from 'react'
 import useSWR from 'swr'
 import { AppShell } from '../../components/AppShell'
 import { DataHealthPanel } from '../../components/DataHealthPanel'
 import { EmptyState } from '../../components/EmptyState'
 import { command } from '../../lib/commandApi'
-import { FAMILY_OFFICE_REFRESH_MS, FAMILY_OFFICE_SWR_KEY, loadFamilyOfficeBundle } from '../../lib/familyOfficeData'
 import { supabase } from '../../lib/supabase'
+import { useFamilyOfficeBundle } from '../../lib/useFamilyOfficeBundle'
 import type { FamilyOfficeOwnerProfileRow } from '../../types'
 
-async function loadProfile(): Promise<FamilyOfficeOwnerProfileRow | null> {
+async function loadProfile(expectedOwnerUserId: string): Promise<FamilyOfficeOwnerProfileRow | null> {
   const { data, error } = await supabase.from('fo_owner_profiles').select('user_id,email,display_name,base_currency,created_at,updated_at').maybeSingle()
   if (error) throw error
-  return data as FamilyOfficeOwnerProfileRow | null
+  const profile = data as FamilyOfficeOwnerProfileRow | null
+  if (profile && profile.user_id !== expectedOwnerUserId) {
+    throw new Error('Cross-owner profile data was refused by the UI boundary')
+  }
+  return profile
 }
 
 export default function AdminPage() {
-  const { data, error, isLoading, mutate } = useSWR(FAMILY_OFFICE_SWR_KEY, () => loadFamilyOfficeBundle(supabase), { refreshInterval: FAMILY_OFFICE_REFRESH_MS })
-  const { data: profile } = useSWR('family-office-owner-profile', loadProfile)
+  const { data, error, isLoading, mutate, ownerUserId } = useFamilyOfficeBundle()
+  const { data: profile, error: profileError } = useSWR(
+    ownerUserId ? `family-office-owner-profile-v2:${ownerUserId}` : null,
+    () => loadProfile(ownerUserId ?? ''),
+  )
   const [pending, setPending] = useState<string | null>(null)
   const [feedback, setFeedback] = useState<string | null>(null)
   const [actionError, setActionError] = useState<string | null>(null)
+
+  useEffect(() => {
+    setPending(null)
+    setFeedback(null)
+    setActionError(null)
+  }, [ownerUserId])
 
   const executeForm = async (key: string, action: () => Promise<unknown>, form: HTMLFormElement) => {
     setPending(key)
@@ -63,7 +76,7 @@ export default function AdminPage() {
   }
 
   if (isLoading) return <AppShell><main className="p-5 text-sm text-slate-500">Chargement de l’administration…</main></AppShell>
-  if (error || !data) return <AppShell><main className="p-5"><EmptyState tone="error" title="Administration indisponible" message="La lecture Supabase a échoué." /></main></AppShell>
+  if (error || profileError || !data) return <AppShell><main className="p-5"><EmptyState tone="error" title="Administration indisponible" message="La lecture Supabase du registre ou du profil propriétaire a échoué." /></main></AppShell>
 
   return (
     <AppShell>

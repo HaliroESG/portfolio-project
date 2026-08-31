@@ -1,13 +1,19 @@
 "use client"
 
-import React, { useMemo, useState } from 'react'
-import useSWR from 'swr'
+import React, { useMemo } from 'react'
 import { AlertTriangle, ArrowDown, ArrowUp, ChevronsUpDown, LockKeyhole, Scale } from 'lucide-react'
 import { AppShell } from '../../components/AppShell'
 import { EmptyState } from '../../components/EmptyState'
 import { supabase } from '../../lib/supabase'
 import { cn } from '../../lib/utils'
 import { loadMacroAllocationAdvice } from '../../lib/macroStrategyData'
+import {
+  useArbitrageOwnerReader,
+  type ArbitragePortfolioRow as PortfolioRow,
+  type ArbitrageRawDecisionRow as RawDecisionRow,
+} from '../../lib/arbitrageOwnerReader'
+import { useOwnerBoundState } from '../../lib/useOwnerBoundState'
+import { useOwnerScopedSWR } from '../../lib/useOwnerScopedSWR'
 import type {
   AllocationAdviceAction,
   AllocationAdviceExecution,
@@ -27,11 +33,6 @@ type SortConfig = { key: SortKey; direction: SortDirection }
 type ExecutionUniverseStatus = 'READY' | 'PARTIAL_SOURCE' | 'MANUAL_REQUIRED'
 type OverlayFilter = 'ALL' | 'STANDARD' | 'MACRO'
 
-interface PortfolioRow {
-  id: string
-  name: string | null
-}
-
 interface ExecutionUniverseRow {
   key: string
   sourceId: string
@@ -44,37 +45,7 @@ interface ExecutionUniverseRow {
   status: ExecutionUniverseStatus
 }
 
-type RawDecisionRow = Record<string, unknown>
 type RawRow = Record<string, unknown>
-
-const DECISION_SELECTOR = [
-  'portfolio_id',
-  'ticker',
-  'name',
-  'asset_class',
-  'isin',
-  'currency',
-  'current_quantity',
-  'current_value_eur',
-  'current_weight_pct',
-  'target_weight_pct',
-  'drift_pct',
-  'rebalance_amount_eur',
-  'action',
-  'confidence',
-  'reason_codes',
-  'data_state',
-  'price_state',
-  'market_data_status',
-  'reconciliation_state',
-  'trident_provider_symbol',
-  'trident_score',
-  'trident_confidence',
-  'history_coverage_pct',
-  'target_total_pct',
-  'total_value_eur',
-  'updated_at',
-].join(',')
 
 const ACTION_RANK: Record<PortfolioDecisionAction, number> = {
   EXIT: 0,
@@ -462,38 +433,35 @@ function SortHeader({
 }
 
 export default function ArbitragePage() {
-  const [selectedPortfolioIdOverride, setSelectedPortfolioIdOverride] = useState('')
-  const [selectedScope, setSelectedScope] = useState<PortfolioScope>('PERSO')
-  const [overlayFilter, setOverlayFilter] = useState<OverlayFilter>('ALL')
-  const [actionFilter, setActionFilter] = useState<'ALL' | PortfolioDecisionAction>('ALL')
-  const [issueFilter, setIssueFilter] = useState('ALL')
-  const [assetClassFilter, setAssetClassFilter] = useState('ALL')
-  const [currencyFilter, setCurrencyFilter] = useState('ALL')
-  const [sort, setSort] = useState<SortConfig>(DEFAULT_SORT)
+  const {
+    ownerUserId,
+    ownerError,
+    portfolios,
+    portfolioError,
+    selectedPortfolioId,
+    setSelectedPortfolioIdOverride,
+    actionFilter,
+    setActionFilter,
+    rawDecisionRows,
+    decisionError: error,
+    decisionsLoading: isLoading,
+  } = useArbitrageOwnerReader()
+  const [selectedScope, setSelectedScope] = useOwnerBoundState<PortfolioScope>(ownerUserId, 'PERSO')
+  const [overlayFilter, setOverlayFilter] = useOwnerBoundState<OverlayFilter>(ownerUserId, 'ALL')
+  const [issueFilter, setIssueFilter] = useOwnerBoundState(ownerUserId, 'ALL')
+  const [assetClassFilter, setAssetClassFilter] = useOwnerBoundState(ownerUserId, 'ALL')
+  const [currencyFilter, setCurrencyFilter] = useOwnerBoundState(ownerUserId, 'ALL')
+  const [sort, setSort] = useOwnerBoundState<SortConfig>(ownerUserId, DEFAULT_SORT)
 
-  const { data: portfolios } = useSWR('arbitrage-portfolios', async () => {
-    const { data, error } = await supabase.from('portfolios').select('id,name')
-    if (error) throw error
-    return (data ?? []) as PortfolioRow[]
-  })
-  const selectedPortfolioId = selectedPortfolioIdOverride || portfolios?.[0]?.id || ''
-
-  const { data: rows = [], error, isLoading } = useSWR(
-    selectedPortfolioId ? ['portfolio-decision-items', selectedPortfolioId] : null,
-    async () => {
-      const { data, error } = await supabase
-        .from('portfolio_decision_items_latest')
-        .select(DECISION_SELECTOR)
-        .eq('portfolio_id', selectedPortfolioId)
-      if (error) throw error
-      return ((data ?? []) as unknown as RawDecisionRow[])
-        .map(parseDecisionRow)
-        .filter((row): row is PortfolioDecisionItemRow => row !== null)
-    }
+  const rows = useMemo(
+    () => rawDecisionRows.map(parseDecisionRow).filter((row): row is PortfolioDecisionItemRow => row !== null),
+    [rawDecisionRows],
   )
 
-  const { data: adviceRows = [], error: adviceError } = useSWR(
-    ['allocation-advice', selectedScope],
+  const { data: adviceRows = [], error: adviceError } = useOwnerScopedSWR(
+    ownerUserId,
+    'arbitrage-allocation-advice',
+    [selectedScope],
     async () => {
       const { data, error } = await supabase
         .from('allocation_advice_items_latest')
@@ -507,15 +475,21 @@ export default function ArbitragePage() {
     }
   )
 
-  const { data: macroRows = [], error: macroError } = useSWR(
-    selectedPortfolioId ? ['macro-allocation-advice', selectedPortfolioId] : null,
-    () => loadMacroAllocationAdvice(supabase, selectedPortfolioId)
+  const { data: macroRows = [], error: macroError } = useOwnerScopedSWR(
+    selectedPortfolioId ? ownerUserId : null,
+    'arbitrage-macro-allocation-advice',
+    [selectedPortfolioId],
+    () => loadMacroAllocationAdvice(supabase, selectedPortfolioId),
   )
 
-  const { data: executionRows = [], error: executionError } = useSWR(
+  const { data: executionRows = [], error: executionError } = useOwnerScopedSWR(
+    ownerUserId,
     'arbitrage-execution-universe',
-    loadExecutionUniverse
+    [],
+    loadExecutionUniverse,
   )
+
+  const privateReadError = ownerError ?? portfolioError ?? error
 
   const filters = useMemo(() => {
     const issueCodes = new Set<string>()
@@ -841,7 +815,7 @@ export default function ArbitragePage() {
             )}
           </section>
 
-          {error ? (
+          {privateReadError ? (
             <EmptyState
               tone="error"
               title="Arbitrage read model unavailable"

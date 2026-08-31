@@ -1,20 +1,14 @@
 "use client"
 
-import React, { useEffect, useMemo, useState } from 'react'
-import useSWR from 'swr'
+import React, { useMemo, useState } from 'react'
 import { AppShell } from '../../components/AppShell'
 import { GeographicMap } from '../../components/GeographicMap'
-import { supabase } from '../../lib/supabase'
 import { Globe, Loader2 } from 'lucide-react'
 import { cn } from '../../lib/utils'
 import { Asset, CountryPerformance, GeoTimeframe, PortfolioOption } from '../../types'
-import {
-  PORTFOLIO_AGGREGATION_SWR_KEY,
-  buildGeographicPerformance,
-  loadPortfolioAggregation,
-} from '../../lib/portfolioData'
+import { buildGeographicPerformance } from '../../lib/portfolioData'
 import { stateFromList, stateLabel as dataStateLabel } from '../../lib/dataStates'
-import { swrOptions, SWR_REFRESH } from '../../lib/swrConfig'
+import { usePortfolioAggregationOwnerReader } from '../../lib/portfolioAggregationOwnerReader'
 
 function getDisplayedPerformance(country: CountryPerformance, timeframe: GeoTimeframe): number {
   if (timeframe === 'day') return country.performanceDay
@@ -23,45 +17,30 @@ function getDisplayedPerformance(country: CountryPerformance, timeframe: GeoTime
 }
 
 export default function GeoPage() {
-  const [lastSync, setLastSync] = useState('')
-  const [lastSyncIso, setLastSyncIso] = useState<string | null>(null)
-  const [assetsByPortfolio, setAssetsByPortfolio] = useState<Record<string, Asset[]>>({ ALL: [] })
-  const [portfolioOptions, setPortfolioOptions] = useState<PortfolioOption[]>([])
-  const [selectedPortfolioId, setSelectedPortfolioId] = useState<string>('ALL')
   const [timeframe, setTimeframe] = useState<GeoTimeframe>('day')
-  const [loading, setLoading] = useState(true)
+  const {
+    ownerError,
+    selectedPortfolioId,
+    setSelectedPortfolioId,
+    portfolioBundle,
+    bundleError,
+    loading,
+  } = usePortfolioAggregationOwnerReader()
+
+  const portfolioOptions: PortfolioOption[] = portfolioBundle?.portfolioOptions ?? []
+  const lastSync = portfolioBundle?.lastSync ?? ''
+  const lastSyncIso = portfolioBundle?.lastSyncIso ?? null
 
   const assets = useMemo(() => {
+    const assetsByPortfolio: Record<string, Asset[]> = portfolioBundle?.assetsByPortfolio ?? { ALL: [] }
     return assetsByPortfolio[selectedPortfolioId] ?? assetsByPortfolio.ALL ?? []
-  }, [assetsByPortfolio, selectedPortfolioId])
+  }, [portfolioBundle, selectedPortfolioId])
 
   const { regions, countries } = useMemo(() => {
     return buildGeographicPerformance(assets, timeframe)
   }, [assets, timeframe])
 
-  const { data: portfolioBundle, isLoading: bundleLoading } = useSWR(
-    PORTFOLIO_AGGREGATION_SWR_KEY,
-    () => loadPortfolioAggregation(supabase),
-    swrOptions(SWR_REFRESH.SLOW)
-  )
-
-  useEffect(() => {
-    if (!portfolioBundle) return
-    setAssetsByPortfolio(portfolioBundle.assetsByPortfolio)
-    setPortfolioOptions(portfolioBundle.portfolioOptions)
-    setLastSync(portfolioBundle.lastSync)
-    setLastSyncIso(portfolioBundle.lastSyncIso)
-
-    if (selectedPortfolioId !== 'ALL' && !portfolioBundle.assetsByPortfolio[selectedPortfolioId]) {
-      setSelectedPortfolioId('ALL')
-    }
-  }, [portfolioBundle, selectedPortfolioId])
-
-  useEffect(() => {
-    setLoading(bundleLoading)
-  }, [bundleLoading])
-
-  const geoState = stateFromList({ loading, count: regions.length })
+  const geoState = stateFromList({ loading, count: regions.length, error: ownerError ?? bundleError })
 
   return (
     <AppShell lastSync={lastSync} lastSyncIso={lastSyncIso}>

@@ -622,6 +622,7 @@ export interface MacroAllocationAdviceRow {
 
 export interface GovernanceTargetRow {
   id: string
+  owner_user_id: string
   portfolio_id: string
   asset_class: string
   target_pct: number
@@ -639,6 +640,7 @@ export type BrokerTransactionSide =
 
 export interface BrokerTransactionRow {
   id: number
+  owner_user_id: string
   broker: string
   account_id: string
   external_txn_id: string
@@ -674,6 +676,7 @@ export type BrokerReconciliationRunStatus = 'MATCH' | 'MISMATCH' | 'NOT_CHECKED'
 
 export interface BrokerReconciliationRunRow {
   id: string
+  owner_user_id: string
   broker: string
   account_id: string
   reconciliation_date: string
@@ -692,6 +695,7 @@ export interface BrokerReconciliationRunRow {
 
 export interface BrokerReconciliationItemRow {
   id: number
+  owner_user_id: string
   run_id: string
   instrument_key: string
   symbol: string | null
@@ -881,6 +885,7 @@ export type PortfolioScope = 'PERSO' | 'PRO'
 
 export interface TargetModelRow {
   id: string
+  owner_user_id: string
   portfolio_scope: PortfolioScope
   model_name: string
   source_file: string
@@ -896,6 +901,7 @@ export interface TargetModelRow {
 
 export interface TargetBucketRow {
   id: number
+  owner_user_id: string
   model_id: string
   portfolio_scope: PortfolioScope
   bucket_key: string
@@ -911,6 +917,7 @@ export interface TargetBucketRow {
 
 export interface TargetEnvelopeLineRow {
   id: number
+  owner_user_id: string
   model_id: string
   portfolio_scope: PortfolioScope
   envelope: string
@@ -1103,6 +1110,7 @@ export interface FamilyOfficeOperationRow {
 }
 
 export interface FamilyOfficePerformanceRow {
+  owner_user_id: string
   portfolio_id: string
   performance_date: string
   nav_eur: number | null
@@ -1134,6 +1142,15 @@ export interface FamilyOfficeDecisionRow {
   executed_at: string | null
   reconciled_at: string | null
   updated_at: string
+}
+
+export interface FamilyOfficeOrderDraftRow {
+  id: string
+  owner_user_id: string
+  decision_id: string
+  account_id: string
+  status: string
+  estimated_gross_eur: number | null
 }
 
 export interface FamilyOfficeMonthlyCloseRow {

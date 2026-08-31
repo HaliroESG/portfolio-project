@@ -1,0 +1,36 @@
+schema_version: astrocyte_pga_handoff_v1
+run_id: PGA-004-CORRECTION-V1
+STATUS: READY_FOR_INDEPENDENT_REVIEW
+BASE_SHA: 00c88d220fc7a99ff642d4423193fcd6b58a1656
+CODE_COMMIT_SHA: 46ccdff13d50eb2639dced30fed64a161c183abc
+ARTIFACT_COMMIT: commit containing this sealed handoff and SHA256SUMS
+BRANCH: codex/portfolio-astrocyte-pga-004-correction-v1
+PR:
+  number: 12
+  url: https://github.com/HaliroESG/portfolio-project/pull/12
+  state: OPEN_DRAFT
+  ready_authorized: false
+  merge_authorized: false
+  exact_independent_review_required: true
+CAPABILITY:
+  identifier: TWO_OWNER_ISOLATION_CANDIDATE_READY_FOR_INDEPENDENT_REVIEW
+  supported_two_owner_contract: PASS_LOCAL
+  cross_owner_database_constraints: PASS_LOCAL
+  owner_scoped_rls: PASS_LOCAL
+  production_business_command_http_503: PASS_LOCAL_CODE_AND_API_TEST
+  supabase_runtime_certification: BLOCKED_NO_ISOLATED_TARGET
+TESTS:
+  PostgreSQL_15_19_ephemeral: PASS
+  backend_pytest_146: PASS
+  frontend_lint_tsc_tests_critical_perf_build: PASS
+  code_commit_ci: PASS
+  supabase_smoke_local: BLOCKED
+  authenticated_browser_A_B: NOT_RUN
+SAFETY:
+  production_read_write_config: NONE
+  supabase_migration_application: NONE
+  command_activation: NONE
+  provider_direct_mutation: NONE
+  paid_action: NONE
+EPISTEMIC_BOUNDARY: repository, local PostgreSQL 15, synthetic API/UI tests and PR CI evidence; no staging or Production runtime proof
+NEXT_SINGLE_ACTION: independent exact read-only review of the final PR head; return ship, fix-first, or rethink without implementation in the review lane

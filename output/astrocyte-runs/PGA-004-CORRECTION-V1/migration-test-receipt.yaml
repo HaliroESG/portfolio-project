@@ -1,0 +1,52 @@
+schema_version: astrocyte_pga_migration_receipt_v1
+run_id: PGA-004-CORRECTION-V1
+observed_at_utc: '2026-08-29T11:02:27Z'
+status: PASS
+database:
+  engine: PostgreSQL
+  version: '15.19'
+  distribution: Homebrew arm64
+  target: disposable local cluster
+  network: unix socket only
+  persistent_service_started: false
+  production_or_staging_target: false
+preflight:
+  available_disk_gib: 248.35
+  required_floor_gib: 10
+  result: PASS
+migrations_applied_in_order:
+  - backend/sql/20260713_02_family_office_core.sql
+  - backend/sql/20260713_03_family_office_security.sql
+  - backend/sql/20260713_04_family_office_truthful_overview.sql
+  - backend/sql/20260713_05_family_office_policy_cleanup_indexes.sql
+  - backend/sql/20260829_family_office_owner_isolation.sql
+fixture:
+  identities:
+    owner_a: aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa
+    owner_b: bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb
+  data_class: synthetic only
+assertions:
+  supported_owner_profiles: 2
+  owner_composite_fk_catalog_count: 49
+  unsafe_owner_scoped_foreign_keys: 0
+  public_tables_without_rls: 0
+  anon_selectable_public_tables: 0
+  authenticated_writable_public_tables: 0
+  owner_a_visible_owner_profiles: 1
+  owner_a_visible_portfolios: 1
+  owner_a_visible_owner_b_portfolios: 0
+  owner_b_visible_owner_profiles: 1
+  owner_b_visible_portfolios: 1
+  owner_b_visible_owner_a_portfolios: 0
+  cross_owner_account_insert: REJECTED_FOREIGN_KEY
+  cross_owner_holding_insert: REJECTED_FOREIGN_KEY
+  public_views_execute_as_authenticated_owner_b: PASS
+  legacy_unscoped_authenticated_select: REVOKED
+cleanup:
+  pg_ctl_fast_stop: PASS
+  temporary_cluster_removed: PASS
+  persistent_test_data: false
+source_sha256:
+  migration: a08cea4e67df7cec5a914d4d7864cb680ecb40dbdbc315402d4821cea1a53717
+  sql_test: e713554a306426bd3c7efc29ed49f338fbe3168de537ac91280023b8c39b4977
+epistemic_boundary: local PostgreSQL migration, catalog, RLS, view and synthetic A/B evidence only; not Supabase runtime certification

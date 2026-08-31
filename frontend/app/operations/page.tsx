@@ -1,13 +1,11 @@
 "use client"
 
 import { AlertTriangle, Check, FileDown, FileSpreadsheet, LockKeyhole, RefreshCw, Upload } from 'lucide-react'
-import { FormEvent, useMemo, useState } from 'react'
-import useSWR from 'swr'
+import { FormEvent, useEffect, useMemo, useState } from 'react'
 import { AppShell } from '../../components/AppShell'
 import { EmptyState } from '../../components/EmptyState'
 import { authenticatedDownload, command } from '../../lib/commandApi'
-import { FAMILY_OFFICE_REFRESH_MS, FAMILY_OFFICE_SWR_KEY, loadFamilyOfficeBundle } from '../../lib/familyOfficeData'
-import { supabase } from '../../lib/supabase'
+import { useFamilyOfficeBundle } from '../../lib/useFamilyOfficeBundle'
 import type { FamilyOfficeOperationRow } from '../../types'
 
 const eur = new Intl.NumberFormat('fr-FR', { style: 'currency', currency: 'EUR', maximumFractionDigits: 0 })
@@ -19,10 +17,15 @@ function severityStyle(severity: FamilyOfficeOperationRow['severity']): string {
 }
 
 export default function OperationsPage() {
-  const { data, error, isLoading, mutate } = useSWR(FAMILY_OFFICE_SWR_KEY, () => loadFamilyOfficeBundle(supabase), { refreshInterval: FAMILY_OFFICE_REFRESH_MS })
+  const { data, error, isLoading, mutate, ownerUserId } = useFamilyOfficeBundle()
   const [pendingAction, setPendingAction] = useState<string | null>(null)
   const [feedback, setFeedback] = useState<string | null>(null)
   const [actionError, setActionError] = useState<string | null>(null)
+  useEffect(() => {
+    setPendingAction(null)
+    setFeedback(null)
+    setActionError(null)
+  }, [ownerUserId])
   const primaryPortfolio = data?.portfolios[0] ?? null
   const institutionNames = useMemo(() => new Map((data?.institutions ?? []).map((row) => [row.id, row.name])), [data?.institutions])
 

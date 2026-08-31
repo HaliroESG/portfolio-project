@@ -2,6 +2,8 @@ from datetime import date
 
 from broker_ingest.sync_reconciliation import persist_reconciliation_report
 
+OWNER_A = "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa"
+
 
 class _FakeResponse:
     def __init__(self, data=None):
@@ -109,6 +111,7 @@ def test_persist_reconciliation_report_upserts_run_and_replaces_items():
         fake,
         _sample_report(),
         reconciliation_date=date(2026, 5, 11),
+        owner_user_id=OWNER_A,
         source_file="fortuneo.csv",
         positions_file="positions.csv",
     )
@@ -117,15 +120,18 @@ def test_persist_reconciliation_report_upserts_run_and_replaces_items():
 
     run_ops = fake.tables["broker_reconciliation_runs"].operations
     assert run_ops[0][0] == "upsert"
-    assert run_ops[0][2] == "idempotency_key"
-    assert run_ops[0][1]["idempotency_key"] == "FORTUNEO:acct-1:2026-05-11:fortuneo.csv:positions.csv"
+    assert run_ops[0][2] == "owner_user_id,idempotency_key"
+    assert run_ops[0][1]["owner_user_id"] == OWNER_A
+    assert run_ops[0][1]["idempotency_key"] == f"{OWNER_A}:FORTUNEO:acct-1:2026-05-11:fortuneo.csv:positions.csv"
     assert run_ops[0][1]["status"] == "MISMATCH"
 
     item_ops = fake.tables["broker_reconciliation_items"].operations
     assert item_ops[0] == ("delete",)
-    assert item_ops[1] == ("eq", "run_id", "run-1")
-    assert item_ops[2] == ("insert", [
+    assert item_ops[1] == ("eq", "owner_user_id", OWNER_A)
+    assert item_ops[2] == ("eq", "run_id", "run-1")
+    assert item_ops[3] == ("insert", [
         {
+            "owner_user_id": OWNER_A,
             "run_id": "run-1",
             "instrument_key": "isin:FR0010756098",
             "symbol": "CW8",
@@ -140,6 +146,7 @@ def test_persist_reconciliation_report_upserts_run_and_replaces_items():
             "transaction_count": None,
         },
         {
+            "owner_user_id": OWNER_A,
             "run_id": "run-1",
             "instrument_key": "isin:FR0011869353",
             "symbol": "EWLD",
@@ -172,6 +179,7 @@ def test_persist_reconciliation_report_marks_rollup_not_checked():
         fake,
         report,
         reconciliation_date=date(2026, 5, 11),
+        owner_user_id=OWNER_A,
         source_file="fortuneo.csv",
         positions_file=None,
     )

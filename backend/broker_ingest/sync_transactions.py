@@ -3,14 +3,26 @@ from __future__ import annotations
 from typing import Any, Iterable
 
 from .models import CanonicalTransaction
+from owner_scope import owner_scoped_identifier, require_owner_user_id
 
 
-def _to_payload(tx: CanonicalTransaction, source_file: str | None = None) -> dict[str, Any]:
+def _to_payload(
+    tx: CanonicalTransaction,
+    owner_user_id: str,
+    source_file: str | None = None,
+) -> dict[str, Any]:
+    owner = require_owner_user_id(owner_user_id)
     return {
+        "owner_user_id": owner,
         "broker": tx.broker,
         "account_id": tx.account_id,
         "external_txn_id": tx.external_txn_id,
-        "idempotency_key": f"{tx.broker}:{tx.account_id}:{tx.external_txn_id}",
+        "idempotency_key": owner_scoped_identifier(
+            owner,
+            tx.broker,
+            tx.account_id,
+            tx.external_txn_id,
+        ),
         "trade_date": tx.trade_date.isoformat(),
         "settlement_date": tx.settlement_date.isoformat() if tx.settlement_date else None,
         "symbol": tx.symbol,
@@ -32,16 +44,21 @@ def _to_payload(tx: CanonicalTransaction, source_file: str | None = None) -> dic
 def upsert_canonical_transactions(
     supabase_client: Any,
     transactions: Iterable[CanonicalTransaction],
+    owner_user_id: str,
     source_file: str | None = None,
 ) -> int:
-    payloads = [_to_payload(tx, source_file=source_file) for tx in transactions]
+    owner = require_owner_user_id(owner_user_id)
+    payloads = [
+        _to_payload(tx, owner_user_id=owner, source_file=source_file)
+        for tx in transactions
+    ]
     if not payloads:
         return 0
 
     (
         supabase_client
         .table("broker_transactions")
-        .upsert(payloads, on_conflict="idempotency_key")
+        .upsert(payloads, on_conflict="owner_user_id,idempotency_key")
         .execute()
     )
     return len(payloads)

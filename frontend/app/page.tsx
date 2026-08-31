@@ -15,18 +15,12 @@ import {
   WalletCards,
 } from 'lucide-react'
 import Link from 'next/link'
-import { useMemo, useState } from 'react'
-import useSWR from 'swr'
+import { useEffect, useMemo, useState } from 'react'
 import { AppShell } from '../components/AppShell'
 import { EmptyState } from '../components/EmptyState'
 import { FamilyOfficeStateBadge } from '../components/FamilyOfficeStateBadge'
 import { command } from '../lib/commandApi'
-import {
-  FAMILY_OFFICE_REFRESH_MS,
-  FAMILY_OFFICE_SWR_KEY,
-  loadFamilyOfficeBundle,
-} from '../lib/familyOfficeData'
-import { supabase } from '../lib/supabase'
+import { useFamilyOfficeBundle } from '../lib/useFamilyOfficeBundle'
 import type { FamilyOfficeOperationRow, FamilyOfficeOverviewRow } from '../types'
 
 const eur = new Intl.NumberFormat('fr-FR', {
@@ -75,13 +69,13 @@ function severityClass(severity: FamilyOfficeOperationRow['severity']): string {
 }
 
 export default function FamilyOfficeOverviewPage() {
-  const { data, error, isLoading, mutate } = useSWR(
-    FAMILY_OFFICE_SWR_KEY,
-    () => loadFamilyOfficeBundle(supabase),
-    { refreshInterval: FAMILY_OFFICE_REFRESH_MS, revalidateOnFocus: false }
-  )
+  const { data, error, isLoading, mutate, ownerUserId } = useFamilyOfficeBundle()
   const [bootstrapping, setBootstrapping] = useState(false)
   const [commandError, setCommandError] = useState<string | null>(null)
+  useEffect(() => {
+    setBootstrapping(false)
+    setCommandError(null)
+  }, [ownerUserId])
 
   const totals = useMemo(() => aggregateOverview(data?.overview ?? []), [data?.overview])
   const primary = data?.overview[0] ?? null

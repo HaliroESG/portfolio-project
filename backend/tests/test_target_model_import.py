@@ -1,8 +1,12 @@
 from __future__ import annotations
 
+import pytest
 from openpyxl import Workbook
 
 from scripts.import_target_model import parse_target_model, run_import
+
+OWNER_A = "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa"
+OWNER_B = "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb"
 
 
 class _Response:
@@ -41,8 +45,14 @@ class _Table:
     def execute(self):
         rows = self.client.rows.setdefault(self.name, [])
         if self.operation == "upsert":
-            key = self.on_conflict
-            existing = next((row for row in rows if row.get(key) == self.payload.get(key)), None)
+            keys = self.on_conflict.split(",")
+            existing = next(
+                (
+                    row for row in rows
+                    if all(row.get(key) == self.payload.get(key) for key in keys)
+                ),
+                None,
+            )
             if existing:
                 existing.update(self.payload)
                 return _Response([existing])
@@ -175,10 +185,56 @@ def test_target_model_apply_replaces_child_rows(tmp_path):
     _write_personal(source)
     fake = _Supabase()
 
-    report = run_import(source, kind="perso", dry_run=False, supabase_client=fake)
+    report = run_import(
+        source,
+        kind="perso",
+        dry_run=False,
+        supabase_client=fake,
+        owner_user_id=OWNER_A,
+    )
 
     assert report["ok"] is True
-    assert fake.rows["target_models"][0]["id"] == "target_model:perso:active"
+    assert fake.rows["target_models"][0]["id"] == f"{OWNER_A}:target_model:perso:active"
+    assert fake.rows["target_models"][0]["owner_user_id"] == OWNER_A
     assert len(fake.rows["target_buckets"]) == 6
     assert len(fake.rows["target_envelope_lines"]) == 1
     assert len(fake.rows["target_model_audit_holdings"]) == 2
+
+
+def test_target_model_apply_namespaces_same_kind_for_two_owners(tmp_path):
+    source = tmp_path / "personal.xlsx"
+    _write_personal(source)
+    fake = _Supabase()
+
+    result_a = run_import(
+        source,
+        kind="perso",
+        dry_run=False,
+        supabase_client=fake,
+        owner_user_id=OWNER_A,
+    )
+    result_b = run_import(
+        source,
+        kind="perso",
+        dry_run=False,
+        supabase_client=fake,
+        owner_user_id=OWNER_B,
+    )
+
+    assert result_a["write"]["model_upserted"] != result_b["write"]["model_upserted"]
+    assert {row["owner_user_id"] for row in fake.rows["target_models"]} == {OWNER_A, OWNER_B}
+    assert {row["owner_user_id"] for row in fake.rows["target_buckets"]} == {OWNER_A, OWNER_B}
+
+
+def test_target_model_apply_requires_explicit_unambiguous_owner(tmp_path):
+    source = tmp_path / "personal.xlsx"
+    _write_personal(source)
+
+    with pytest.raises(RuntimeError, match="owner_user_id is required"):
+        run_import(
+            source,
+            kind="perso",
+            dry_run=False,
+            supabase_client=_Supabase(),
+            owner_user_id=None,
+        )

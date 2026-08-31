@@ -12,13 +12,14 @@ import type {
   FamilyOfficePortfolioRow,
   FamilyOfficePositionRow,
 } from '../types'
+import { assertOwnerIsolation, OwnerIsolationError } from './ownerIsolation'
 
 const OVERVIEW_COLUMNS = 'owner_user_id,portfolio_id,portfolio_name,portfolio_type,base_currency,benchmark_symbol,liquid_assets_eur,cash_eur,manual_assets_eur,liabilities_eur,net_asset_value_eur,twr_mtd,twr_ytd,xirr_since_inception,coverage_pct,performance_state,volatility_30d_pct,max_drawdown_ytd_pct,largest_position_pct,open_exception_count,updated_at'
 const POSITION_COLUMNS = 'id,owner_user_id,portfolio_id,account_id,instrument_id,instrument_key,isin,ticker,name,instrument_type,currency,snapshot_date,quantity,average_cost,cost_basis_eur,price_local,fx_rate_to_eur,market_value_eur,unrealized_pnl_eur,data_state,price_as_of,fx_as_of,reconciliation_state,calculated_at'
 const CASH_COLUMNS = 'id,owner_user_id,portfolio_id,account_id,balance_date,currency,balance_local,fx_rate_to_eur,balance_eur,data_state,calculated_at'
 const OPERATION_COLUMNS = 'id,owner_user_id,portfolio_id,account_id,exception_type,severity,status,title,details,source_ref,detected_at,resolved_at'
 const MANUAL_COLUMNS = 'owner_user_id,portfolio_id,holding_id,holding_kind,asset_type,name,currency,valuation_frequency,next_valuation_date,status,valuation_date,value_local,fx_rate_to_eur,value_eur,source,confidence,created_at'
-const PERFORMANCE_COLUMNS = 'portfolio_id,performance_date,nav_eur,external_flow_eur,twr_daily,twr_mtd,twr_ytd,twr_since_inception,xirr_since_inception,benchmark_daily,benchmark_ytd,coverage_pct,data_state,calculated_at'
+const PERFORMANCE_COLUMNS = 'owner_user_id,portfolio_id,performance_date,nav_eur,external_flow_eur,twr_daily,twr_mtd,twr_ytd,twr_since_inception,xirr_since_inception,benchmark_daily,benchmark_ytd,coverage_pct,data_state,calculated_at'
 
 export interface FamilyOfficeBundle {
   schemaState: 'READY' | 'SCHEMA_PENDING'
@@ -42,6 +43,13 @@ function isMissingSchemaError(error: { code?: string; message?: string } | null)
 }
 
 export async function loadFamilyOfficeBundle(supabase: SupabaseClient): Promise<FamilyOfficeBundle> {
+  const { data: sessionData, error: sessionError } = await supabase.auth.getSession()
+  if (sessionError) throw sessionError
+  const expectedOwnerUserId = sessionData.session?.user.id
+  if (!expectedOwnerUserId) {
+    throw new OwnerIsolationError('Authenticated owner identity is unavailable')
+  }
+
   const results = await Promise.all([
     supabase.from('fo_portfolios').select('id,owner_user_id,legal_entity_id,name,portfolio_type,base_currency,benchmark_symbol,status,created_at,updated_at').order('name'),
     supabase.from('fo_portfolio_overview_latest').select(OVERVIEW_COLUMNS).order('portfolio_name'),
@@ -67,7 +75,7 @@ export async function loadFamilyOfficeBundle(supabase: SupabaseClient): Promise<
     throw firstError
   }
 
-  return {
+  const bundle: FamilyOfficeBundle = {
     schemaState: 'READY',
     portfolios: (results[0].data ?? []) as FamilyOfficePortfolioRow[],
     overview: (results[1].data ?? []) as FamilyOfficeOverviewRow[],
@@ -81,6 +89,20 @@ export async function loadFamilyOfficeBundle(supabase: SupabaseClient): Promise<
     decisions: (results[9].data ?? []) as FamilyOfficeDecisionRow[],
     closes: (results[10].data ?? []) as FamilyOfficeMonthlyCloseRow[],
   }
+  assertOwnerIsolation(expectedOwnerUserId, [
+    bundle.portfolios,
+    bundle.overview,
+    bundle.accounts,
+    bundle.institutions,
+    bundle.positions,
+    bundle.cash,
+    bundle.manualHoldings,
+    bundle.operations,
+    bundle.performance,
+    bundle.decisions,
+    bundle.closes,
+  ])
+  return bundle
 }
 
 export const FAMILY_OFFICE_SWR_KEY = 'family-office-bundle-v1'

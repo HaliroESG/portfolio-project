@@ -1,18 +1,10 @@
 "use client"
 
-import React, { useEffect, useState, useMemo } from 'react'
-import { supabase } from '../lib/supabase'
+import React, { useMemo } from 'react'
 import { Asset } from '../types'
 import { Shield, AlertTriangle, CheckCircle2 } from 'lucide-react'
 import { cn } from '../lib/utils'
-
-interface GovernanceTarget {
-  id: string
-  portfolio_id: string
-  asset_class: string
-  target_pct: number
-  tolerance_band: number
-}
+import { useGovernanceOwnerReader } from '../lib/governanceOwnerReader'
 
 interface AllocationData {
   asset_class: string
@@ -26,17 +18,6 @@ interface AllocationData {
 interface GovernanceWidgetProps {
   assets: Asset[]
   selectedPortfolioId?: string
-}
-
-type GovernanceTargetRow = {
-  id: string
-  portfolio_id: string
-  asset_class: string
-  target_pct?: number | null
-  target_weight_pct?: number | null
-  target_weight?: number | null
-  target_percent?: number | null
-  tolerance_band: number
 }
 
 // Normalize asset_class to standard format (EQUITY -> Equity)
@@ -80,81 +61,7 @@ function calculateDriftStatus(drift: number, toleranceBand: number): 'OK' | 'WAR
 }
 
 export function GovernanceWidget({ assets, selectedPortfolioId = 'ALL' }: GovernanceWidgetProps) {
-  const [targets, setTargets] = useState<GovernanceTarget[]>([])
-  const [loading, setLoading] = useState(true)
-
-  // Fetch governance targets for the main portfolio
-  useEffect(() => {
-    async function fetchTargets() {
-      try {
-        let portfolioId = selectedPortfolioId
-
-        if (portfolioId === 'ALL') {
-          const portfoliosResponse = await supabase
-            .from('portfolios')
-            .select('id')
-            .limit(1)
-            .single()
-
-          if (portfoliosResponse.error || !portfoliosResponse.data) {
-            console.warn('No portfolio found, skipping governance targets fetch')
-            setTargets([])
-            setLoading(false)
-            return
-          }
-
-          portfolioId = portfoliosResponse.data.id
-        }
-        
-        // Schema-tolerant fetch: governance target column name differs across deployments.
-        const selectors = [
-          'id,portfolio_id,asset_class,target_pct,target_weight_pct,target_weight,target_percent,tolerance_band',
-          'id,portfolio_id,asset_class,target_pct,tolerance_band',
-          'id,portfolio_id,asset_class,target_weight_pct,tolerance_band',
-          'id,portfolio_id,asset_class,target_weight,tolerance_band',
-          'id,portfolio_id,asset_class,target_percent,tolerance_band',
-        ]
-        let data: unknown[] = []
-        let lastError: string | null = null
-
-        for (const selector of selectors) {
-          const response = await supabase
-            .from('governance_targets')
-            .select(selector)
-            .eq('portfolio_id', portfolioId)
-
-          if (!response.error) {
-            data = response.data ?? []
-            lastError = null
-            break
-          }
-          lastError = response.error.message
-        }
-
-        if (lastError) throw new Error(lastError)
-
-        const rows = (data ?? []) as unknown as GovernanceTargetRow[]
-
-        const normalizedTargets: GovernanceTarget[] = rows
-          .map((row) => ({
-            id: row.id,
-            portfolio_id: row.portfolio_id,
-            asset_class: row.asset_class,
-            target_pct: row.target_pct ?? row.target_weight_pct ?? row.target_weight ?? row.target_percent ?? 0,
-            tolerance_band: row.tolerance_band,
-          }))
-          .filter((target) => Number.isFinite(target.target_pct))
-
-        setTargets(normalizedTargets)
-      } catch (err) {
-        console.error('Error fetching governance targets:', err)
-      } finally {
-        setLoading(false)
-      }
-    }
-    
-    fetchTargets()
-  }, [selectedPortfolioId])
+  const { targets, loading, ownerError, targetsError } = useGovernanceOwnerReader(selectedPortfolioId)
 
   // Calculate current allocation based on assets (PRD Step 2)
   const { allocationData, hasBreach, totalTargetPct, unknownPct } = useMemo(() => {
@@ -297,6 +204,14 @@ export function GovernanceWidget({ assets, selectedPortfolioId = 'ALL' }: Govern
         <div className="text-center py-8 text-slate-500 dark:text-gray-400">
           Loading governance data...
         </div>
+      </div>
+    )
+  }
+
+  if (ownerError || targetsError) {
+    return (
+      <div className="rounded-3xl border-2 border-red-200 bg-red-50 p-6 text-sm text-red-700 dark:border-red-900/60 dark:bg-red-950/20 dark:text-red-300">
+        Governance data unavailable for the current owner.
       </div>
     )
   }

@@ -1,0 +1,58 @@
+schema_version: astrocyte_handoff_v4
+run_id: PGA-004-CORRECTION-V4
+status: READY_FOR_INDEPENDENT_REREVIEW
+release_disposition: REREVIEW_REQUIRED
+ready_authorized: false
+merge_authorized: false
+migration_authorized: false
+candidate:
+  repository: HaliroESG/portfolio-project
+  pull_request: 12
+  branch: codex/portfolio-astrocyte-pga-004-correction-v1
+  base_sha: 3828d6d7851958f6e832896ce908c60097f67f90
+  merge_base_sha: 3828d6d7851958f6e832896ce908c60097f67f90
+  code_commit_sha: 9677c2fd4de916c04146fd067a7c8145c8e31c82
+  code_tree_sha: 2c4c60b544be31f1ad3464a5a00f364db6b69561
+  exact_final_pr_head: TO_BE_BOUND_BY_FINAL_PUSH_AND_PR_DESCRIPTION
+  exact_final_pr_head_policy: reviewer must verify refs/pull/12/head equals the final PR description before reviewing
+review_inputs:
+  review_md_sha256: 8ac993465f78b2cf764cd987d707c2f3510e2455831239f8b79f16d2abfd90e2
+  handoff_yaml_sha256: 19b50140174dbda3af9adabad5ba70767260d03f1e3302d1fd46bd09d4f148da
+  sha256sums_sha256: 6aabd314f6fa3055284959661745df7419a374e2636602afeee26eed26f5f7ce
+  internal_sha256sums_check: PASS
+finding_addressed:
+  P2_01_real_mounted_production_reader_proof: IMPLEMENTED_AND_PASS
+mounted_production_compositions:
+  targets: useTargetsOwnerReader
+  arbitrage: useArbitrageOwnerReader
+  governance_widget: useGovernanceOwnerReader
+  data_health_panel: useDataHealthOwnerReader
+  geo_portfolio_data: usePortfolioAggregationOwnerReader
+transition_contract:
+  same_mounted_tree_A_to_B: PASS
+  A_private_request_held_in_flight: PASS_EACH_SURFACE
+  B_private_result_loaded: PASS_EACH_SURFACE
+  late_A_result_not_rendered_or_reinjected: PASS_EACH_SURFACE
+  owner_bound_filter_reset_where_applicable: PASS
+preserved_controls:
+  canonical_owner_composite_fks: 27
+  canonical_direct_owner_profile_fks: 22
+  legacy_private_tables: 16
+  legacy_owner_composite_fks: 13
+  legacy_direct_owner_profile_fks: 16
+  production_http_503_guard: PASS_149_BACKEND_SUITE
+github_code_commit_checks:
+  frontend_ci_run: 33259772833
+  workflow_parity_run: 33259772806
+  trident_validate_run: 33259772835
+  production_mutation: SKIPPED
+  result: PASS
+independent_review_requirements:
+  - verify final refs/pull/12/head, origin branch and PR description exact SHA agree
+  - verify PR remains draft and base is main at 3828d6d7851958f6e832896ce908c60097f67f90
+  - verify all five production surfaces import and invoke the named owner reader
+  - rerun npm run test:owner-surfaces and inspect the same-tree A to B plus late A assertions
+  - rerun backend/tests/sql/run_pga004_pg15.sh on PostgreSQL 15+
+  - verify required checks on the final artifact-bearing head
+  - do not merge or apply any migration as part of review
+next_single_action: independent exact-head V4 rereview of draft PR 12

@@ -8,6 +8,9 @@
 - `anon` has no table grants. `authenticated` is read-only and owner-scoped through RLS.
 - The ledger is append-only. Corrections must be represented by reversal or adjustment entries.
 - Orders are drafts exported to CSV/PDF; no broker order is transmitted.
+- Multiple allowlisted owners are isolated by owner-composite foreign keys, RLS, and a frontend contamination check.
+- The 16 legacy portfolio/broker/target tables are private owner-scoped compatibility surfaces, not shared reference data. Shared market and research tables remain separately classified.
+- Every Command API `/v1/*` route is deliberately unavailable with HTTP 503 when the runtime environment is `production`, even if API and Supabase configuration is present.
 
 ## Production configuration
 
@@ -19,6 +22,7 @@ Command API:
 cd backend
 SUPABASE_URL=... \
 SUPABASE_SECRET_KEY=... \
+FAMILY_OFFICE_ENVIRONMENT=production \
 FRONTEND_ORIGINS=https://portfolio.example.com \
 uvicorn api:app --host 0.0.0.0 --port 8000
 ```
@@ -30,12 +34,15 @@ cd frontend
 NEXT_PUBLIC_SUPABASE_URL=... \
 NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY=... \
 NEXT_PUBLIC_COMMAND_API_URL=https://portfolio-api.example.com \
+NEXT_PUBLIC_FAMILY_OFFICE_ENVIRONMENT=production \
 npm run dev
 ```
 
 ## Owner bootstrap
 
-The application intentionally supports one owner. The allowlist is not exposed through the Data API.
+The application supports multiple owners only through the unexposed allowlist. Each identity receives an independent `fo_owner_profiles` row, and owner-composite constraints reject cross-owner parent references even for privileged writers.
+
+Legacy child writers derive ownership from their owner-scoped parent. A legacy root write without `owner_user_id` remains compatible while exactly one owner exists; once several owners exist, an ambiguous root write fails closed and must provide an explicit owner. This limitation does not affect canonical `fo_*` commands, which already carry the authenticated owner.
 
 ```bash
 cd backend

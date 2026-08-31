@@ -1,11 +1,15 @@
 "use client"
 
-import { useEffect, useMemo, useState } from 'react'
+import { useMemo } from 'react'
 import { supabase } from '../lib/supabase'
 import { cn } from '../lib/utils'
 import { Activity, AlertTriangle, ChevronDown, Clock, Database, Minus, TrendingDown, TrendingUp, X } from 'lucide-react'
 import { resolveFreshness } from '../lib/dataFreshness'
 import { isSelectorSchemaError } from '../lib/supabaseSelectorErrors'
+import { useOwnerBoundState } from '../lib/useOwnerBoundState'
+import { useOwnerScopedSWR } from '../lib/useOwnerScopedSWR'
+import { swrOptions, SWR_REFRESH } from '../lib/swrConfig'
+import { useDataHealthOwnerReader } from '../lib/dataHealthOwnerReader'
 
 interface HealthItem {
   id: string
@@ -462,7 +466,7 @@ async function detectMarketWatchTechnicalSchema(): Promise<boolean> {
   }
 }
 
-async function fetchQualityMetrics(): Promise<QualityMetric[]> {
+async function fetchQualityMetrics(valuationCoveragePct: number | null): Promise<QualityMetric[]> {
   let marketRows: JsonRecord[] = []
   const technicalColumnsAvailable = await detectMarketWatchTechnicalSchema()
   const selectors = [
@@ -520,22 +524,6 @@ async function fetchQualityMetrics(): Promise<QualityMetric[]> {
   const nonOkPct = totalAssets > 0 ? (nonOkAssets / totalAssets) * 100 : null
   const technicalPct =
     technicalColumnsAvailable && totalAssets > 0 ? (technicalReadyAssets / totalAssets) * 100 : null
-
-  let valuationCoveragePct: number | null = null
-  try {
-    const { data, error } = await supabase
-      .from('valuation_snapshots')
-      .select('coverage_pct,created_at')
-      .order('created_at', { ascending: false })
-      .limit(1)
-      .maybeSingle()
-    if (!error) {
-      const row = (data ?? null) as JsonRecord | null
-      valuationCoveragePct = readNumber(row?.coverage_pct)
-    }
-  } catch {
-    valuationCoveragePct = null
-  }
 
   const metrics: QualityMetric[] = [
     {
@@ -835,28 +823,36 @@ function operationAction(view: EtlJobView): string {
 }
 
 export function DataHealthPanel() {
-  const [items, setItems] = useState<HealthItem[]>([])
-  const [etlJobViews, setEtlJobViews] = useState<EtlJobView[]>([])
-  const [qualityMetrics, setQualityMetrics] = useState<QualityMetric[]>([])
-  const [expanded, setExpanded] = useState(false)
+  const {
+    ownerUserId,
+    ownerError,
+    valuationCoveragePct,
+    valuationError,
+    valuationLoading,
+  } = useDataHealthOwnerReader()
+  const [expanded, setExpanded] = useOwnerBoundState(ownerUserId, false)
 
-  useEffect(() => {
-    async function fetchHealthData() {
+  const { data, error: healthError } = useOwnerScopedSWR(
+    valuationLoading ? null : ownerUserId,
+    'data-health-panel',
+    [valuationCoveragePct],
+    async () => {
       const [freshnessItems, recentEtlRuns, metrics] = await Promise.all([
         fetchFreshnessItems(),
         fetchRecentEtlRuns(),
-        fetchQualityMetrics(),
+        fetchQualityMetrics(valuationCoveragePct),
       ])
-
-      setItems(freshnessItems)
-      setEtlJobViews(buildEtlJobViews(recentEtlRuns))
-      setQualityMetrics(metrics)
-    }
-
-    fetchHealthData()
-    const interval = setInterval(fetchHealthData, 180000) // 3 minutes
-    return () => clearInterval(interval)
-  }, [])
+      return {
+        items: freshnessItems,
+        etlJobViews: buildEtlJobViews(recentEtlRuns),
+        qualityMetrics: metrics,
+      }
+    },
+    swrOptions(SWR_REFRESH.MEDIUM),
+  )
+  const items = useMemo(() => data?.items ?? [], [data?.items])
+  const etlJobViews = useMemo(() => data?.etlJobViews ?? [], [data?.etlJobViews])
+  const qualityMetrics = useMemo(() => data?.qualityMetrics ?? [], [data?.qualityMetrics])
 
   const liveCount = useMemo(() => items.filter((i) => i.status === 'LIVE').length, [items])
   const staleCount = useMemo(() => items.filter((i) => i.status === 'STALE').length, [items])
@@ -882,6 +878,11 @@ export function DataHealthPanel() {
 
   return (
     <div className="w-full rounded-xl border border-slate-200 bg-white/80 p-3 shadow-sm dark:border-white/10 dark:bg-[#0D1117]/70">
+      {(ownerError || valuationError || healthError) && (
+        <div className="mb-3 rounded-lg border border-red-300 bg-red-50 px-3 py-2 text-[11px] text-red-700 dark:border-red-900/60 dark:bg-red-950/20 dark:text-red-300">
+          Data health is unavailable for the current owner.
+        </div>
+      )}
       <div className="flex flex-wrap items-center justify-between gap-3">
         <div>
           <div className="flex items-center gap-2">
