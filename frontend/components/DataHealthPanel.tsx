@@ -446,6 +446,14 @@ async function fetchRecentEtlRuns(): Promise<EtlRun[]> {
   }
 }
 
+
+function isSelectorSchemaError(error: { code?: string | null; message?: string | null } | null): boolean {
+  const code = error?.code ?? ''
+  const message = (error?.message ?? '').toLowerCase()
+  if (code === '42703' || code === 'PGRST204' || code === 'PGRST100') return true
+  return message.includes('column') && message.includes('does not exist')
+}
+
 async function detectMarketWatchTechnicalSchema(): Promise<boolean> {
   if (MARKET_WATCH_TECHNICAL_SCHEMA_AVAILABLE !== null) {
     return MARKET_WATCH_TECHNICAL_SCHEMA_AVAILABLE

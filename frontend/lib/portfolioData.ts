@@ -410,6 +410,14 @@ function parsePortfolioRow(raw: JsonRecord): PortfolioRow | null {
   return { id, name }
 }
 
+
+function isSelectorSchemaError(error: { code?: string | null; message?: string | null } | null): boolean {
+  const code = error?.code ?? ''
+  const message = (error?.message ?? '').toLowerCase()
+  if (code === '42703' || code === 'PGRST204' || code === 'PGRST100') return true
+  return message.includes('column') && message.includes('does not exist')
+}
+
 function parsePositionRow(raw: JsonRecord): PortfolioPositionRow | null {
   const ticker = readString(raw.ticker)?.toUpperCase()
   if (!ticker) return null
