@@ -5,6 +5,12 @@ import useSWR from 'swr'
 import { AlertTriangle, ArrowDown, ArrowUp, ChevronsUpDown, LockKeyhole, Scale } from 'lucide-react'
 import { AppShell } from '../../components/AppShell'
 import { EmptyState } from '../../components/EmptyState'
+import {
+  assessFamilyOfficeAllocation,
+  buildFamilyOfficeAllocationRows,
+  loadFamilyOfficeAllocationSource,
+  toPortfolioDecisionRows,
+} from '../../lib/familyOfficeAllocation'
 import { supabase } from '../../lib/supabase'
 import { cn } from '../../lib/utils'
 import { loadMacroAllocationAdvice } from '../../lib/macroStrategyData'
@@ -19,6 +25,8 @@ import type {
   PortfolioScope,
   SupportIdentifierState,
   SupportSourceQuality,
+  TargetEnvelopeLineRow,
+  TargetModelRow,
 } from '../../types'
 
 type SortKey = 'priority' | 'ticker' | 'action' | 'amount' | 'drift' | 'confidence'
@@ -44,37 +52,7 @@ interface ExecutionUniverseRow {
   status: ExecutionUniverseStatus
 }
 
-type RawDecisionRow = Record<string, unknown>
 type RawRow = Record<string, unknown>
-
-const DECISION_SELECTOR = [
-  'portfolio_id',
-  'ticker',
-  'name',
-  'asset_class',
-  'isin',
-  'currency',
-  'current_quantity',
-  'current_value_eur',
-  'current_weight_pct',
-  'target_weight_pct',
-  'drift_pct',
-  'rebalance_amount_eur',
-  'action',
-  'confidence',
-  'reason_codes',
-  'data_state',
-  'price_state',
-  'market_data_status',
-  'reconciliation_state',
-  'trident_provider_symbol',
-  'trident_score',
-  'trident_confidence',
-  'history_coverage_pct',
-  'target_total_pct',
-  'total_value_eur',
-  'updated_at',
-].join(',')
 
 const ACTION_RANK: Record<PortfolioDecisionAction, number> = {
   EXIT: 0,
@@ -109,11 +87,6 @@ function readNumber(value: unknown): number | null {
 function parseStringArray(value: unknown): string[] {
   if (!Array.isArray(value)) return []
   return value.filter((item): item is string => typeof item === 'string')
-}
-
-function parseAction(value: unknown): PortfolioDecisionAction {
-  if (value === 'BUY' || value === 'REDUCE' || value === 'EXIT' || value === 'HOLD' || value === 'UNAVAILABLE') return value
-  return 'UNAVAILABLE'
 }
 
 function parseAdviceAction(value: unknown): AllocationAdviceAction {
@@ -191,45 +164,6 @@ function parseAdviceRow(raw: RawRow): AllocationAdviceRow | null {
     confidence: readNumber(raw.confidence) ?? 0,
     reason_codes: parseStringArray(raw.reason_codes),
     preferred_execution: parseExecution(raw.preferred_execution),
-    updated_at: readString(raw.updated_at),
-  }
-}
-
-function parseDecisionRow(raw: RawDecisionRow): PortfolioDecisionItemRow | null {
-  const portfolioId = readString(raw.portfolio_id)
-  const ticker = readString(raw.ticker)
-  if (!portfolioId || !ticker) return null
-
-  return {
-    portfolio_id: portfolioId,
-    ticker,
-    name: readString(raw.name) ?? ticker,
-    asset_class: readString(raw.asset_class),
-    isin: readString(raw.isin),
-    currency: readString(raw.currency) ?? 'EUR',
-    current_quantity: readNumber(raw.current_quantity),
-    current_value_eur: readNumber(raw.current_value_eur),
-    current_weight_pct: readNumber(raw.current_weight_pct),
-    target_weight_pct: readNumber(raw.target_weight_pct),
-    drift_pct: readNumber(raw.drift_pct),
-    rebalance_amount_eur: readNumber(raw.rebalance_amount_eur),
-    action: parseAction(raw.action),
-    confidence: readNumber(raw.confidence) ?? 0,
-    reason_codes: parseStringArray(raw.reason_codes),
-    data_state: raw.data_state === 'READY' || raw.data_state === 'TARGET_MISSING' || raw.data_state === 'TARGET_INVALID' || raw.data_state === 'QUANTITY_MISSING' || raw.data_state === 'PRICE_MISSING' || raw.data_state === 'FX_MISSING'
-      ? raw.data_state
-      : 'PRICE_MISSING',
-    price_state: raw.price_state === 'LIVE' || raw.price_state === 'STALE' || raw.price_state === 'MISSING' ? raw.price_state : 'MISSING',
-    market_data_status: readString(raw.market_data_status),
-    reconciliation_state: raw.reconciliation_state === 'MATCH' || raw.reconciliation_state === 'MISMATCH_QTY' || raw.reconciliation_state === 'MISMATCH_COST' || raw.reconciliation_state === 'MISSING_IN_LEDGER' || raw.reconciliation_state === 'LEDGER_ONLY' || raw.reconciliation_state === 'NOT_CHECKED'
-      ? raw.reconciliation_state
-      : null,
-    trident_provider_symbol: readString(raw.trident_provider_symbol),
-    trident_score: readNumber(raw.trident_score),
-    trident_confidence: readNumber(raw.trident_confidence),
-    history_coverage_pct: readNumber(raw.history_coverage_pct),
-    target_total_pct: readNumber(raw.target_total_pct),
-    total_value_eur: readNumber(raw.total_value_eur),
     updated_at: readString(raw.updated_at),
   }
 }
@@ -471,26 +405,60 @@ export default function ArbitragePage() {
   const [currencyFilter, setCurrencyFilter] = useState('ALL')
   const [sort, setSort] = useState<SortConfig>(DEFAULT_SORT)
 
-  const { data: portfolios } = useSWR('arbitrage-portfolios', async () => {
-    const { data, error } = await supabase.from('portfolios').select('id,name')
+  const { data: portfolios } = useSWR('fo-arbitrage-portfolios', async () => {
+    const { data, error } = await supabase.from('fo_portfolios').select('id,name').eq('status', 'ACTIVE').order('name')
     if (error) throw error
     return (data ?? []) as PortfolioRow[]
   })
   const selectedPortfolioId = selectedPortfolioIdOverride || portfolios?.[0]?.id || ''
 
-  const { data: rows = [], error, isLoading } = useSWR(
-    selectedPortfolioId ? ['portfolio-decision-items', selectedPortfolioId] : null,
+  const {
+    data: allocationRows = [],
+    error: allocationError,
+    isLoading: allocationLoading,
+  } = useSWR(
+    selectedPortfolioId ? ['fo-arbitrage-allocation', selectedPortfolioId] : null,
+    async () => buildFamilyOfficeAllocationRows(await loadFamilyOfficeAllocationSource(supabase, selectedPortfolioId)),
+  )
+
+  const {
+    data: targetModels = [],
+    error: targetModelError,
+    isLoading: targetModelLoading,
+  } = useSWR('fo-arbitrage-target-models', async () => {
+    const { data, error } = await supabase
+      .from('target_models')
+      .select('id,portfolio_scope,model_name,source_file,source_kind,as_of_date,is_active,target_total_pct,status,report_json,imported_at,updated_at')
+      .eq('is_active', true)
+      .order('updated_at', { ascending: false })
+    if (error) throw error
+    return (data ?? []) as unknown as TargetModelRow[]
+  })
+
+  const selectedTargetModel = targetModels.find((model) => model.portfolio_scope === selectedScope) ?? null
+  const {
+    data: targetLines = [],
+    error: targetLinesError,
+    isLoading: targetLinesLoading,
+  } = useSWR(
+    selectedTargetModel ? ['fo-arbitrage-target-lines', selectedTargetModel.id] : null,
     async () => {
       const { data, error } = await supabase
-        .from('portfolio_decision_items_latest')
-        .select(DECISION_SELECTOR)
-        .eq('portfolio_id', selectedPortfolioId)
+        .from('target_envelope_lines')
+        .select('id,model_id,portfolio_scope,envelope,ticker,isin,instrument,asset_class,region,currency,target_weight_pct,target_value_eur,notes,source_sheet,source_row,updated_at')
+        .eq('model_id', selectedTargetModel!.id)
       if (error) throw error
-      return ((data ?? []) as unknown as RawDecisionRow[])
-        .map(parseDecisionRow)
-        .filter((row): row is PortfolioDecisionItemRow => row !== null)
-    }
+      return (data ?? []) as unknown as TargetEnvelopeLineRow[]
+    },
   )
+
+  const assessment = useMemo(
+    () => assessFamilyOfficeAllocation(allocationRows, selectedTargetModel, targetLines),
+    [allocationRows, selectedTargetModel, targetLines],
+  )
+  const rows = useMemo(() => toPortfolioDecisionRows(assessment), [assessment])
+  const error = allocationError ?? targetModelError ?? targetLinesError
+  const isLoading = allocationLoading || targetModelLoading || Boolean(selectedTargetModel && targetLinesLoading)
 
   const { data: adviceRows = [], error: adviceError } = useSWR(
     ['allocation-advice', selectedScope],
@@ -601,7 +569,7 @@ export default function ArbitragePage() {
                   Arbitrage
                 </h1>
                 <p className="mt-1 text-[10px] font-mono text-slate-500 dark:text-gray-400">
-                  Recommendations from target/current drift, data quality and broker reconciliation state.
+                  Read-only recommendations from canonical fo_* holdings, explicit targets and reconciliation state.
                 </p>
               </div>
             </div>
@@ -630,7 +598,7 @@ export default function ArbitragePage() {
 
           <div className="grid grid-cols-2 gap-3 md:grid-cols-5">
             {[
-              ['Portfolio value', formatEur(stats.totalValue || null)],
+              ['Liquid allocation', formatEur(stats.totalValue || null)],
               ['Actions', stats.actionable.toString()],
               ['Unavailable', stats.unavailable.toString()],
               ['Gross trade', formatEur(stats.grossTrade || null)],
@@ -844,11 +812,11 @@ export default function ArbitragePage() {
           {error ? (
             <EmptyState
               tone="error"
-              title="Arbitrage read model unavailable"
-              message="Apply the Supabase portfolio_decision_items_latest migration, including broker reconciliation tables and read grants."
+              title="Family Office allocation unavailable"
+              message="The canonical fo_* holdings or target model could not be read. No recommendation is emitted."
             />
           ) : isLoading ? (
-            <EmptyState tone="loading" title="Loading arbitrage decisions" message="Reading portfolio_decision_items_latest from Supabase." />
+            <EmptyState tone="loading" title="Loading arbitrage decisions" message="Reading canonical fo_* holdings and target lines from Supabase." />
           ) : rows.length === 0 ? (
             <EmptyState title="No decision items" message="No target/current rows are available for this portfolio." />
           ) : (
