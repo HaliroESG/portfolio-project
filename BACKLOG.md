@@ -229,8 +229,13 @@ Provider note
 
 Default provider is now `global_yahoo`: it seeds a broad world equity universe from public index constituent tables (S&P 500, EURO STOXX 50, KOSPI 200, FTSE 100, DAX, CAC 40, S&P/TSX 60, S&P/ASX 200, Hang Seng) and pulls annual financial statements via `yfinance`. CSV ingestion remains available for licensed/user-supplied sources. Missing provider fields remain missing.
 
+Reliability note
+
+A ten-year horizon requires eleven consecutive annual observations. Missing or duplicate years, missing intermediate metrics, and non-positive economic denominators remain explicit `missing` states and cannot produce a passing score.
+
 Acceptance criteria
 	•	Backend tests cover complete data, partial data, Trident pass, ROIC eliminator fail, and debt fail.
+	•	Backend tests reject endpoint-only history, missing intermediate ROIC, non-positive EBITDA, and non-positive equity without converting those states into passes.
 	•	Supabase smoke validates Trident tables/view after migration.
 	•	Frontend build and TypeScript compile pass.
 

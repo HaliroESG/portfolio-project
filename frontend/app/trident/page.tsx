@@ -844,6 +844,11 @@ export default function TridentPage() {
                             <div>
                               {horizonSummary?.start_year ?? '--'}-{horizonSummary?.end_year ?? '--'}
                             </div>
+                            {horizonSummary?.coverage && (
+                              <div>
+                                {horizonSummary.coverage.observed_observations}/{horizonSummary.coverage.expected_observations} annual · {horizonSummary.coverage.coverage_pct.toFixed(0)}%
+                              </div>
+                            )}
                           </div>
                         </div>
                       </div>

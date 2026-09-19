@@ -714,7 +714,7 @@ class GlobalYahooDataProvider:
         indexes: tuple[str, ...] = GLOBAL_YAHOO_DEFAULT_INDEXES,
         source_license_note: str | None = None,
         request_timeout_sec: float = 30.0,
-        max_years: int = 10,
+        max_years: int = 11,
         sleep_seconds: float = 0.15,
         per_index_limit: int | None = None,
         include_curated_it_services: bool = True,
@@ -1095,16 +1095,16 @@ def annualized_growth(start_value: float | None, end_value: float | None, years:
 
 
 def ratio(numerator: float | None, denominator: float | None) -> float | None:
-    if numerator is None or denominator is None or denominator == 0:
+    if numerator is None or denominator is None or denominator <= 0:
         return None
     return numerator / denominator
 
 
 def average(values: Iterable[float | None]) -> float | None:
-    clean = [value for value in values if value is not None and np.isfinite(value)]
-    if not clean:
+    materialized = list(values)
+    if not materialized or any(value is None or not np.isfinite(value) for value in materialized):
         return None
-    return float(sum(clean) / len(clean))
+    return float(sum(value for value in materialized if value is not None) / len(materialized))
 
 
 def status_threshold(
@@ -1133,21 +1133,15 @@ def window_for_horizon(
 
     sorted_records = sorted(records, key=lambda record: record.fiscal_year)
     end = sorted_records[-1]
-    start_candidates = [
-        record for record in sorted_records if record.fiscal_year <= end.fiscal_year - horizon_years
-    ]
-    start = start_candidates[-1] if start_candidates else None
-
-    if horizon_years == 1 and start is None and len(sorted_records) >= 2:
-        start = sorted_records[-2]
-
-    if start is None:
-        return None, end, [end]
-
+    expected_start_year = end.fiscal_year - horizon_years
+    start = next(
+        (record for record in reversed(sorted_records) if record.fiscal_year == expected_start_year),
+        None,
+    )
     window = [
         record
         for record in sorted_records
-        if start.fiscal_year <= record.fiscal_year <= end.fiscal_year
+        if expected_start_year <= record.fiscal_year <= end.fiscal_year
     ]
     return start, end, window
 
@@ -1175,8 +1169,8 @@ def roce(record: FinancialRecord) -> float | None:
 def net_debt_to_ebitda(record: FinancialRecord) -> float | None:
     if record.net_debt is None or record.ebitda is None:
         return None
-    if record.net_debt <= 0 and record.ebitda and record.ebitda > 0:
-        return record.net_debt / record.ebitda
+    if record.ebitda <= 0:
+        return None
     return ratio(record.net_debt, record.ebitda)
 
 
@@ -1246,11 +1240,50 @@ def build_horizon_criteria(
             missing_criteria(horizon_years, "aucun historique financier annuel"),
         )
 
+    expected_years = list(range(end.fiscal_year - horizon_years, end.fiscal_year + 1))
+    observed_years = [record.fiscal_year for record in window]
+    observed_year_set = set(observed_years)
+    missing_years = [year for year in expected_years if year not in observed_year_set]
+    duplicate_years = sorted(
+        year for year in observed_year_set if observed_years.count(year) > 1
+    )
+    coverage_pct = round(
+        (len(expected_years) - len(missing_years)) / len(expected_years) * 100,
+        2,
+    )
     actual_years = (end.fiscal_year - start.fiscal_year) if start else 0
-    has_horizon = start is not None and actual_years > 0
-    horizon_status = "complete" if has_horizon and actual_years >= horizon_years else "partial"
-    if not has_horizon:
+    has_horizon = start is not None and actual_years == horizon_years
+    horizon_complete = has_horizon and not missing_years and not duplicate_years
+    horizon_status = "complete" if horizon_complete else "partial"
+    if len(observed_year_set) <= 1:
         horizon_status = "missing"
+
+    coverage = {
+        "expected_observations": len(expected_years),
+        "observed_observations": len(observed_year_set),
+        "coverage_pct": coverage_pct,
+        "missing_years": missing_years,
+        "duplicate_years": duplicate_years,
+    }
+    if not horizon_complete:
+        reason_parts = [
+            f"historique annuel incomplet: {len(observed_year_set)}/{len(expected_years)} observations",
+        ]
+        if missing_years:
+            reason_parts.append(f"années manquantes {','.join(str(year) for year in missing_years)}")
+        if duplicate_years:
+            reason_parts.append(f"années dupliquées {','.join(str(year) for year in duplicate_years)}")
+        return (
+            {
+                "horizon_years": horizon_years,
+                "start_year": start.fiscal_year if start else None,
+                "end_year": end.fiscal_year,
+                "status": horizon_status,
+                "coverage": coverage,
+                "metrics": {},
+            },
+            missing_criteria(horizon_years, "; ".join(reason_parts)),
+        )
 
     revenue_cagr = annualized_growth(
         start.revenue if start else None,
@@ -1409,6 +1442,7 @@ def build_horizon_criteria(
             "start_year": start.fiscal_year if start else None,
             "end_year": end.fiscal_year,
             "status": horizon_status,
+            "coverage": coverage,
             "metrics": metrics,
         },
         criteria,
@@ -2008,7 +2042,7 @@ def build_provider_from_args(args: argparse.Namespace) -> StockDataProvider:
         return GlobalYahooDataProvider(
             indexes=indexes,
             source_license_note=os.environ.get("TRIDENT_SOURCE_LICENSE_NOTE"),
-            max_years=args.max_years or env_int("TRIDENT_MAX_YEARS", 10),
+            max_years=args.max_years or env_int("TRIDENT_MAX_YEARS", 11),
             per_index_limit=args.per_index_limit or env_int("TRIDENT_PER_INDEX_LIMIT", 0) or None,
             include_curated_it_services=(
                 not args.no_curated_it_services

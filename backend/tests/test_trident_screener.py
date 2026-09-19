@@ -103,6 +103,7 @@ def test_partial_data_keeps_missing_visible_without_frontend_guessing():
     result = compute_trident_for_instrument("csv:partial", build_records(years=range(2025, 2026)))
 
     assert result.result_row["overall_state"] == "WATCHLIST"
+    assert result.result_row["score"] == 0
     assert result.result_row["confidence"] < 100
     assert result.result_row["horizons"]["3"]["status"] == "missing"
     assert criterion_rows(result, 3, "revenue_cagr")[0]["status"] == "missing"
@@ -356,6 +357,73 @@ def test_highly_indebted_company_fails_health_criteria():
     assert criterion_rows(result, 1, "net_debt_to_ebitda")[0]["is_eliminating"] is True
     assert criterion_rows(result, 1, "interest_coverage")[0]["status"] == "fail"
     assert criterion_rows(result, 1, "debt_to_equity")[0]["status"] == "fail"
+
+
+def test_two_endpoints_do_not_prove_a_complete_ten_year_history():
+    full_history = build_records()
+    result = compute_trident_for_instrument(
+        "csv:endpoints-only",
+        [full_history[0], full_history[-1]],
+    )
+
+    assert result.result_row["overall_state"] == "WATCHLIST"
+    assert result.result_row["score"] == 0
+    horizon = result.result_row["horizons"]["10"]
+    assert horizon["status"] == "partial"
+    assert horizon["coverage"]["expected_observations"] == 11
+    assert horizon["coverage"]["observed_observations"] == 2
+    assert len(horizon["coverage"]["missing_years"]) == 9
+    assert criterion_rows(result, 10, "revenue_cagr")[0]["status"] == "missing"
+
+
+def test_missing_intermediate_roic_is_not_ignored_by_the_average():
+    records = [
+        FinancialRecord(
+            **{
+                **record.__dict__,
+                "invested_capital": None if record.fiscal_year == 2020 else record.invested_capital,
+            }
+        )
+        for record in build_records()
+    ]
+
+    result = compute_trident_for_instrument("csv:roic-gap", records)
+
+    assert result.result_row["overall_state"] == "WATCHLIST"
+    roic_row = criterion_rows(result, 10, "roic")[0]
+    assert roic_row["status"] == "missing"
+    assert roic_row["is_eliminating"] is True
+
+
+def test_non_positive_ebitda_cannot_create_a_passing_leverage_ratio():
+    records = [
+        FinancialRecord(**{**record.__dict__, "ebitda": -10.0})
+        for record in build_records()
+    ]
+
+    result = compute_trident_for_instrument("csv:negative-ebitda", records)
+
+    assert result.result_row["overall_state"] == "WATCHLIST"
+    assert result.result_row["latest_net_debt_to_ebitda"] is None
+    leverage_row = criterion_rows(result, 1, "net_debt_to_ebitda")[0]
+    assert leverage_row["status"] == "missing"
+    assert leverage_row["is_eliminating"] is True
+
+
+def test_non_positive_equity_cannot_create_a_passing_debt_ratio():
+    records = [
+        FinancialRecord(**{**record.__dict__, "total_equity": -100.0})
+        for record in build_records()
+    ]
+
+    result = compute_trident_for_instrument("csv:negative-equity", records)
+
+    assert result.result_row["overall_state"] == "WATCHLIST"
+    assert criterion_rows(result, 1, "debt_to_equity")[0]["status"] == "missing"
+
+
+def test_global_yahoo_default_fetches_eleven_observations_for_a_ten_year_horizon():
+    assert GlobalYahooDataProvider(indexes=("sp500",), sleep_seconds=0).max_years == 11
 
 
 def test_secondary_failures_do_not_reject_when_eliminators_pass():

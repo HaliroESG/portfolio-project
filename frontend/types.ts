@@ -235,7 +235,16 @@ export interface TridentHorizonSummary {
   start_year: number | null
   end_year: number | null
   status: 'complete' | 'partial' | 'missing'
+  coverage: TridentHorizonCoverage | null
   metrics: Record<string, number | null>
+}
+
+export interface TridentHorizonCoverage {
+  expected_observations: number
+  observed_observations: number
+  coverage_pct: number
+  missing_years: number[]
+  duplicate_years: number[]
 }
 
 export interface TridentCriterionRow {
