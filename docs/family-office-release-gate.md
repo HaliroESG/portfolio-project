@@ -129,10 +129,11 @@ dispatching owner must also be the PR author and must provide the exact
 head SHA, a `SHIP` verdict, the SHA-256 of the corresponding Codex review receipt,
 and the exact confirmation `ACCEPT_CODEX_SHIP_FOR_EXACT_HEAD`. The trusted
 default-branch verifier binds the actor to the repository owner and re-fetches PR identity before
-posting the stable `ASTROCYTE Independent Review` commit status. No label,
+posting the stable `ASTROCYTE Independent Review` check run from the GitHub
+Actions app required by branch protection. No label,
 comment, branch content, bot, or automatic event can activate this exception.
 Both paths upload a sanitized canonical receipt whose SHA-256 is included in the
-status description.
+check summary.
 
 There is an unavoidable bootstrap boundary: GitHub executes both trusted paths
 from the default branch. The workflow introducing the mono-user exception cannot

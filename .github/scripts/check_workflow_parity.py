@@ -662,7 +662,8 @@ def validate_workflow_contract(contents: dict[str, str]) -> None:
         require(independent_on, owner_input, "independent-review-gate.yml")
     forbid(independent, "secrets.", "independent-review-gate.yml")
     require(independent, "pull-requests: read", "independent-review-gate.yml")
-    require(independent, "statuses: write", "independent-review-gate.yml")
+    require(independent, "checks: write", "independent-review-gate.yml")
+    forbid(independent, "statuses: write", "independent-review-gate.yml")
     require(independent, "cancel-in-progress: false", "independent-review-gate.yml")
     require(
         independent,
