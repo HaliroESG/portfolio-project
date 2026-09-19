@@ -27,6 +27,7 @@ Frontend:
 
 ```bash
 cd frontend
+APP_ORIGIN=https://portfolio.example.com \
 NEXT_PUBLIC_SUPABASE_URL=... \
 NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY=... \
 NEXT_PUBLIC_COMMAND_API_URL=https://portfolio-api.example.com \
