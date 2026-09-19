@@ -115,23 +115,31 @@ GitHub Actions source app rather than accepted by name alone. The numeric app ID
 is deliberately not guessed in this repository and must be resolved from the
 repository's authenticated check metadata at activation time.
 
-The independent-review workflow is intentionally based on
-`pull_request_target` and the trusted default-branch verifier. It never checks
-out or executes PR code. It reads native GitHub review metadata and accepts only
-a current exact-head `APPROVED` review from a human repository
+The review workflow is intentionally based on `pull_request_target`, an explicit
+`workflow_dispatch`, and the trusted default-branch verifier. It never checks
+out or executes PR code. The normal path reads native GitHub review metadata and
+accepts only a current exact-head `APPROVED` review from a human repository
 owner/member/collaborator who is not the PR author. Current exact-head change
 requests block; bots, outsiders, self-review, stale commits, labels and review
-body text never grant authority. The workflow posts the stable
-`ASTROCYTE Independent Review` commit status and uploads a sanitized canonical
-receipt whose SHA-256 is included in the status description.
+body text never grant authority.
 
-There is an unavoidable bootstrap boundary: GitHub executes a
-`pull_request_target` workflow from the default branch. The workflow introduced
-by this correction therefore cannot attest its own introducing PR. That PR must
-receive a separate independent review under the controller before merge. Once
-the trusted workflow exists on `main`, the controller may separately configure
-the six contexts and one required approval from the versioned contract. This
-repository change does not modify branch protection or create an approval.
+For this mono-user repository, the alternate path is an explicit repository-owner
+dispatch bound to an open, ready, same-repository PR targeting `main`. The
+dispatching owner must also be the PR author and must provide the exact
+head SHA, a `SHIP` verdict, the SHA-256 of the corresponding Codex review receipt,
+and the exact confirmation `ACCEPT_CODEX_SHIP_FOR_EXACT_HEAD`. The trusted
+default-branch verifier binds the actor to the repository owner and re-fetches PR identity before
+posting the stable `ASTROCYTE Independent Review` commit status. No label,
+comment, branch content, bot, or automatic event can activate this exception.
+Both paths upload a sanitized canonical receipt whose SHA-256 is included in the
+status description.
+
+There is an unavoidable bootstrap boundary: GitHub executes both trusted paths
+from the default branch. The workflow introducing the mono-user exception cannot
+attest its own PR and therefore requires one explicit repository-owner override.
+After that one-time merge, exact-head owner dispatches are fail-closed and
+auditable. The versioned contract requires the six GitHub Actions contexts and
+zero native approving reviews; it does not modify branch protection itself.
 
 ## Governance-branch Preview boundary
 

@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Emit a fail-closed exact-head status from authenticated native PR reviews."""
+"""Emit a fail-closed exact-head review status from authenticated evidence."""
 
 from __future__ import annotations
 
@@ -17,10 +17,13 @@ from typing import Any
 
 CONTEXT = "ASTROCYTE Independent Review"
 SCHEMA_VERSION = "astrocyte_independent_review_receipt_v1"
+OWNER_SCHEMA_VERSION = "astrocyte_owner_codex_ship_receipt_v1"
 TRUSTED_ASSOCIATIONS = {"COLLABORATOR", "MEMBER", "OWNER"}
 DECISIVE_STATES = {"APPROVED", "CHANGES_REQUESTED", "DISMISSED"}
 SHA_RE = re.compile(r"^[0-9a-f]{40}$")
+SHA256_RE = re.compile(r"^[0-9a-f]{64}$")
 REPOSITORY_RE = re.compile(r"^[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+$")
+OWNER_CONFIRMATION = "ACCEPT_CODEX_SHIP_FOR_EXACT_HEAD"
 
 
 class IndependentReviewError(ValueError):
@@ -149,6 +152,85 @@ def evaluate_reviews(
     }
 
 
+def evaluate_owner_codex_ship(
+    pull_request_payload: object,
+    *,
+    repository: str,
+    pull_request: int,
+    head_sha: str,
+    actor: str,
+    codex_review_sha256: str,
+    codex_verdict: str,
+    confirmation: str,
+) -> dict[str, Any]:
+    """Validate a narrow, owner-dispatched mono-user Codex SHIP exception."""
+    if not REPOSITORY_RE.fullmatch(repository):
+        raise IndependentReviewError("repository is invalid")
+    if not isinstance(pull_request, int) or pull_request <= 0:
+        raise IndependentReviewError("pull request number is invalid")
+    if not SHA_RE.fullmatch(head_sha):
+        raise IndependentReviewError("pull request head is not an exact Git SHA")
+    if not isinstance(actor, str) or not actor:
+        raise IndependentReviewError("workflow actor is missing")
+    if not SHA256_RE.fullmatch(codex_review_sha256):
+        raise IndependentReviewError("Codex review digest is invalid")
+    if codex_verdict != "SHIP":
+        raise IndependentReviewError("Codex verdict must be SHIP")
+    if confirmation != OWNER_CONFIRMATION:
+        raise IndependentReviewError("owner confirmation is invalid")
+    repository_owner = repository.split("/", 1)[0]
+    if actor.casefold() != repository_owner.casefold():
+        raise IndependentReviewError("workflow actor is not the repository owner")
+    if not isinstance(pull_request_payload, dict):
+        raise IndependentReviewError("pull request response is malformed")
+    try:
+        actual_number = pull_request_payload["number"]
+        state = pull_request_payload["state"]
+        draft = pull_request_payload["draft"]
+        author = pull_request_payload["user"]["login"]
+        actual_head_sha = pull_request_payload["head"]["sha"]
+        head_repository = pull_request_payload["head"]["repo"]["full_name"]
+        base_ref = pull_request_payload["base"]["ref"]
+        base_repository = pull_request_payload["base"]["repo"]["full_name"]
+    except (KeyError, TypeError) as exc:
+        raise IndependentReviewError("pull request identity is incomplete") from exc
+    identity_values = (author, actual_head_sha, head_repository, base_ref, base_repository)
+    if not all(isinstance(value, str) and value for value in identity_values):
+        raise IndependentReviewError("pull request identity is malformed")
+    if actual_number != pull_request:
+        raise IndependentReviewError("pull request number does not match")
+    if state != "open" or draft is not False:
+        raise IndependentReviewError("pull request must be open and ready for review")
+    if actual_head_sha != head_sha:
+        raise IndependentReviewError("Codex SHIP attestation is stale")
+    if base_ref != "main" or base_repository.casefold() != repository.casefold():
+        raise IndependentReviewError("pull request must target repository main")
+    if head_repository.casefold() != repository.casefold():
+        raise IndependentReviewError("fork pull requests cannot use the mono-user exception")
+    if author.casefold() != actor.casefold():
+        raise IndependentReviewError("mono-user exception actor must be the pull request author")
+    return {
+        "schema_version": OWNER_SCHEMA_VERSION,
+        "context": CONTEXT,
+        "repository": repository,
+        "pull_request": pull_request,
+        "head_sha": head_sha,
+        "pull_request_author": author,
+        "status": "PASS",
+        "reason": "OWNER_ACCEPTED_CODEX_SHIP_FOR_EXACT_HEAD",
+        "mode": "OWNER_WORKFLOW_DISPATCH",
+        "labels_or_comments_trusted": False,
+        "auto_approval": False,
+        "owner_attestation": {
+            "actor": actor,
+            "authority": "repository_owner",
+            "codex_verdict": codex_verdict,
+            "codex_review_sha256": codex_review_sha256,
+            "confirmation": confirmation,
+        },
+    }
+
+
 def _request_json(
     url: str,
     *,
@@ -192,6 +274,56 @@ def _fetch_reviews(api_url: str, repository: str, pull_request: int, token: str)
         if len(batch) < 100:
             return reviews
     raise IndependentReviewError("GitHub review pagination exceeds the fail-closed bound")
+
+
+def _positive_int(value: str, label: str) -> int:
+    try:
+        parsed = int(value)
+    except (TypeError, ValueError) as exc:
+        raise IndependentReviewError(f"{label} is invalid") from exc
+    if parsed <= 0 or str(parsed) != value:
+        raise IndependentReviewError(f"{label} is invalid")
+    return parsed
+
+
+def _evaluate_owner_dispatch(
+    api_url: str,
+    repository: str,
+    token: str,
+) -> dict[str, Any]:
+    pull_request = _positive_int(
+        os.environ.get("OWNER_REVIEW_PULL_REQUEST", ""),
+        "pull request number",
+    )
+    head_sha = os.environ.get("OWNER_REVIEW_HEAD_SHA", "")
+    actor = os.environ.get("GITHUB_ACTOR", "")
+    codex_review_sha256 = os.environ.get("OWNER_REVIEW_CODEX_SHA256", "")
+    codex_verdict = os.environ.get("OWNER_REVIEW_CODEX_VERDICT", "")
+    confirmation = os.environ.get("OWNER_REVIEW_CONFIRMATION", "")
+    if not SHA_RE.fullmatch(head_sha):
+        raise IndependentReviewError("pull request head is not an exact Git SHA")
+    if not actor:
+        raise IndependentReviewError("workflow actor is missing")
+    if not SHA256_RE.fullmatch(codex_review_sha256):
+        raise IndependentReviewError("Codex review digest is invalid")
+    if codex_verdict != "SHIP":
+        raise IndependentReviewError("Codex verdict must be SHIP")
+    if confirmation != OWNER_CONFIRMATION:
+        raise IndependentReviewError("owner confirmation is invalid")
+    pull_request_payload = _request_json(
+        f"{api_url.rstrip('/')}/repos/{repository}/pulls/{pull_request}",
+        token=token,
+    )
+    return evaluate_owner_codex_ship(
+        pull_request_payload,
+        repository=repository,
+        pull_request=pull_request,
+        head_sha=head_sha,
+        actor=actor,
+        codex_review_sha256=codex_review_sha256,
+        codex_verdict=codex_verdict,
+        confirmation=confirmation,
+    )
 
 
 def _post_status(
@@ -248,15 +380,19 @@ def main() -> int:
         print("independent review gate failed: GitHub token is missing", file=sys.stderr)
         return 2
     try:
-        pull_request, head_sha, author = _load_event(event_path)
-        reviews = _fetch_reviews(api_url, repository, pull_request, token)
-        receipt = evaluate_reviews(
-            reviews,
-            repository=repository,
-            pull_request=pull_request,
-            head_sha=head_sha,
-            pull_request_author=author,
-        )
+        if os.environ.get("GITHUB_EVENT_NAME") == "workflow_dispatch":
+            receipt = _evaluate_owner_dispatch(api_url, repository, token)
+            head_sha = receipt["head_sha"]
+        else:
+            pull_request, head_sha, author = _load_event(event_path)
+            reviews = _fetch_reviews(api_url, repository, pull_request, token)
+            receipt = evaluate_reviews(
+                reviews,
+                repository=repository,
+                pull_request=pull_request,
+                head_sha=head_sha,
+                pull_request_author=author,
+            )
         _write_receipt(receipt_path, receipt)
         _post_status(api_url, repository, head_sha, token, receipt)
     except IndependentReviewError as exc:

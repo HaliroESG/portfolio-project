@@ -172,8 +172,8 @@ def validate_required_pr_governance() -> None:
         raise AssertionError("required PR governance must target main")
     if contract["activation_status"] != "NOT_CONFIGURED_BY_THIS_CHANGE":
         raise AssertionError("repository contract must not overclaim GitHub configuration")
-    if contract["required_approving_review_count"] != 1:
-        raise AssertionError("one independent approval must be required")
+    if contract["required_approving_review_count"] != 0:
+        raise AssertionError("native approvals must not deadlock the mono-user repository")
     if contract["dismiss_stale_reviews"] is not True:
         raise AssertionError("stale reviews must be dismissed")
     if contract["require_conversation_resolution"] is not True:
@@ -190,19 +190,32 @@ def validate_required_pr_governance() -> None:
     review = contract["independent_review"]
     expected_review = {
         "context": "ASTROCYTE Independent Review",
-        "source": "AUTHENTICATED_GITHUB_REVIEW",
+        "source": "AUTHENTICATED_GITHUB_REVIEW_OR_OWNER_WORKFLOW_DISPATCH",
         "exact_head_required": True,
-        "human_reviewer_required": True,
-        "reviewer_must_differ_from_author": True,
+        "human_reviewer_required": False,
+        "reviewer_must_differ_from_author": False,
         "trusted_associations": ["COLLABORATOR", "MEMBER", "OWNER"],
         "labels_or_comments_trusted": False,
         "auto_approval": False,
+        "mono_user_exception": {
+            "source": "OWNER_WORKFLOW_DISPATCH",
+            "actor_must_equal_repository_owner": True,
+            "actor_must_equal_pr_author": True,
+            "same_repository_required": True,
+            "open_ready_pr_required": True,
+            "target_branch": "main",
+            "codex_verdict_required": "SHIP",
+            "codex_review_sha256_required": True,
+            "typed_confirmation": "ACCEPT_CODEX_SHIP_FOR_EXACT_HEAD",
+        },
     }
     if review != expected_review:
         raise AssertionError("independent review contract changed")
     limitation = contract["bootstrap_limitation"]
     if not isinstance(limitation, str) or "must already exist on main" not in limitation:
         raise AssertionError("independent review bootstrap limitation is missing")
+    if "one-time explicit repository-owner override" not in limitation:
+        raise AssertionError("mono-user review bootstrap override is missing")
 
 
 RUBY_YAML_USES_PARSER = r"""
@@ -637,7 +650,16 @@ def validate_workflow_contract(contents: dict[str, str]) -> None:
     independent_on = section(independent, "on:\n", "\npermissions:")
     require(independent_on, "pull_request_target:", "independent-review-gate.yml")
     require(independent_on, "pull_request_review:", "independent-review-gate.yml")
-    forbid(independent_on, "workflow_dispatch:", "independent-review-gate.yml")
+    require(independent_on, "workflow_dispatch:", "independent-review-gate.yml")
+    for owner_input in (
+        "pull_request:",
+        "head_sha:",
+        "codex_review_sha256:",
+        "codex_verdict:",
+        "confirmation:",
+        "ACCEPT_CODEX_SHIP_FOR_EXACT_HEAD",
+    ):
+        require(independent_on, owner_input, "independent-review-gate.yml")
     forbid(independent, "secrets.", "independent-review-gate.yml")
     require(independent, "pull-requests: read", "independent-review-gate.yml")
     require(independent, "statuses: write", "independent-review-gate.yml")
@@ -660,6 +682,20 @@ def validate_workflow_contract(contents: dict[str, str]) -> None:
     )
     require(independent, "check_independent_review.py", "independent-review-gate.yml")
     require(independent, "GITHUB_TOKEN: ${{ github.token }}", "independent-review-gate.yml")
+    require(
+        independent,
+        "github.event_name == 'workflow_dispatch'",
+        "independent-review-gate.yml",
+    )
+    require(independent, "OWNER_REVIEW_HEAD_SHA", "independent-review-gate.yml")
+    require(independent, "OWNER_REVIEW_CODEX_SHA256", "independent-review-gate.yml")
+    require(independent, "OWNER_REVIEW_CODEX_VERDICT", "independent-review-gate.yml")
+    require(independent, "OWNER_REVIEW_CONFIRMATION", "independent-review-gate.yml")
+    require(
+        independent,
+        "Emit exact-head owner-accepted Codex SHIP context",
+        "independent-review-gate.yml",
+    )
     require(independent, "if: ${{ always() }}", "independent-review-gate.yml")
     require(independent, "retention-days: 30", "independent-review-gate.yml")
     _check_action_pins("independent-review-gate.yml", independent)
