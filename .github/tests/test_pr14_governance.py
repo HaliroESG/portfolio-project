@@ -23,6 +23,9 @@ from check_family_office_release_hold import (  # noqa: E402
 )
 from check_independent_review import (  # noqa: E402
     CONTEXT,
+    IndependentReviewError,
+    OWNER_CONFIRMATION,
+    evaluate_owner_codex_ship,
     evaluate_reviews,
     receipt_sha256,
 )
@@ -36,6 +39,7 @@ from check_workflow_parity import (  # noqa: E402
 
 HEAD = "b" * 40
 AUTHOR = "candidate-author"
+REPOSITORY_OWNER = "HaliroESG"
 
 
 def workflow_contents() -> dict[str, str]:
@@ -70,6 +74,41 @@ def verdict(reviews: list[dict[str, object]]) -> dict[str, object]:
         pull_request=15,
         head_sha=HEAD,
         pull_request_author=AUTHOR,
+    )
+
+
+def owner_codex_ship_verdict(
+    *,
+    head_sha: str = HEAD,
+    actor: str = REPOSITORY_OWNER,
+    author: str = REPOSITORY_OWNER,
+    state: str = "open",
+    draft: bool = False,
+    head_repository: str = "HaliroESG/portfolio-project",
+    base_ref: str = "main",
+    digest: str = "d" * 64,
+    codex_verdict: str = "SHIP",
+    confirmation: str = OWNER_CONFIRMATION,
+) -> dict[str, object]:
+    return evaluate_owner_codex_ship(
+        {
+            "number": 15,
+            "state": state,
+            "draft": draft,
+            "user": {"login": author},
+            "head": {"sha": HEAD, "repo": {"full_name": head_repository}},
+            "base": {
+                "ref": base_ref,
+                "repo": {"full_name": "HaliroESG/portfolio-project"},
+            },
+        },
+        repository="HaliroESG/portfolio-project",
+        pull_request=15,
+        head_sha=head_sha,
+        actor=actor,
+        codex_review_sha256=digest,
+        codex_verdict=codex_verdict,
+        confirmation=confirmation,
     )
 
 
@@ -189,6 +228,32 @@ class IndependentReviewTests(unittest.TestCase):
         )
         self.assertEqual(receipt["status"], "FAIL")
         self.assertEqual(receipt["reason"], "CURRENT_EXACT_HEAD_CHANGES_REQUESTED")
+
+    def test_owner_dispatch_accepts_exact_head_codex_ship(self) -> None:
+        receipt = owner_codex_ship_verdict()
+        self.assertEqual(receipt["status"], "PASS")
+        self.assertEqual(receipt["reason"], "OWNER_ACCEPTED_CODEX_SHIP_FOR_EXACT_HEAD")
+        self.assertEqual(receipt["head_sha"], HEAD)
+        self.assertEqual(receipt["owner_attestation"]["codex_review_sha256"], "d" * 64)
+        self.assertFalse(receipt["labels_or_comments_trusted"])
+        self.assertFalse(receipt["auto_approval"])
+
+    def test_owner_dispatch_rejects_stale_or_untrusted_evidence(self) -> None:
+        cases = {
+            "stale_head": {"head_sha": "a" * 40},
+            "non_owner": {"actor": "repository-admin", "author": "repository-admin"},
+            "different_author": {"author": "another-user"},
+            "draft": {"draft": True},
+            "closed": {"state": "closed"},
+            "fork": {"head_repository": "outside/fork"},
+            "wrong_base": {"base_ref": "release"},
+            "bad_digest": {"digest": "not-a-digest"},
+            "non_ship": {"codex_verdict": "FIX_FIRST"},
+            "bad_confirmation": {"confirmation": "approve"},
+        }
+        for label, kwargs in cases.items():
+            with self.subTest(label=label), self.assertRaises(IndependentReviewError):
+                owner_codex_ship_verdict(**kwargs)
 
     def test_later_approval_replaces_same_reviewer_changes_request(self) -> None:
         receipt = verdict(
