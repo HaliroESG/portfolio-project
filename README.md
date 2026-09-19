@@ -65,6 +65,9 @@ Required:
 - `NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY` (or legacy `NEXT_PUBLIC_SUPABASE_ANON_KEY`)
 - `NEXT_PUBLIC_COMMAND_API_URL`
 
+Optional server-side deployment setting:
+- `APP_ORIGIN` (canonical HTTPS origin used for authentication redirects behind a reverse proxy)
+
 Used by:
 - app runtime (`frontend/lib/supabase.ts`)
 - smoke check (`frontend/scripts/smoke-supabase.mjs`)
