@@ -10,7 +10,7 @@ assert.equal(
   'https://astrocyte-readonly-v6379.ondigitalocean.app',
 )
 assert.equal(
-  resolveAuthRedirectOrigin('http://localhost:3000/auth/callback', ''),
+  resolveAuthRedirectOrigin('http://localhost:3000/auth/callback', undefined),
   'http://localhost:3000',
 )
 assert.equal(
@@ -19,15 +19,16 @@ assert.equal(
 )
 
 for (const untrustedOrigin of [
+  '',
   'http://example.com',
   'https://user:password@example.com',
   'https://example.com/auth/callback',
   'https://example.com?next=evil.example',
   'not-a-url',
 ]) {
-  assert.equal(
-    resolveAuthRedirectOrigin('https://safe.example/auth/callback', untrustedOrigin),
-    'https://safe.example',
+  assert.throws(
+    () => resolveAuthRedirectOrigin('https://safe.example/auth/callback', untrustedOrigin),
+    /APP_ORIGIN must be a bare HTTPS origin or a loopback HTTP origin/,
   )
 }
 

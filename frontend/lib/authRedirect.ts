@@ -24,7 +24,14 @@ function parseTrustedOrigin(value: string | undefined) {
 
 export function resolveAuthRedirectOrigin(
   requestUrl: string,
-  configuredOrigin = process.env.APP_ORIGIN,
+  configuredOrigin: string | undefined,
 ) {
-  return parseTrustedOrigin(configuredOrigin) ?? new URL(requestUrl).origin
+  if (configuredOrigin === undefined) return new URL(requestUrl).origin
+
+  const trustedOrigin = parseTrustedOrigin(configuredOrigin)
+  if (!trustedOrigin) {
+    throw new Error('APP_ORIGIN must be a bare HTTPS origin or a loopback HTTP origin')
+  }
+
+  return trustedOrigin
 }

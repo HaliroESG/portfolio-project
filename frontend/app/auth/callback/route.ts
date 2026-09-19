@@ -4,7 +4,7 @@ import { createServerSupabaseClient } from '../../../lib/supabase/server'
 
 export async function GET(request: Request) {
   const url = new URL(request.url)
-  const redirectOrigin = resolveAuthRedirectOrigin(request.url)
+  const redirectOrigin = resolveAuthRedirectOrigin(request.url, process.env.APP_ORIGIN)
   const code = url.searchParams.get('code')
   if (code) {
     const supabase = await createServerSupabaseClient()
