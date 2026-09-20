@@ -50,6 +50,7 @@ export function GeographicMap({ regions, hoveredAsset, showBubbles = false, view
   }, [bubbleRegions])
 
   const [position, setPosition] = useState({ coordinates: [0, 20] as [number, number], zoom: 1 })
+  const [hoveredGeography, setHoveredGeography] = useState<string | null>(null)
 
   const renderMapSurface = (heightClass: string) => (
     <div className={`bg-white dark:bg-[#080A0F] ${heightClass} w-full flex flex-col relative overflow-hidden shadow-inner dark:shadow-2xl`}>
@@ -69,13 +70,18 @@ export function GeographicMap({ regions, hoveredAsset, showBubbles = false, view
             center={position.coordinates}
             minZoom={1}
             maxZoom={4}
-            onMoveEnd={(next) => setPosition({ coordinates: next.coordinates, zoom: next.zoom })}
+            onMoveEnd={(next) =>
+              setPosition((current) => ({
+                coordinates: next.coordinates ?? current.coordinates,
+                zoom: next.zoom ?? current.zoom,
+              }))
+            }
           >
             <Geographies geography={GEO_URL}>
               {({ geographies }) =>
                 geographies.map((geo) => {
                   // --- IDENTIFICATION DU PAYS ---
-                  const numericId = geo.id?.toString().padStart(3, '0');
+                  const numericId = geo.id?.toString().padStart(3, '0') ?? '';
                   const countryCode = (
                     ISO_MAP[numericId] || 
                     geo.properties?.ISO_A2 || 
@@ -109,24 +115,24 @@ export function GeographicMap({ regions, hoveredAsset, showBubbles = false, view
                     opacity = 0.8;
                   }
 
+                  const isHovered = hoveredGeography === geo.rsmKey && !hoveredAsset
+                  const renderedFill = isHovered ? 'rgb(59, 130, 246)' : fill
+                  const renderedOpacity = isHovered ? 0.9 : opacity
+
                   return (
                     <Geography
                       key={geo.rsmKey}
                       geography={geo}
-                      fill={fill}
-                      fillOpacity={opacity}
+                      fill={renderedFill}
+                      fillOpacity={renderedOpacity}
                       stroke={stroke}
                       strokeWidth={strokeWidth}
+                      onMouseEnter={() => setHoveredGeography(geo.rsmKey)}
+                      onMouseLeave={() => setHoveredGeography(null)}
                       style={{
-                        default: { outline: 'none', transition: 'all 250ms ease-in-out' },
-                        hover: { 
-                          fill: hoveredAsset ? fill : 'rgb(59, 130, 246)', // blue-500
-                          fillOpacity: hoveredAsset ? opacity : 0.9,
-                          outline: 'none', 
-                          cursor: 'pointer',
-                          transition: 'all 250ms ease-in-out'
-                        },
-                        pressed: { outline: 'none' },
+                        outline: 'none',
+                        cursor: 'pointer',
+                        transition: 'all 250ms ease-in-out',
                       }}
                     />
                   )

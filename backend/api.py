@@ -32,7 +32,7 @@ from family_office.commands import (
 )
 from family_office.reporting import monthly_close_csv, monthly_close_pdf, order_csv, order_pdf
 from family_office.repository import FamilyOfficeRepository, create_service_client
-from family_office.sync import rebuild_portfolio
+from family_office.sync import PortfolioSyncBlockedError, rebuild_portfolio
 
 
 def _iso_now() -> str:
@@ -230,6 +230,16 @@ async def command_replay_blocked(
     return JSONResponse(
         status_code=409,
         content={"detail": str(exc), "command_state": exc.command_state},
+    )
+
+
+@app.exception_handler(PortfolioSyncBlockedError)
+async def portfolio_sync_blocked(
+    _: Request, exc: PortfolioSyncBlockedError
+) -> JSONResponse:
+    return JSONResponse(
+        status_code=409,
+        content={"detail": str(exc), "readiness": exc.readiness},
     )
 
 
