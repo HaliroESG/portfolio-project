@@ -22,7 +22,12 @@ class ReadinessRepository:
                 {"id": "account-1", "portfolio_id": "portfolio-1", "status": "ACTIVE"}
             ],
             "fo_positions_latest": [
-                {"portfolio_id": "portfolio-1", "account_id": "account-1", "quantity": "2"}
+                {
+                    "portfolio_id": "portfolio-1",
+                    "account_id": "account-1",
+                    "quantity": "2",
+                    "snapshot_date": "2026-09-20",
+                }
             ],
             "fo_cash_balances_latest": [],
             "fo_ledger_entries": (
@@ -35,6 +40,7 @@ class ReadinessRepository:
                         "account_id": "account-1",
                         "import_type": "TRANSACTIONS",
                         "status": "COMPLETED",
+                        "as_of_date": "2026-09-20",
                         "rejected_count": 0,
                         "started_at": "2026-09-20T10:00:00Z",
                     },
@@ -43,6 +49,7 @@ class ReadinessRepository:
                         "account_id": "account-1",
                         "import_type": "POSITIONS",
                         "status": "COMPLETED",
+                        "as_of_date": "2026-09-20",
                         "rejected_count": 0,
                         "started_at": "2026-09-20T10:01:00Z",
                     },
@@ -122,6 +129,72 @@ def test_readiness_accepts_complete_import_and_matching_reconciliation() -> None
 
     assert report["ready"] is True
     assert report["blocker_count"] == 0
+
+
+def test_readiness_rejects_reconciliation_older_than_current_snapshot() -> None:
+    repository = ReadinessRepository(complete=True)
+    repository.tables["fo_reconciliation_runs"][0]["reconciliation_date"] = "2026-09-19"
+
+    report = assess_portfolio_sync_readiness(
+        repository,  # type: ignore[arg-type]
+        owner_user_id="owner-1",
+        portfolio_id="portfolio-1",
+    )
+
+    assert report["ready"] is False
+    assert report["accounts"][0]["blockers"] == [
+        {
+            "code": "POSITION_RECONCILIATION_STALE",
+            "snapshot_date": "2026-09-20",
+            "reconciliation_date": "2026-09-19",
+        }
+    ]
+
+
+def test_readiness_rejects_position_import_older_than_current_snapshot() -> None:
+    repository = ReadinessRepository(complete=True)
+    repository.tables["fo_import_runs"][1]["as_of_date"] = "2026-09-19"
+
+    report = assess_portfolio_sync_readiness(
+        repository,  # type: ignore[arg-type]
+        owner_user_id="owner-1",
+        portfolio_id="portfolio-1",
+    )
+
+    assert report["ready"] is False
+    assert report["accounts"][0]["blockers"] == [
+        {
+            "code": "POSITION_SNAPSHOT_IMPORT_STALE",
+            "snapshot_date": "2026-09-20",
+            "import_as_of_date": "2026-09-19",
+        }
+    ]
+
+
+def test_readiness_rejects_mixed_current_snapshot_dates() -> None:
+    repository = ReadinessRepository(complete=True)
+    repository.tables["fo_positions_latest"].append(
+        {
+            "portfolio_id": "portfolio-1",
+            "account_id": "account-1",
+            "quantity": "1",
+            "snapshot_date": "2026-09-19",
+        }
+    )
+
+    report = assess_portfolio_sync_readiness(
+        repository,  # type: ignore[arg-type]
+        owner_user_id="owner-1",
+        portfolio_id="portfolio-1",
+    )
+
+    assert report["ready"] is False
+    assert report["accounts"][0]["blockers"] == [
+        {
+            "code": "POSITION_SNAPSHOT_MIXED_DATES",
+            "snapshot_dates": ["2026-09-19", "2026-09-20"],
+        }
+    ]
 
 
 def test_rebuild_stops_before_any_write_when_readiness_is_blocked() -> None:
