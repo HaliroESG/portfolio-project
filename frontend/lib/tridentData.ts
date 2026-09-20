@@ -168,12 +168,29 @@ function parseHorizonSummary(value: unknown): TridentHorizonSummary {
   Object.entries(metricsRaw).forEach(([key, metricValue]) => {
     metrics[key] = readNumber(metricValue)
   })
+  const coverageRaw = readJsonRecord(record.coverage)
+  const expectedObservations = readNumber(coverageRaw.expected_observations)
+  const observedObservations = readNumber(coverageRaw.observed_observations)
+  const coveragePct = readNumber(coverageRaw.coverage_pct)
+  const numberArray = (candidate: unknown): number[] => Array.isArray(candidate)
+    ? candidate.map(readNumber).filter((item): item is number => item !== null)
+    : []
+  const coverage = expectedObservations !== null && observedObservations !== null && coveragePct !== null
+    ? {
+        expected_observations: expectedObservations,
+        observed_observations: observedObservations,
+        coverage_pct: coveragePct,
+        missing_years: numberArray(coverageRaw.missing_years),
+        duplicate_years: numberArray(coverageRaw.duplicate_years),
+      }
+    : null
 
   return {
     horizon_years: readNumber(record.horizon_years) ?? 0,
     start_year: readNumber(record.start_year),
     end_year: readNumber(record.end_year),
     status,
+    coverage,
     metrics,
   }
 }
