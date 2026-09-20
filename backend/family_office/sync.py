@@ -258,18 +258,13 @@ def assess_portfolio_sync_readiness(
         current_position_count = position_counts.get(account_id, 0)
         current_cash_count = cash_counts.get(account_id, 0)
         has_current_exposure = current_position_count > 0 or current_cash_count > 0
-        ledger_entries = repository.select(
-            "fo_ledger_entries",
-            "id,instrument_id",
-            filters={"account_id": account_id},
+        ledger_present = (
+            repository.first(
+                "fo_ledger_entries", "id", filters={"account_id": account_id}
+            )
+            is not None
         )
-        ledger_present = bool(ledger_entries)
-        security_ledger_present = any(
-            row.get("instrument_id") is not None for row in ledger_entries
-        )
-        requires_position_evidence = (
-            current_position_count > 0 or security_ledger_present
-        )
+        requires_position_evidence = current_position_count > 0 or ledger_present
         transaction_imports = repository.select(
             "fo_import_runs",
             "id,status,rejected_count,started_at",
@@ -352,7 +347,6 @@ def assess_portfolio_sync_readiness(
                 "current_position_count": current_position_count,
                 "current_cash_count": current_cash_count,
                 "ledger_present": ledger_present,
-                "security_ledger_present": security_ledger_present,
                 "requires_position_evidence": requires_position_evidence,
                 "transaction_import_status": (
                     transaction_import.get("status") if transaction_import else None

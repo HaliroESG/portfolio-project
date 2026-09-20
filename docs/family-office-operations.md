@@ -88,8 +88,8 @@ without writing. `--apply` is required to persist a rebuild, and the rebuild rem
 blocked while any exposed account lacks complete transaction provenance, a complete
 position snapshot, or a matching reconciliation tied to that position import. Any
 incomplete historical transaction import remains blocking because later incremental
-imports do not prove that rejected history was superseded. Instrument-backed ledger
-accounts require broker position evidence even before their first rebuild. Derived
+imports do not prove that rejected history was superseded. Ledger-backed accounts
+require broker position evidence even before their first rebuild. Derived
 snapshot dates are not treated as source-freshness evidence. The scheduled market
 refresh does not implicitly run this mutation.
 
