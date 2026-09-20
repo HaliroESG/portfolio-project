@@ -229,7 +229,7 @@ def assess_portfolio_sync_readiness(
     )
     positions = repository.select(
         "fo_positions_latest",
-        "account_id,quantity,snapshot_date",
+        "account_id,quantity",
         filters={"portfolio_id": portfolio_id},
     )
     cash_rows = repository.select(
@@ -239,14 +239,11 @@ def assess_portfolio_sync_readiness(
     )
 
     position_counts: dict[str, int] = {}
-    position_dates: dict[str, set[str]] = {}
     for row in positions:
         if _decimal(row.get("quantity")) == ZERO:
             continue
         account_id = str(row["account_id"])
         position_counts[account_id] = position_counts.get(account_id, 0) + 1
-        if row.get("snapshot_date"):
-            position_dates.setdefault(account_id, set()).add(str(row["snapshot_date"]))
 
     cash_counts: dict[str, int] = {}
     for row in cash_rows:
@@ -260,24 +257,33 @@ def assess_portfolio_sync_readiness(
         account_id = str(account["id"])
         current_position_count = position_counts.get(account_id, 0)
         current_cash_count = cash_counts.get(account_id, 0)
-        current_position_dates = sorted(position_dates.get(account_id, set()))
-        current_position_date = (
-            current_position_dates[-1] if current_position_dates else None
-        )
         has_current_exposure = current_position_count > 0 or current_cash_count > 0
-        ledger_present = (
-            repository.first(
-                "fo_ledger_entries", "id", filters={"account_id": account_id}
-            )
-            is not None
+        ledger_entries = repository.select(
+            "fo_ledger_entries",
+            "id,instrument_id",
+            filters={"account_id": account_id},
         )
-        transaction_import = repository.first(
+        ledger_present = bool(ledger_entries)
+        security_ledger_present = any(
+            row.get("instrument_id") is not None for row in ledger_entries
+        )
+        requires_position_evidence = (
+            current_position_count > 0 or security_ledger_present
+        )
+        transaction_imports = repository.select(
             "fo_import_runs",
-            "id,status,as_of_date,rejected_count",
+            "id,status,rejected_count,started_at",
             filters={"account_id": account_id, "import_type": "TRANSACTIONS"},
             order="started_at",
             descending=True,
         )
+        transaction_import = transaction_imports[0] if transaction_imports else None
+        incomplete_transaction_imports = [
+            row
+            for row in transaction_imports
+            if row.get("status") != "COMPLETED"
+            or _decimal(row.get("rejected_count")) > ZERO
+        ]
         position_import = repository.first(
             "fo_import_runs",
             "id,status,as_of_date,rejected_count",
@@ -285,12 +291,19 @@ def assess_portfolio_sync_readiness(
             order="started_at",
             descending=True,
         )
-        reconciliation = repository.first(
-            "fo_reconciliation_runs",
-            "id,status,reconciliation_date",
-            filters={"account_id": account_id},
-            order="reconciliation_date",
-            descending=True,
+        reconciliation = (
+            repository.first(
+                "fo_reconciliation_runs",
+                "id,status,reconciliation_date,import_run_id",
+                filters={
+                    "account_id": account_id,
+                    "import_run_id": str(position_import["id"]),
+                },
+                order="reconciliation_date",
+                descending=True,
+            )
+            if position_import
+            else None
         )
 
         blockers: list[dict[str, Any]] = []
@@ -298,17 +311,22 @@ def assess_portfolio_sync_readiness(
             blockers.append({"code": "TRANSACTION_HISTORY_MISSING"})
         if ledger_present and transaction_import is None:
             blockers.append({"code": "TRANSACTION_IMPORT_PROVENANCE_MISSING"})
-        elif transaction_import and transaction_import.get("status") != "COMPLETED":
+        elif incomplete_transaction_imports:
             blockers.append(
                 {
                     "code": "TRANSACTION_IMPORT_INCOMPLETE",
-                    "status": transaction_import.get("status"),
-                    "rejected_count": transaction_import.get("rejected_count"),
+                    "incomplete_run_count": len(incomplete_transaction_imports),
+                    "statuses": sorted(
+                        {str(row.get("status")) for row in incomplete_transaction_imports}
+                    ),
                 }
             )
-        if current_position_count > 0 and position_import is None:
+        if requires_position_evidence and position_import is None:
             blockers.append({"code": "POSITION_SNAPSHOT_PROVENANCE_MISSING"})
-        elif position_import and position_import.get("status") != "COMPLETED":
+        elif requires_position_evidence and position_import and (
+            position_import.get("status") != "COMPLETED"
+            or _decimal(position_import.get("rejected_count")) > ZERO
+        ):
             blockers.append(
                 {
                     "code": "POSITION_SNAPSHOT_INCOMPLETE",
@@ -316,45 +334,15 @@ def assess_portfolio_sync_readiness(
                     "rejected_count": position_import.get("rejected_count"),
                 }
             )
-        elif (
-            current_position_date
-            and position_import
-            and str(position_import.get("as_of_date") or "") < current_position_date
-        ):
-            blockers.append(
-                {
-                    "code": "POSITION_SNAPSHOT_IMPORT_STALE",
-                    "snapshot_date": current_position_date,
-                    "import_as_of_date": position_import.get("as_of_date"),
-                }
-            )
-        if len(current_position_dates) > 1:
-            blockers.append(
-                {
-                    "code": "POSITION_SNAPSHOT_MIXED_DATES",
-                    "snapshot_dates": current_position_dates,
-                }
-            )
-        if current_position_count > 0 and reconciliation is None:
+        if requires_position_evidence and reconciliation is None:
             blockers.append({"code": "POSITION_RECONCILIATION_MISSING"})
-        elif reconciliation and reconciliation.get("status") != "MATCH":
+        elif requires_position_evidence and reconciliation and (
+            reconciliation.get("status") != "MATCH"
+        ):
             blockers.append(
                 {
                     "code": "POSITION_RECONCILIATION_NOT_MATCHED",
                     "status": reconciliation.get("status"),
-                }
-            )
-        elif (
-            current_position_date
-            and reconciliation
-            and str(reconciliation.get("reconciliation_date") or "")
-            < current_position_date
-        ):
-            blockers.append(
-                {
-                    "code": "POSITION_RECONCILIATION_STALE",
-                    "snapshot_date": current_position_date,
-                    "reconciliation_date": reconciliation.get("reconciliation_date"),
                 }
             )
 
@@ -362,9 +350,10 @@ def assess_portfolio_sync_readiness(
             {
                 "account_id": account_id,
                 "current_position_count": current_position_count,
-                "current_position_date": current_position_date,
                 "current_cash_count": current_cash_count,
                 "ledger_present": ledger_present,
+                "security_ledger_present": security_ledger_present,
+                "requires_position_evidence": requires_position_evidence,
                 "transaction_import_status": (
                     transaction_import.get("status") if transaction_import else None
                 ),

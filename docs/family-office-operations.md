@@ -86,8 +86,12 @@ Historical performance does not bridge returns across a day whose NAV is unknown
 `sync_family_office.py` is fail-closed and check-only by default. It reports readiness
 without writing. `--apply` is required to persist a rebuild, and the rebuild remains
 blocked while any exposed account lacks complete transaction provenance, a complete
-position snapshot, or a matching reconciliation. The scheduled market refresh does not
-implicitly run this mutation.
+position snapshot, or a matching reconciliation tied to that position import. Any
+incomplete historical transaction import remains blocking because later incremental
+imports do not prove that rejected history was superseded. Instrument-backed ledger
+accounts require broker position evidence even before their first rebuild. Derived
+snapshot dates are not treated as source-freshness evidence. The scheduled market
+refresh does not implicitly run this mutation.
 
 ```bash
 # Read-only readiness report
