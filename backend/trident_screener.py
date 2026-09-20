@@ -714,7 +714,7 @@ class GlobalYahooDataProvider:
         indexes: tuple[str, ...] = GLOBAL_YAHOO_DEFAULT_INDEXES,
         source_license_note: str | None = None,
         request_timeout_sec: float = 30.0,
-        max_years: int = 11,
+        max_years: int = 4,
         sleep_seconds: float = 0.15,
         per_index_limit: int | None = None,
         include_curated_it_services: bool = True,
@@ -1094,6 +1094,17 @@ def annualized_growth(start_value: float | None, end_value: float | None, years:
     return (end_value / start_value) ** (1 / years) - 1
 
 
+def complete_window_growth(
+    window: list[FinancialRecord],
+    field: str,
+    years: int,
+) -> float | None:
+    values = [getattr(record, field) for record in window]
+    if len(values) != years + 1 or any(value is None for value in values):
+        return None
+    return annualized_growth(values[0], values[-1], years)
+
+
 def ratio(numerator: float | None, denominator: float | None) -> float | None:
     if numerator is None or denominator is None or denominator <= 0:
         return None
@@ -1285,16 +1296,8 @@ def build_horizon_criteria(
             missing_criteria(horizon_years, "; ".join(reason_parts)),
         )
 
-    revenue_cagr = annualized_growth(
-        start.revenue if start else None,
-        end.revenue,
-        actual_years,
-    )
-    eps_cagr = annualized_growth(
-        start.eps_diluted if start else None,
-        end.eps_diluted,
-        actual_years,
-    )
+    revenue_cagr = complete_window_growth(window, "revenue", actual_years)
+    eps_cagr = complete_window_growth(window, "eps_diluted", actual_years)
     fcf_margins = margin_values(window, "free_cash_flow")
     gross_margin = average(margin_values(window, "gross_profit"))
     operating_margin = average(margin_values(window, "operating_income"))
@@ -1306,11 +1309,7 @@ def build_horizon_criteria(
     debt_ebitda_avg = average([net_debt_to_ebitda(record) for record in window])
     interest_coverage_avg = average([interest_coverage(record) for record in window])
     debt_equity_avg = average([debt_to_equity(record) for record in window])
-    shares_cagr = annualized_growth(
-        start.shares_diluted if start else None,
-        end.shares_diluted,
-        actual_years,
-    )
+    shares_cagr = complete_window_growth(window, "shares_diluted", actual_years)
 
     metrics = {
         "revenue_cagr": revenue_cagr,
@@ -1337,7 +1336,7 @@ def build_horizon_criteria(
             actual=revenue_cagr,
             threshold=0.10,
             comparator=">",
-            reason="CA ou historique de début/fin manquant",
+            reason="CA annuel manquant/non positif dans la fenêtre",
         ),
         criterion(
             horizon_years=horizon_years,
@@ -1347,7 +1346,7 @@ def build_horizon_criteria(
             actual=eps_cagr,
             threshold=0.12,
             comparator=">",
-            reason="BPA ou historique de début/fin manquant/non positif",
+            reason="BPA annuel manquant/non positif dans la fenêtre",
         ),
         build_fcf_quality_criterion(horizon_years, window),
         criterion(
@@ -1410,7 +1409,7 @@ def build_horizon_criteria(
             actual=shares_cagr,
             threshold=0.005,
             comparator="<=",
-            reason="actions diluées début/fin manquantes",
+            reason="actions diluées annuelles manquantes/non positives dans la fenêtre",
         ),
         criterion(
             horizon_years=horizon_years,
@@ -1754,6 +1753,132 @@ def financial_payload(record: FinancialRecord) -> dict[str, Any]:
     }
 
 
+FINANCIAL_METRIC_FIELDS = (
+    "revenue",
+    "eps_diluted",
+    "free_cash_flow",
+    "gross_profit",
+    "operating_income",
+    "net_income",
+    "invested_capital",
+    "total_equity",
+    "capital_employed",
+    "ebitda",
+    "net_debt",
+    "interest_expense",
+    "total_debt",
+    "shares_diluted",
+)
+
+
+def financial_record_from_row(row: dict[str, Any]) -> FinancialRecord | None:
+    instrument_key = clean_string(row.get("instrument_key"))
+    fiscal_year = safe_int(row.get("fiscal_year"))
+    if instrument_key is None or fiscal_year is None:
+        return None
+    return FinancialRecord(
+        instrument_key=instrument_key,
+        fiscal_year=fiscal_year,
+        fiscal_period_end=clean_string(row.get("fiscal_period_end")),
+        currency=normalize_currency(row.get("currency")),
+        revenue=safe_float(row.get("revenue")),
+        eps_diluted=safe_float(row.get("eps_diluted")),
+        free_cash_flow=safe_float(row.get("free_cash_flow")),
+        gross_profit=safe_float(row.get("gross_profit")),
+        operating_income=safe_float(row.get("operating_income")),
+        net_income=safe_float(row.get("net_income")),
+        invested_capital=safe_float(row.get("invested_capital")),
+        total_equity=safe_float(row.get("total_equity")),
+        capital_employed=safe_float(row.get("capital_employed")),
+        ebitda=safe_float(row.get("ebitda")),
+        net_debt=safe_float(row.get("net_debt")),
+        interest_expense=safe_float(row.get("interest_expense")),
+        total_debt=safe_float(row.get("total_debt")),
+        shares_diluted=safe_float(row.get("shares_diluted")),
+        provider=clean_string(row.get("provider")) or "persisted",
+        source_url=clean_string(row.get("source_url")),
+    )
+
+
+def load_persisted_financials(
+    supabase: Any,
+    instrument_keys: set[str],
+) -> list[FinancialRecord]:
+    if supabase is None or not instrument_keys:
+        return []
+
+    columns = ",".join((
+        "instrument_key",
+        "fiscal_year",
+        "fiscal_period_end",
+        "currency",
+        *FINANCIAL_METRIC_FIELDS,
+        "provider",
+        "source_url",
+    ))
+    records: list[FinancialRecord] = []
+    sorted_keys = sorted(instrument_keys)
+    for index in range(0, len(sorted_keys), 500):
+        chunk = sorted_keys[index:index + 500]
+        try:
+            response = (
+                supabase
+                .table("trident_financial_annual")
+                .select(columns)
+                .in_("instrument_key", chunk)
+                .execute()
+            )
+        except Exception as exc:
+            print(
+                f"Trident: historique persiste indisponible pour {len(chunk)} instruments: {exc}",
+                flush=True,
+            )
+            continue
+        for row in getattr(response, "data", None) or []:
+            if not isinstance(row, dict):
+                continue
+            record = financial_record_from_row(row)
+            if record is not None and record.instrument_key in instrument_keys:
+                records.append(record)
+    return records
+
+
+def merge_financial_history(
+    fresh: list[FinancialRecord],
+    persisted: list[FinancialRecord],
+) -> list[FinancialRecord]:
+    fresh_keys = {(record.instrument_key, record.fiscal_year) for record in fresh}
+    merged = [
+        record
+        for record in persisted
+        if (record.instrument_key, record.fiscal_year) not in fresh_keys
+    ]
+    merged.extend(fresh)
+    return sorted(merged, key=lambda record: (record.instrument_key, record.fiscal_year))
+
+
+def financial_record_completeness(record: FinancialRecord) -> int:
+    return sum(getattr(record, field) is not None for field in FINANCIAL_METRIC_FIELDS)
+
+
+def deduplicate_financials_for_persistence(
+    records: list[FinancialRecord],
+) -> list[FinancialRecord]:
+    selected: dict[tuple[str, int], FinancialRecord] = {}
+    for record in records:
+        key = (record.instrument_key, record.fiscal_year)
+        current = selected.get(key)
+        if (
+            current is None
+            or financial_record_completeness(record) > financial_record_completeness(current)
+        ):
+            selected[key] = record
+    return sorted(
+        selected.values(),
+        key=lambda record: (record.instrument_key, record.fiscal_year),
+    )
+
+
 def build_coverage_by_index(
     universe: list[UniverseRecord],
     financials: list[FinancialRecord],
@@ -1880,9 +2005,12 @@ def run_trident_sync(
     financials = provider.fetch_financials(universe)
     allowed_keys = {record.instrument_key for record in universe}
     financials = [record for record in financials if record.instrument_key in allowed_keys]
+    persisted_financials = load_persisted_financials(supabase, allowed_keys)
+    scoring_financials = merge_financial_history(financials, persisted_financials)
+    persistence_financials = deduplicate_financials_for_persistence(financials)
 
     grouped: dict[str, list[FinancialRecord]] = {record.instrument_key: [] for record in universe}
-    for record in financials:
+    for record in scoring_financials:
         grouped.setdefault(record.instrument_key, []).append(record)
 
     result_rows: list[dict[str, Any]] = []
@@ -1893,8 +2021,8 @@ def run_trident_sync(
         criterion_rows.extend(computed.criterion_rows)
 
     universe_rows = [universe_payload(record) for record in universe]
-    financial_rows = [financial_payload(record) for record in financials]
-    financial_instrument_count = len({record.instrument_key for record in financials})
+    financial_rows = [financial_payload(record) for record in persistence_financials]
+    financial_instrument_count = len({record.instrument_key for record in scoring_financials})
     coverage_pct = (
         (financial_instrument_count / len(universe_rows)) * 100
         if universe_rows
@@ -1904,13 +2032,16 @@ def run_trident_sync(
     for row in result_rows:
         state = str(row.get("overall_state") or "UNKNOWN")
         state_counts[state] = state_counts.get(state, 0) + 1
-    coverage_by_index = build_coverage_by_index(universe, financials, provider)
+    coverage_by_index = build_coverage_by_index(universe, scoring_financials, provider)
 
     stats = {
         "provider": provider.provider_name,
         "indexes": list(getattr(provider, "indexes", []) or []),
         "universe_rows": len(universe_rows),
         "financial_rows": len(financial_rows),
+        "scoring_financial_rows": len(scoring_financials),
+        "persisted_financial_rows": len(persisted_financials),
+        "duplicate_financial_rows_dropped": len(financials) - len(persistence_financials),
         "financial_instruments": financial_instrument_count,
         "coverage_pct": round(coverage_pct, 2),
         "result_rows": len(result_rows),
@@ -2042,7 +2173,7 @@ def build_provider_from_args(args: argparse.Namespace) -> StockDataProvider:
         return GlobalYahooDataProvider(
             indexes=indexes,
             source_license_note=os.environ.get("TRIDENT_SOURCE_LICENSE_NOTE"),
-            max_years=args.max_years or env_int("TRIDENT_MAX_YEARS", 11),
+            max_years=args.max_years or env_int("TRIDENT_MAX_YEARS", 4),
             per_index_limit=args.per_index_limit or env_int("TRIDENT_PER_INDEX_LIMIT", 0) or None,
             include_curated_it_services=(
                 not args.no_curated_it_services

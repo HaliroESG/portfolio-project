@@ -7,6 +7,8 @@ from trident_screener import (
     PortfolioSeedDataProvider,
     UniverseRecord,
     compute_trident_for_instrument,
+    deduplicate_financials_for_persistence,
+    merge_financial_history,
     run_trident_sync,
     yahoo_safe_symbol,
 )
@@ -22,6 +24,11 @@ class _FakeTable:
         self.rows = rows
 
     def select(self, *_args, **_kwargs):
+        return self
+
+    def in_(self, column, values):
+        allowed = set(values)
+        self.rows = [row for row in self.rows if row.get(column) in allowed]
         return self
 
     def execute(self):
@@ -395,6 +402,27 @@ def test_missing_intermediate_roic_is_not_ignored_by_the_average():
     assert roic_row["is_eliminating"] is True
 
 
+def test_missing_intermediate_growth_observations_do_not_use_endpoints_only():
+    records = [
+        FinancialRecord(
+            **{
+                **record.__dict__,
+                "revenue": None if record.fiscal_year == 2020 else record.revenue,
+                "eps_diluted": None if record.fiscal_year == 2020 else record.eps_diluted,
+                "shares_diluted": None if record.fiscal_year == 2020 else record.shares_diluted,
+            }
+        )
+        for record in build_records()
+    ]
+
+    result = compute_trident_for_instrument("csv:growth-gap", records)
+
+    assert result.result_row["overall_state"] == "WATCHLIST"
+    assert criterion_rows(result, 10, "revenue_cagr")[0]["status"] == "missing"
+    assert criterion_rows(result, 10, "eps_cagr")[0]["status"] == "missing"
+    assert criterion_rows(result, 10, "shares_stable_or_down")[0]["status"] == "missing"
+
+
 def test_non_positive_ebitda_cannot_create_a_passing_leverage_ratio():
     records = [
         FinancialRecord(**{**record.__dict__, "ebitda": -10.0})
@@ -422,8 +450,47 @@ def test_non_positive_equity_cannot_create_a_passing_debt_ratio():
     assert criterion_rows(result, 1, "debt_to_equity")[0]["status"] == "missing"
 
 
-def test_global_yahoo_default_fetches_eleven_observations_for_a_ten_year_horizon():
-    assert GlobalYahooDataProvider(indexes=("sp500",), sleep_seconds=0).max_years == 11
+def test_global_yahoo_default_matches_the_provider_annual_statement_depth():
+    assert GlobalYahooDataProvider(indexes=("sp500",), sleep_seconds=0).max_years == 4
+
+
+def test_persisted_history_completes_the_yahoo_window_without_overriding_fresh_years():
+    full_history = build_records()
+    persisted = full_history[:-4]
+    fresh = [
+        FinancialRecord(**{**record.__dict__, "provider": "global_yahoo"})
+        for record in full_history[-4:]
+    ]
+
+    merged = merge_financial_history(fresh, persisted)
+    result = compute_trident_for_instrument("csv:pass", merged)
+
+    assert len(merged) == 11
+    assert result.result_row["overall_state"] == "QUALIFIED"
+    assert result.result_row["horizons"]["10"]["status"] == "complete"
+    assert next(record for record in merged if record.fiscal_year == 2025).provider == "global_yahoo"
+
+
+def test_duplicate_fiscal_year_stays_visible_to_scoring_but_is_deduplicated_for_upsert():
+    records = build_records()
+    duplicate = FinancialRecord(
+        **{
+            **records[5].__dict__,
+            "revenue": None,
+            "eps_diluted": None,
+        }
+    )
+    with_duplicate = [*records, duplicate]
+
+    result = compute_trident_for_instrument("csv:pass", with_duplicate)
+    persistence_rows = deduplicate_financials_for_persistence(with_duplicate)
+
+    assert result.result_row["overall_state"] == "WATCHLIST"
+    assert result.result_row["horizons"]["10"]["coverage"]["duplicate_years"] == [2020]
+    assert criterion_rows(result, 10, "revenue_cagr")[0]["status"] == "missing"
+    assert len(persistence_rows) == 11
+    selected = next(record for record in persistence_rows if record.fiscal_year == 2020)
+    assert selected.revenue == records[5].revenue
 
 
 def test_secondary_failures_do_not_reject_when_eliminators_pass():
@@ -511,3 +578,58 @@ def test_trident_sync_stats_include_index_coverage_in_dry_run():
     assert stats["coverage_by_index"][0]["financial_instruments"] == 1
     assert stats["coverage_by_index"][0]["missing_financials"] == 1
     assert stats["coverage_by_index"][0]["sample_errors"][0]["ticker"] == "MISSING"
+
+
+def test_trident_sync_scores_fresh_and_persisted_history_together_in_dry_run():
+    full_history = [
+        FinancialRecord(**{**record.__dict__, "instrument_key": "fake:covered"})
+        for record in build_records()
+    ]
+
+    class Provider(_FakeTridentProvider):
+        financial_errors = {}
+
+        def fetch_universe(self):
+            return super().fetch_universe()[:1]
+
+        def fetch_financials(self, _universe):
+            return full_history[-4:]
+
+    persisted_rows = [
+        {
+            **record.__dict__,
+            "updated_at": "2026-09-20T00:00:00Z",
+        }
+        for record in full_history[:-4]
+    ]
+    supabase = _FakeSupabase({"trident_financial_annual": persisted_rows})
+
+    stats = run_trident_sync(supabase, Provider(), dry_run=True)
+
+    assert stats["financial_rows"] == 4
+    assert stats["persisted_financial_rows"] == 7
+    assert stats["scoring_financial_rows"] == 11
+    assert stats["state_counts"] == {"QUALIFIED": 1}
+
+
+def test_trident_sync_drops_duplicate_upsert_rows_but_keeps_duplicate_scoring_state():
+    full_history = [
+        FinancialRecord(**{**record.__dict__, "instrument_key": "fake:covered"})
+        for record in build_records()
+    ]
+
+    class Provider(_FakeTridentProvider):
+        financial_errors = {}
+
+        def fetch_universe(self):
+            return super().fetch_universe()[:1]
+
+        def fetch_financials(self, _universe):
+            return [*full_history, full_history[5]]
+
+    stats = run_trident_sync(None, Provider(), dry_run=True)
+
+    assert stats["financial_rows"] == 11
+    assert stats["scoring_financial_rows"] == 12
+    assert stats["duplicate_financial_rows_dropped"] == 1
+    assert stats["state_counts"] == {"WATCHLIST": 1}
