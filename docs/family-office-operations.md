@@ -83,7 +83,19 @@ Historical performance does not bridge returns across a day whose NAV is unknown
 4. Confirm position, price, FX and calculation dates separately.
 5. Review concentration, drawdown, cash and FX exposure.
 
-The scheduled refresh runs `family_office_sync` after market, macro and news refreshes. A failed portfolio is reported without stopping all other portfolios.
+`sync_family_office.py` is fail-closed and check-only by default. It reports readiness
+without writing. `--apply` is required to persist a rebuild, and the rebuild remains
+blocked while any exposed account lacks complete transaction provenance, a complete
+position snapshot, or a matching reconciliation. The scheduled market refresh does not
+implicitly run this mutation.
+
+```bash
+# Read-only readiness report
+python3.11 scripts/sync_family_office.py
+
+# Explicit write, still subject to the readiness gate
+python3.11 scripts/sync_family_office.py --apply
+```
 
 ## Monthly close
 

@@ -12,6 +12,24 @@ from .models import DailyValuation, LedgerEvent, ZERO
 from .repository import FamilyOfficeRepository
 
 
+class PortfolioSyncBlockedError(RuntimeError):
+    """Raised before any write when source completeness cannot support a rebuild."""
+
+    def __init__(self, readiness: dict[str, Any]):
+        self.readiness = readiness
+        blocker_codes = sorted(
+            {
+                str(blocker["code"])
+                for account in readiness.get("accounts", [])
+                for blocker in account.get("blockers", [])
+            }
+        )
+        super().__init__(
+            "Family Office rebuild blocked by incomplete source history"
+            + (f": {', '.join(blocker_codes)}" if blocker_codes else "")
+        )
+
+
 def _decimal(value: Any) -> Decimal:
     if value in (None, ""):
         return ZERO
@@ -185,6 +203,151 @@ def _latest_reconciliation_status(
     return latest
 
 
+def assess_portfolio_sync_readiness(
+    repository: FamilyOfficeRepository,
+    *,
+    owner_user_id: str,
+    portfolio_id: str,
+) -> dict[str, Any]:
+    """Return a read-only, redacted readiness report for a destructive rebuild.
+
+    A rebuild derives positions, cash, performance and risk from the immutable ledger.
+    Existing snapshots must not be replaced when an exposed account has no complete
+    transaction history or has not matched a complete positions snapshot.
+    """
+
+    portfolio = repository.first(
+        "fo_portfolios", "id", filters={"id": portfolio_id, "owner_user_id": owner_user_id}
+    )
+    if portfolio is None:
+        raise ValueError("Unknown portfolio")
+
+    accounts = repository.select(
+        "fo_accounts",
+        "id",
+        filters={"portfolio_id": portfolio_id, "status": "ACTIVE"},
+    )
+    positions = repository.select(
+        "fo_positions_latest",
+        "account_id,quantity",
+        filters={"portfolio_id": portfolio_id},
+    )
+    cash_rows = repository.select(
+        "fo_cash_balances_latest",
+        "account_id,balance_local",
+        filters={"portfolio_id": portfolio_id},
+    )
+
+    position_counts: dict[str, int] = {}
+    for row in positions:
+        if _decimal(row.get("quantity")) == ZERO:
+            continue
+        account_id = str(row["account_id"])
+        position_counts[account_id] = position_counts.get(account_id, 0) + 1
+
+    cash_counts: dict[str, int] = {}
+    for row in cash_rows:
+        if _decimal(row.get("balance_local")) == ZERO:
+            continue
+        account_id = str(row["account_id"])
+        cash_counts[account_id] = cash_counts.get(account_id, 0) + 1
+
+    account_reports: list[dict[str, Any]] = []
+    for account in accounts:
+        account_id = str(account["id"])
+        current_position_count = position_counts.get(account_id, 0)
+        current_cash_count = cash_counts.get(account_id, 0)
+        has_current_exposure = current_position_count > 0 or current_cash_count > 0
+        ledger_present = (
+            repository.first(
+                "fo_ledger_entries", "id", filters={"account_id": account_id}
+            )
+            is not None
+        )
+        transaction_import = repository.first(
+            "fo_import_runs",
+            "id,status,as_of_date,rejected_count",
+            filters={"account_id": account_id, "import_type": "TRANSACTIONS"},
+            order="started_at",
+            descending=True,
+        )
+        position_import = repository.first(
+            "fo_import_runs",
+            "id,status,as_of_date,rejected_count",
+            filters={"account_id": account_id, "import_type": "POSITIONS"},
+            order="started_at",
+            descending=True,
+        )
+        reconciliation = repository.first(
+            "fo_reconciliation_runs",
+            "id,status,reconciliation_date",
+            filters={"account_id": account_id},
+            order="reconciliation_date",
+            descending=True,
+        )
+
+        blockers: list[dict[str, Any]] = []
+        if has_current_exposure and not ledger_present:
+            blockers.append({"code": "TRANSACTION_HISTORY_MISSING"})
+        if ledger_present and transaction_import is None:
+            blockers.append({"code": "TRANSACTION_IMPORT_PROVENANCE_MISSING"})
+        elif transaction_import and transaction_import.get("status") != "COMPLETED":
+            blockers.append(
+                {
+                    "code": "TRANSACTION_IMPORT_INCOMPLETE",
+                    "status": transaction_import.get("status"),
+                    "rejected_count": transaction_import.get("rejected_count"),
+                }
+            )
+        if current_position_count > 0 and position_import is None:
+            blockers.append({"code": "POSITION_SNAPSHOT_PROVENANCE_MISSING"})
+        elif position_import and position_import.get("status") != "COMPLETED":
+            blockers.append(
+                {
+                    "code": "POSITION_SNAPSHOT_INCOMPLETE",
+                    "status": position_import.get("status"),
+                    "rejected_count": position_import.get("rejected_count"),
+                }
+            )
+        if current_position_count > 0 and reconciliation is None:
+            blockers.append({"code": "POSITION_RECONCILIATION_MISSING"})
+        elif reconciliation and reconciliation.get("status") != "MATCH":
+            blockers.append(
+                {
+                    "code": "POSITION_RECONCILIATION_NOT_MATCHED",
+                    "status": reconciliation.get("status"),
+                }
+            )
+
+        account_reports.append(
+            {
+                "account_id": account_id,
+                "current_position_count": current_position_count,
+                "current_cash_count": current_cash_count,
+                "ledger_present": ledger_present,
+                "transaction_import_status": (
+                    transaction_import.get("status") if transaction_import else None
+                ),
+                "position_import_status": (
+                    position_import.get("status") if position_import else None
+                ),
+                "reconciliation_status": (
+                    reconciliation.get("status") if reconciliation else None
+                ),
+                "blockers": blockers,
+            }
+        )
+
+    blocker_count = sum(len(account["blockers"]) for account in account_reports)
+    return {
+        "portfolio_id": portfolio_id,
+        "ready": blocker_count == 0,
+        "blocker_count": blocker_count,
+        "account_count": len(account_reports),
+        "accounts": account_reports,
+    }
+
+
 def _sync_exception(
     repository: FamilyOfficeRepository,
     *,
@@ -275,6 +438,13 @@ def rebuild_portfolio(
     as_of_date: date | None = None,
 ) -> dict[str, Any]:
     target_date = as_of_date or date.today()
+    readiness = assess_portfolio_sync_readiness(
+        repository,
+        owner_user_id=owner_user_id,
+        portfolio_id=portfolio_id,
+    )
+    if not readiness["ready"]:
+        raise PortfolioSyncBlockedError(readiness)
     portfolio = repository.first(
         "fo_portfolios", filters={"id": portfolio_id, "owner_user_id": owner_user_id}
     )
