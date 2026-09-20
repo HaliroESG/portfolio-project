@@ -25,6 +25,7 @@ from check_independent_review import (  # noqa: E402
     CONTEXT,
     IndependentReviewError,
     OWNER_CONFIRMATION,
+    check_run_payload,
     evaluate_owner_codex_ship,
     evaluate_reviews,
     receipt_sha256,
@@ -237,6 +238,11 @@ class IndependentReviewTests(unittest.TestCase):
         self.assertEqual(receipt["owner_attestation"]["codex_review_sha256"], "d" * 64)
         self.assertFalse(receipt["labels_or_comments_trusted"])
         self.assertFalse(receipt["auto_approval"])
+        payload = check_run_payload(HEAD, receipt)
+        self.assertEqual(payload["name"], CONTEXT)
+        self.assertEqual(payload["head_sha"], HEAD)
+        self.assertEqual(payload["conclusion"], "success")
+        self.assertIn("OWNER_ACCEPTED_CODEX_SHIP_FOR_EXACT_HEAD", payload["output"]["summary"])
 
     def test_owner_dispatch_rejects_stale_or_untrusted_evidence(self) -> None:
         cases = {

@@ -326,21 +326,39 @@ def _evaluate_owner_dispatch(
     )
 
 
-def _post_status(
+def check_run_payload(head_sha: str, receipt: dict[str, Any]) -> dict[str, Any]:
+    if not SHA_RE.fullmatch(head_sha):
+        raise IndependentReviewError("check run head is not an exact Git SHA")
+    digest = receipt_sha256(receipt)
+    conclusion = "success" if receipt.get("status") == "PASS" else "failure"
+    reason = receipt.get("reason")
+    if not isinstance(reason, str) or not reason:
+        raise IndependentReviewError("review receipt reason is missing")
+    summary = f"{receipt.get('status')} {reason} receipt={digest[:16]}"
+    return {
+        "name": CONTEXT,
+        "head_sha": head_sha,
+        "status": "completed",
+        "conclusion": conclusion,
+        "output": {
+            "title": f"ASTROCYTE review gate: {conclusion}",
+            "summary": summary,
+        },
+    }
+
+
+def _post_check_run(
     api_url: str,
     repository: str,
     head_sha: str,
     token: str,
     receipt: dict[str, Any],
 ) -> None:
-    digest = receipt_sha256(receipt)
-    state = "success" if receipt["status"] == "PASS" else "failure"
-    description = f"{receipt['status']} {receipt['reason']} receipt={digest[:16]}"
     _request_json(
-        f"{api_url.rstrip('/')}/repos/{repository}/statuses/{head_sha}",
+        f"{api_url.rstrip('/')}/repos/{repository}/check-runs",
         token=token,
         method="POST",
-        payload={"state": state, "context": CONTEXT, "description": description[:140]},
+        payload=check_run_payload(head_sha, receipt),
     )
 
 
@@ -394,7 +412,7 @@ def main() -> int:
                 pull_request_author=author,
             )
         _write_receipt(receipt_path, receipt)
-        _post_status(api_url, repository, head_sha, token, receipt)
+        _post_check_run(api_url, repository, head_sha, token, receipt)
     except IndependentReviewError as exc:
         print(f"independent review gate failed closed: {exc}", file=sys.stderr)
         return 2

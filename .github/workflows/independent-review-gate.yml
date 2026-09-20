@@ -39,8 +39,8 @@ on:
 
 permissions:
   contents: read
+  checks: write
   pull-requests: read
-  statuses: write
 
 concurrency:
   group: astrocyte-independent-review-${{ github.event.pull_request.number || inputs.pull_request }}
