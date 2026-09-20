@@ -673,6 +673,7 @@ export interface BrokerTransactionRow {
 
 export type BrokerReconciliationState =
   | 'MATCH'
+  | 'MISMATCH'
   | 'MISMATCH_QTY'
   | 'MISMATCH_COST'
   | 'MISSING_IN_LEDGER'
@@ -765,6 +766,7 @@ export type PortfolioDecisionDataState =
   | 'QUANTITY_MISSING'
   | 'PRICE_MISSING'
   | 'FX_MISSING'
+  | 'SOURCE_NOT_READY'
 export type PortfolioDecisionPriceState = 'LIVE' | 'STALE' | 'MISSING'
 
 export interface PortfolioDecisionItemRow {
