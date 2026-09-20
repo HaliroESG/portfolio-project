@@ -664,6 +664,7 @@ export interface BrokerTransactionRow {
 
 export type BrokerReconciliationState =
   | 'MATCH'
+  | 'MISMATCH'
   | 'MISMATCH_QTY'
   | 'MISMATCH_COST'
   | 'MISSING_IN_LEDGER'

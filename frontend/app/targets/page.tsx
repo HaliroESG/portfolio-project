@@ -206,12 +206,12 @@ export default function TargetsPage() {
 
   const selectedPortfolioId = selectedPortfolioIdOverride || portfolios?.[0]?.id || ''
 
-  const { data: allocationRows = [], error: allocationError } = useSWR(
+  const { data: allocationRows = [], error: allocationError, isLoading: allocationLoading } = useSWR(
     selectedPortfolioId ? ['fo-allocation-source', selectedPortfolioId] : null,
     async () => buildFamilyOfficeAllocationRows(await loadFamilyOfficeAllocationSource(supabase, selectedPortfolioId)),
   )
 
-  const { data: targetModels = [], error: targetModelError } = useSWR('target-models', async () => {
+  const { data: targetModels = [], error: targetModelError, isLoading: targetModelLoading } = useSWR('target-models', async () => {
     const { data, error } = await supabase
       .from('target_models')
       .select('id,portfolio_scope,model_name,source_file,source_kind,as_of_date,is_active,target_total_pct,status,report_json,imported_at,updated_at')
@@ -240,7 +240,11 @@ export default function TargetsPage() {
     }
   )
 
-  const { data: targetEnvelopeLines = [] } = useSWR(
+  const {
+    data: targetEnvelopeLinesData,
+    error: targetEnvelopeLinesError,
+    isLoading: targetEnvelopeLinesLoading,
+  } = useSWR(
     selectedTargetModel ? ['target-envelope-lines', selectedTargetModel.id] : null,
     async () => {
       const { data, error } = await supabase
@@ -255,10 +259,20 @@ export default function TargetsPage() {
         .filter((row): row is TargetEnvelopeLineRow => row !== null)
     }
   )
+  const targetEnvelopeLines = useMemo(() => targetEnvelopeLinesData ?? [], [targetEnvelopeLinesData])
+  const targetEnvelopeLinesReady = !selectedTargetModel
+    || (!targetEnvelopeLinesLoading && !targetEnvelopeLinesError && targetEnvelopeLinesData !== undefined)
 
   const assessment = useMemo(
-    () => assessFamilyOfficeAllocation(allocationRows, selectedTargetModel, targetEnvelopeLines),
-    [allocationRows, selectedTargetModel, targetEnvelopeLines],
+    () => targetEnvelopeLinesReady
+      ? assessFamilyOfficeAllocation(allocationRows, selectedTargetModel, targetEnvelopeLines)
+      : {
+        rows: [],
+        total_value_eur: null,
+        target_total_pct: selectedTargetModel?.target_total_pct ?? null,
+        target_model_ready: false,
+      },
+    [allocationRows, selectedTargetModel, targetEnvelopeLines, targetEnvelopeLinesReady],
   )
 
   const positionViews = useMemo(() => assessment.rows.map((row): PositionView => ({
@@ -322,12 +336,15 @@ export default function TargetsPage() {
         .sort((a, b) => new Date(b).getTime() - new Date(a).getTime())[0] ?? null
     const latestFreshness = resolveFreshnessDate(latestAsOf)
     return {
-      error: allocationError?.message ?? null,
+      error: allocationError?.message ?? targetEnvelopeLinesError?.message ?? null,
       sourceCount: sourceKeys.size,
       latestAsOf,
       latestFreshness,
     }
-  }, [allocationError, positionViews])
+  }, [allocationError, positionViews, targetEnvelopeLinesError])
+
+  const sourceLoading = allocationLoading || targetModelLoading || Boolean(selectedTargetModel && targetEnvelopeLinesLoading)
+  const sourceError = allocationError ?? targetModelError ?? targetEnvelopeLinesError
 
   const { lastSync, lastSyncIso } = useMemo(() => {
     if (positionViews.length === 0) return { lastSync: '', lastSyncIso: null as string | null }
@@ -429,12 +446,26 @@ export default function TargetsPage() {
               </div>
             </div>
 
-            {targetModelError ? (
+            {targetModelLoading ? (
+              <div className="mt-4 rounded-lg border border-slate-200 bg-slate-50 px-4 py-3 text-xs font-mono text-slate-600 dark:border-white/10 dark:bg-black/20 dark:text-gray-400">
+                Loading target model…
+              </div>
+            ) : targetModelError ? (
               <div className="mt-4 rounded-lg border border-amber-300 bg-amber-50 px-4 py-3 text-xs font-mono text-amber-800 dark:border-amber-900/60 dark:bg-amber-950/20 dark:text-amber-300">
                 Target model schema unavailable. Apply `20260526_supports_targets_advice.sql`, then run `import_target_model.py`.
               </div>
             ) : selectedTargetModel ? (
               <div className="mt-4 space-y-4">
+                {targetEnvelopeLinesLoading && (
+                  <div className="rounded-lg border border-slate-200 bg-slate-50 px-4 py-3 text-xs font-mono text-slate-600 dark:border-white/10 dark:bg-black/20 dark:text-gray-400">
+                    Loading envelope execution lines… Allocation coverage is pending.
+                  </div>
+                )}
+                {targetEnvelopeLinesError && (
+                  <div className="rounded-lg border border-amber-300 bg-amber-50 px-4 py-3 text-xs font-mono text-amber-800 dark:border-amber-900/60 dark:bg-amber-950/20 dark:text-amber-300">
+                    Envelope execution lines are unavailable. Allocation coverage and actions remain blocked.
+                  </div>
+                )}
                 <div className="grid grid-cols-1 gap-3 md:grid-cols-4">
                   <OperationMetric label="Model" value={selectedTargetModel.model_name} detail={selectedTargetModel.source_file} />
                   <OperationMetric label="Target total" value={formatPercent(selectedTargetModel.target_total_pct)} detail={selectedTargetModel.status} />
@@ -551,14 +582,28 @@ export default function TargetsPage() {
           </section>
 
           <div className="space-y-5">
-            {grouped.length === 0 && (
+            {sourceLoading && (
+              <EmptyState
+                title="Loading allocation inputs"
+                message="Canonical Family Office rows and target envelope lines are still loading. Coverage has not been assessed yet."
+              />
+            )}
+
+            {!sourceLoading && sourceError && (
+              <EmptyState
+                title="Allocation inputs unavailable"
+                message="A canonical source request failed. Coverage and allocation actions remain blocked until the source is available."
+              />
+            )}
+
+            {!sourceLoading && !sourceError && grouped.length === 0 && (
               <EmptyState
                 title="No portfolio positions"
                 message="No positions are available for this portfolio. Target validation starts once the fo_* read models return canonical positions or cash."
               />
             )}
 
-            {grouped.map(([group, rows]) => (
+            {!sourceLoading && !sourceError && grouped.map(([group, rows]) => (
               <section key={group} className="overflow-hidden rounded-xl border border-slate-200 bg-white dark:border-white/10 dark:bg-[#0D1117]/70">
                 <div className="flex flex-wrap items-center justify-between gap-2 border-b border-slate-200 px-4 py-3 dark:border-white/10">
                   <h2 className="text-sm font-black uppercase tracking-tight text-slate-950 dark:text-white">{group}</h2>

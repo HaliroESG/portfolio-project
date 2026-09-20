@@ -1,15 +1,19 @@
 import assert from 'node:assert/strict'
 
 const {
-  assessFamilyOfficeAllocation,
+  assessFamilyOfficeAllocation: assessFamilyOfficeAllocationAtDate,
   buildFamilyOfficeAllocationRows,
   toPortfolioDecisionRows,
 } = await import('../lib/familyOfficeAllocation.ts')
 
+const assessFamilyOfficeAllocation = (rows, targetModel, targetLines) => (
+  assessFamilyOfficeAllocationAtDate(rows, targetModel, targetLines, '2026-09-20')
+)
+
 const accounts = [
-  { id: 'a1', name: 'PEA 1', envelope: 'PEA' },
-  { id: 'a2', name: 'PEA 2', envelope: 'PEA' },
-  { id: 'a3', name: 'Cash', envelope: 'CASH' },
+  { id: 'a1', external_account_id: 'lucya-1', name: 'Lucya Cardif', envelope: 'AV' },
+  { id: 'a2', external_account_id: 'SECOND_ACCOUNT', name: 'Second Account', envelope: 'PEA' },
+  { id: 'a3', external_account_id: 'CASH_CORE', name: 'Cash Core', envelope: 'CASH' },
 ]
 
 const position = (overrides = {}) => ({
@@ -75,14 +79,14 @@ const target = (overrides = {}) => ({
   id: 1,
   model_id: 'model-1',
   portfolio_scope: 'PERSO',
-  envelope: 'PEA',
+  envelope: 'Cardif_Lucya_PostArb',
   ticker: 'ETF1',
   isin: 'FR0000000001',
   instrument: 'ETF One',
   asset_class: 'ETF',
   region: null,
   currency: 'EUR',
-  target_weight_pct: 37.5,
+  target_weight_pct: 100,
   target_value_eur: null,
   notes: null,
   source_sheet: 'Targets',
@@ -101,23 +105,29 @@ const source = {
 }
 
 const rows = buildFamilyOfficeAllocationRows(source)
-assert.equal(rows.length, 2)
-assert.equal(rows[0].ticker, 'CASH_EUR')
-assert.equal(rows[0].current_value_eur, 500)
-assert.equal(rows[1].ticker, 'ETF1')
-assert.equal(rows[1].current_quantity, 3)
-assert.equal(rows[1].current_value_eur, 300)
-assert.equal(rows[1].source_accounts.length, 2)
+assert.equal(rows.length, 3)
+const cashRow = rows.find((row) => row.ticker === 'CASH_EUR')
+const firstAccountRow = rows.find((row) => row.source_accounts[0].account_id === 'a1')
+const secondAccountRow = rows.find((row) => row.source_accounts[0].account_id === 'a2')
+assert.equal(cashRow?.current_value_eur, 500)
+assert.equal(firstAccountRow?.ticker, 'ETF1')
+assert.equal(firstAccountRow?.current_quantity, 1)
+assert.equal(firstAccountRow?.current_value_eur, 100)
+assert.equal(secondAccountRow?.ticker, 'ETF1')
+assert.equal(secondAccountRow?.current_quantity, 2)
+assert.equal(secondAccountRow?.current_value_eur, 200)
+assert.ok(rows.every((row) => row.source_accounts.length === 1))
 
 const lines = [
   target(),
-  target({ id: 2, envelope: 'CASH', ticker: 'CASH_EUR', isin: null, instrument: 'Cash EUR', asset_class: 'CASH', target_weight_pct: 62.5 }),
+  target({ id: 2, envelope: 'SECOND_ACCOUNT', target_weight_pct: 100 }),
+  target({ id: 3, envelope: 'CASH_CORE', ticker: 'CASH_EUR', isin: null, instrument: 'Cash EUR', asset_class: 'CASH', target_weight_pct: 100 }),
 ]
 const ready = assessFamilyOfficeAllocation(rows, model(), lines)
 assert.equal(ready.total_value_eur, 800)
 assert.equal(ready.target_model_ready, true)
-assert.deepEqual(ready.rows.map((row) => row.action), ['HOLD', 'HOLD'])
-assert.deepEqual(ready.rows.map((row) => row.reason_codes), [[], []])
+assert.deepEqual(ready.rows.map((row) => row.action), ['HOLD', 'HOLD', 'HOLD'])
+assert.deepEqual(ready.rows.map((row) => row.reason_codes), [[], [], []])
 
 const noTargets = assessFamilyOfficeAllocation(rows, null, [])
 assert.ok(noTargets.rows.every((row) => row.action === 'UNAVAILABLE'))
@@ -138,20 +148,20 @@ assert.ok(invalidModel.rows.every((row) => row.reason_codes.includes('TARGET_MOD
 
 const missingWeight = assessFamilyOfficeAllocation(rows, model(), [
   target({ target_weight_pct: null }),
-  lines[1],
+  ...lines.slice(1),
 ])
 assert.equal(missingWeight.target_model_ready, false)
 assert.equal(missingWeight.rows.find((row) => row.ticker === 'ETF1')?.action, 'UNAVAILABLE')
 assert.ok(missingWeight.rows.find((row) => row.ticker === 'ETF1')?.reason_codes.includes('TARGET_WEIGHT_MISSING'))
 
-const ambiguous = assessFamilyOfficeAllocation(rows, model(), [...lines, target({ id: 3 })])
+const ambiguous = assessFamilyOfficeAllocation(rows, model(), [...lines, target({ id: 4 })])
 const ambiguousEtf = ambiguous.rows.find((row) => row.ticker === 'ETF1')
 assert.equal(ambiguousEtf?.action, 'UNAVAILABLE')
 assert.ok(ambiguousEtf?.reason_codes.includes('TARGET_LINE_AMBIGUOUS'))
 
 const conflictingIsin = assessFamilyOfficeAllocation(rows, model(), [
   target({ isin: 'FR0000000099' }),
-  lines[1],
+  ...lines.slice(1),
 ])
 const conflictingEtf = conflictingIsin.rows.find((row) => row.ticker === 'ETF1')
 assert.equal(conflictingEtf?.action, 'UNAVAILABLE')
@@ -176,5 +186,53 @@ const staleRows = buildFamilyOfficeAllocationRows({
 const stale = assessFamilyOfficeAllocation(staleRows, model(), [target({ target_weight_pct: 100 })])
 assert.equal(stale.rows[0].action, 'UNAVAILABLE')
 assert.ok(stale.rows[0].reason_codes.includes('SOURCE_STALE'))
+
+const staleValuationRows = buildFamilyOfficeAllocationRows({
+  accounts,
+  positions: [position({ price_as_of: '2026-09-01', fx_as_of: '2026-09-01' })],
+  cash: [],
+})
+const staleValuation = assessFamilyOfficeAllocation(staleValuationRows, model(), [target()])
+assert.equal(staleValuation.rows[0].action, 'UNAVAILABLE')
+assert.ok(staleValuation.rows[0].reason_codes.includes('VALUATION_STALE'))
+
+const withinEnvelopeRows = buildFamilyOfficeAllocationRows({
+  accounts,
+  positions: [
+    position(),
+    position({
+      id: 'p3',
+      instrument_id: 'i2',
+      instrument_key: 'isin:FR0000000002',
+      isin: 'FR0000000002',
+      ticker: 'ETF2',
+      name: 'ETF Two',
+      quantity: 3,
+      market_value_eur: 300,
+    }),
+  ],
+  cash: [],
+})
+const withinEnvelope = assessFamilyOfficeAllocation(withinEnvelopeRows, model(), [
+  target({ target_weight_pct: 25 }),
+  target({ id: 2, isin: 'FR0000000002', ticker: 'ETF2', instrument: 'ETF Two', target_weight_pct: 75 }),
+])
+assert.deepEqual(withinEnvelope.rows.map((row) => row.current_weight_pct), [25, 75])
+assert.deepEqual(withinEnvelope.rows.map((row) => row.action), ['HOLD', 'HOLD'])
+
+const invalidWeight = assessFamilyOfficeAllocation(rows, model(), [
+  target({ target_weight_pct: -1 }),
+  ...lines.slice(1),
+])
+assert.equal(invalidWeight.target_model_ready, false)
+assert.ok(invalidWeight.rows.find((row) => row.source_accounts[0].account_id === 'a1')?.reason_codes.includes('TARGET_WEIGHT_INVALID'))
+
+const mismatchRows = buildFamilyOfficeAllocationRows({
+  accounts,
+  positions: [position({ reconciliation_state: 'MISMATCH' })],
+  cash: [],
+})
+const mismatchDecision = toPortfolioDecisionRows(assessFamilyOfficeAllocation(mismatchRows, model(), [target()]))
+assert.equal(mismatchDecision[0].reconciliation_state, 'MISMATCH')
 
 console.log('family-office allocation tests: PASS')
