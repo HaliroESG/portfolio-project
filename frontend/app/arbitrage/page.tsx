@@ -16,6 +16,7 @@ import { cn } from '../../lib/utils'
 import { loadMacroAllocationAdvice } from '../../lib/macroStrategyData'
 import type {
   AllocationAdviceAction,
+  AllocationAdviceDataState,
   AllocationAdviceExecution,
   AllocationAdviceRow,
   MacroAllocationAction,
@@ -103,6 +104,11 @@ function parseExecution(value: unknown): AllocationAdviceExecution {
   return 'CURRENT_UNAVAILABLE'
 }
 
+function parseAdviceDataState(value: unknown): AllocationAdviceDataState {
+  if (value === 'READY' || value === 'UNKNOWN' || value === 'PARTIAL' || value === 'STALE' || value === 'UNMATCHED') return value
+  return 'UNKNOWN'
+}
+
 function parseSourceQuality(value: unknown, sourceKind?: string | null): SupportSourceQuality {
   if (value === 'COMPLETE' || value === 'PARTIAL' || value === 'IDENTIFIER_MISSING') return value
   if (sourceKind === 'fortuneo-av') return 'PARTIAL'
@@ -164,6 +170,21 @@ function parseAdviceRow(raw: RawRow): AllocationAdviceRow | null {
     confidence: readNumber(raw.confidence) ?? 0,
     reason_codes: parseStringArray(raw.reason_codes),
     preferred_execution: parseExecution(raw.preferred_execution),
+    data_state: parseAdviceDataState(raw.data_state),
+    model_contract_state: parseAdviceDataState(raw.model_contract_state),
+    model_contract_reason: readString(raw.model_contract_reason),
+    bucket_position_count: readNumber(raw.bucket_position_count) ?? 0,
+    bucket_unavailable_positions: readNumber(raw.bucket_unavailable_positions) ?? 0,
+    position_count: readNumber(raw.position_count) ?? 0,
+    unavailable_positions: readNumber(raw.unavailable_positions) ?? 0,
+    unmatched_positions: readNumber(raw.unmatched_positions) ?? 0,
+    unmatched_scope_positions: readNumber(raw.unmatched_scope_positions) ?? 0,
+    total_value_eur: readNumber(raw.total_value_eur),
+    allocatable_total_eur: readNumber(raw.allocatable_total_eur),
+    reserve_floor_eur: readNumber(raw.reserve_floor_eur),
+    reserve_current_eur: readNumber(raw.reserve_current_eur),
+    reserve_eligible_positions: readNumber(raw.reserve_eligible_positions) ?? 0,
+    reserve_state: parseAdviceDataState(raw.reserve_state),
     updated_at: readString(raw.updated_at),
   }
 }
@@ -428,7 +449,7 @@ export default function ArbitragePage() {
   } = useSWR('fo-arbitrage-target-models', async () => {
     const { data, error } = await supabase
       .from('target_models')
-      .select('id,portfolio_scope,model_name,source_file,source_kind,as_of_date,is_active,target_total_pct,status,report_json,imported_at,updated_at')
+      .select('id,portfolio_scope,model_name,source_file,source_kind,as_of_date,is_active,target_total_pct,allocation_contract_version,reserve_floor_eur,reserve_excluded_from_risky_allocation,status,report_json,imported_at,updated_at')
       .eq('is_active', true)
       .order('updated_at', { ascending: false })
     if (error) throw error
@@ -465,7 +486,7 @@ export default function ArbitragePage() {
     async () => {
       const { data, error } = await supabase
         .from('allocation_advice_items_latest')
-        .select('portfolio_scope,model_id,model_name,source_file,bucket_key,bucket_label,current_value_eur,current_weight_pct,target_weight_pct,drift_pct,rebalance_amount_eur,action,confidence,reason_codes,preferred_execution,updated_at')
+        .select('portfolio_scope,model_id,model_name,source_file,bucket_key,bucket_label,current_value_eur,current_weight_pct,target_weight_pct,drift_pct,rebalance_amount_eur,action,confidence,reason_codes,preferred_execution,data_state,model_contract_state,model_contract_reason,bucket_position_count,bucket_unavailable_positions,position_count,unavailable_positions,unmatched_positions,unmatched_scope_positions,total_value_eur,allocatable_total_eur,reserve_floor_eur,reserve_current_eur,reserve_eligible_positions,reserve_state,updated_at')
         .eq('portfolio_scope', selectedScope)
         .order('action', { ascending: true })
       if (error) throw error
@@ -779,7 +800,7 @@ export default function ArbitragePage() {
                   <table className="min-w-[940px] w-full">
                     <thead className="bg-slate-50 text-slate-600 dark:bg-[#080A0F] dark:text-gray-500">
                       <tr>
-                        {['Bucket', 'Action', 'Execution', 'Amount', 'Current / Target', 'Drift', 'Confidence', 'Reasons'].map((header) => (
+                        {['Bucket', 'State', 'Action', 'Execution', 'Amount', 'Current / Target', 'Drift', 'Confidence', 'Reasons'].map((header) => (
                           <th key={header} className={cn('px-3 py-3 text-[10px] font-black uppercase tracking-widest', ['Amount', 'Current / Target', 'Drift', 'Confidence'].includes(header) ? 'text-right' : 'text-left')}>
                             {header}
                           </th>
@@ -792,6 +813,10 @@ export default function ArbitragePage() {
                           <td className="p-3 text-sm font-black text-slate-950 dark:text-white">
                             {row.bucket_label}
                             <div className="mt-0.5 text-[10px] font-mono font-normal text-slate-500">{row.source_file}</div>
+                          </td>
+                          <td className="p-3 text-[10px] font-mono font-black text-slate-600 dark:text-gray-300">
+                            {row.data_state}
+                            <div className="mt-0.5 font-normal text-slate-500">contract {row.model_contract_state}</div>
                           </td>
                           <td className="p-3"><AdviceActionBadge action={row.action} /></td>
                           <td className="p-3 text-[10px] font-mono font-bold text-slate-600 dark:text-gray-300">{executionLabel(row.preferred_execution)}</td>
@@ -1036,6 +1061,13 @@ function AdviceCard({ row }: { row: AllocationAdviceRow }) {
       </div>
       <div className="mt-3 rounded-lg border border-slate-200 bg-slate-50 px-3 py-2 text-[10px] font-mono text-slate-600 dark:border-white/10 dark:bg-black/20 dark:text-gray-300">
         <div className="font-black uppercase">Confidence {row.confidence}%</div>
+        <div className="mt-1 font-black uppercase">State {row.data_state}</div>
+        <div className="mt-1">Contract {row.model_contract_state}{row.model_contract_reason ? ` · ${row.model_contract_reason}` : ''}</div>
+        {row.portfolio_scope === 'PRO' && (
+          <div className="mt-1">
+            Reserve {formatEur(row.reserve_current_eur)} / {formatEur(row.reserve_floor_eur)} · {row.reserve_state}
+          </div>
+        )}
         <div className="mt-2"><ReasonCodes codes={row.reason_codes} /></div>
       </div>
     </article>

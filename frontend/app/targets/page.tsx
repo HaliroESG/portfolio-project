@@ -15,7 +15,14 @@ import { cn } from '../../lib/utils'
 import type {
   FamilyOfficeAllocationAssessmentRow,
 } from '../../lib/familyOfficeAllocation'
-import type { PortfolioScope, TargetBucketRow, TargetEnvelopeLineRow, TargetModelRow } from '../../types'
+import type {
+  PortfolioScope,
+  TargetBucketRow,
+  TargetEnvelopeLineRow,
+  TargetModelRow,
+  TargetSleeveAllocationRow,
+  TargetSleeveKey,
+} from '../../types'
 
 interface PortfolioRow {
   id: string
@@ -108,11 +115,44 @@ function parseTargetModel(raw: RawRow): TargetModelRow | null {
     as_of_date: readString(raw.as_of_date),
     is_active: raw.is_active === true,
     target_total_pct: readNumber(raw.target_total_pct as number | string | null),
+    allocation_contract_version: readString(raw.allocation_contract_version),
+    reserve_floor_eur: readNumber(raw.reserve_floor_eur as number | string | null),
+    reserve_excluded_from_risky_allocation: raw.reserve_excluded_from_risky_allocation === true,
     status: readString(raw.status) ?? 'UNKNOWN',
     report_json: raw.report_json && typeof raw.report_json === 'object' && !Array.isArray(raw.report_json)
       ? raw.report_json as Record<string, unknown>
       : {},
     imported_at: readString(raw.imported_at) ?? '',
+    updated_at: readString(raw.updated_at) ?? '',
+  }
+}
+
+function parseTargetSleeveKey(value: unknown): TargetSleeveKey | null {
+  return value === 'CORE' || value === 'SATELLITE' ? value : null
+}
+
+function parseTargetSleeveAllocation(raw: RawRow): TargetSleeveAllocationRow | null {
+  const id = readNumber(raw.id as number | string | null)
+  const modelId = readString(raw.model_id)
+  const sleeveKey = parseTargetSleeveKey(raw.sleeve_key)
+  const componentLabel = readString(raw.component_label)
+  const bucketKey = readString(raw.bucket_key)
+  const bucketLabel = readString(raw.bucket_label)
+  const targetWeight = readNumber(raw.target_weight_pct as number | string | null)
+  if (id === null || !modelId || !sleeveKey || !componentLabel || !bucketKey || !bucketLabel || targetWeight === null) return null
+  return {
+    id,
+    model_id: modelId,
+    portfolio_scope: parseScope(raw.portfolio_scope),
+    sleeve_key: sleeveKey,
+    component_label: componentLabel,
+    bucket_key: bucketKey,
+    bucket_label: bucketLabel,
+    target_weight_pct: targetWeight,
+    instrument_policy: readString(raw.instrument_policy),
+    activation_status: readString(raw.activation_status) ?? 'UNKNOWN',
+    source_sheet: readString(raw.source_sheet),
+    source_row: readNumber(raw.source_row as number | string | null),
     updated_at: readString(raw.updated_at) ?? '',
   }
 }
@@ -214,7 +254,7 @@ export default function TargetsPage() {
   const { data: targetModels = [], error: targetModelError, isLoading: targetModelLoading } = useSWR('target-models', async () => {
     const { data, error } = await supabase
       .from('target_models')
-      .select('id,portfolio_scope,model_name,source_file,source_kind,as_of_date,is_active,target_total_pct,status,report_json,imported_at,updated_at')
+      .select('id,portfolio_scope,model_name,source_file,source_kind,as_of_date,is_active,target_total_pct,allocation_contract_version,reserve_floor_eur,reserve_excluded_from_risky_allocation,status,report_json,imported_at,updated_at')
       .eq('is_active', true)
       .order('updated_at', { ascending: false })
     if (error) throw error
@@ -224,6 +264,25 @@ export default function TargetsPage() {
   })
 
   const selectedTargetModel = targetModels.find((model) => model.portfolio_scope === selectedScope) ?? null
+
+  const {
+    data: targetSleeves = [],
+    error: targetSleevesError,
+    isLoading: targetSleevesLoading,
+  } = useSWR(
+    selectedTargetModel?.portfolio_scope === 'PRO' ? ['target-sleeves', selectedTargetModel.id] : null,
+    async () => {
+      const { data, error } = await supabase
+        .from('target_sleeve_allocations')
+        .select('id,model_id,portfolio_scope,sleeve_key,component_label,bucket_key,bucket_label,target_weight_pct,instrument_policy,activation_status,source_sheet,source_row,updated_at')
+        .eq('model_id', selectedTargetModel!.id)
+        .order('source_row', { ascending: true })
+      if (error) throw error
+      return ((data ?? []) as unknown as RawRow[])
+        .map(parseTargetSleeveAllocation)
+        .filter((row): row is TargetSleeveAllocationRow => row !== null)
+    },
+  )
 
   const { data: targetBuckets = [] } = useSWR(
     selectedTargetModel ? ['target-buckets', selectedTargetModel.id] : null,
@@ -343,8 +402,11 @@ export default function TargetsPage() {
     }
   }, [allocationError, positionViews, targetEnvelopeLinesError])
 
-  const sourceLoading = allocationLoading || targetModelLoading || Boolean(selectedTargetModel && targetEnvelopeLinesLoading)
-  const sourceError = allocationError ?? targetModelError ?? targetEnvelopeLinesError
+  const sourceLoading = allocationLoading
+    || targetModelLoading
+    || Boolean(selectedTargetModel && targetEnvelopeLinesLoading)
+    || Boolean(selectedTargetModel?.portfolio_scope === 'PRO' && targetSleevesLoading)
+  const sourceError = allocationError ?? targetModelError ?? targetEnvelopeLinesError ?? targetSleevesError
 
   const { lastSync, lastSyncIso } = useMemo(() => {
     if (positionViews.length === 0) return { lastSync: '', lastSyncIso: null as string | null }
@@ -452,7 +514,7 @@ export default function TargetsPage() {
               </div>
             ) : targetModelError ? (
               <div className="mt-4 rounded-lg border border-amber-300 bg-amber-50 px-4 py-3 text-xs font-mono text-amber-800 dark:border-amber-900/60 dark:bg-amber-950/20 dark:text-amber-300">
-                Target model schema unavailable. Apply `20260526_supports_targets_advice.sql`, then run `import_target_model.py`.
+                Target model schema unavailable. Apply the base target migration and `20260921_allocation_contracts_v1.sql`, then run `import_target_model.py`.
               </div>
             ) : selectedTargetModel ? (
               <div className="mt-4 space-y-4">
@@ -468,10 +530,56 @@ export default function TargetsPage() {
                 )}
                 <div className="grid grid-cols-1 gap-3 md:grid-cols-4">
                   <OperationMetric label="Model" value={selectedTargetModel.model_name} detail={selectedTargetModel.source_file} />
-                  <OperationMetric label="Target total" value={formatPercent(selectedTargetModel.target_total_pct)} detail={selectedTargetModel.status} />
+                  <OperationMetric
+                    label="Target total"
+                    value={formatPercent(selectedTargetModel.target_total_pct)}
+                    detail={`${selectedTargetModel.status} · ${selectedTargetModel.allocation_contract_version ?? 'contract UNKNOWN'}`}
+                  />
                   <OperationMetric label="Buckets" value={targetBuckets.length.toString()} detail="Strategic decision level" />
                   <OperationMetric label="Envelope lines" value={targetEnvelopeLines.length.toString()} detail="Execution level" />
                 </div>
+
+                {selectedTargetModel.portfolio_scope === 'PRO' && (
+                  <div className="rounded-lg border border-slate-200 bg-slate-50 p-3 dark:border-white/10 dark:bg-black/20">
+                    <div className="flex flex-wrap items-center justify-between gap-2">
+                      <div className="text-[10px] font-black uppercase tracking-widest text-slate-600 dark:text-gray-300">
+                        Native PRO allocation contract
+                      </div>
+                      <span className="rounded border border-amber-300 bg-amber-50 px-2 py-1 text-[9px] font-black uppercase tracking-wider text-amber-700 dark:border-amber-900/60 dark:bg-amber-950/20 dark:text-amber-300">
+                        Non activated
+                      </span>
+                    </div>
+                    {targetSleevesError ? (
+                      <div className="mt-3 text-[10px] font-mono text-amber-700 dark:text-amber-300">
+                        Core / Satellite rows unavailable; PRO recommendations remain blocked.
+                      </div>
+                    ) : (
+                      <div className="mt-3 grid gap-3 md:grid-cols-3">
+                        {(['CORE', 'SATELLITE'] as TargetSleeveKey[]).map((sleeve) => {
+                          const rows = targetSleeves.filter((row) => row.sleeve_key === sleeve)
+                          const total = rows.reduce((sum, row) => sum + row.target_weight_pct, 0)
+                          return (
+                            <OperationMetric
+                              key={sleeve}
+                              label={sleeve}
+                              value={formatPercent(rows.length > 0 ? total : null)}
+                              detail={rows.length > 0 ? `${rows.length} verifiable regional lines` : 'UNKNOWN: no native sleeve rows'}
+                              tone={rows.length > 0 ? 'ok' : 'warn'}
+                            />
+                          )
+                        })}
+                        <OperationMetric
+                          label="Reserve outside risk"
+                          value={formatEur(selectedTargetModel.reserve_floor_eur)}
+                          detail={selectedTargetModel.reserve_excluded_from_risky_allocation
+                            ? 'Excluded from risky-allocation denominator'
+                            : 'UNKNOWN: exclusion contract absent'}
+                          tone={selectedTargetModel.reserve_floor_eur === 120000 && selectedTargetModel.reserve_excluded_from_risky_allocation ? 'ok' : 'warn'}
+                        />
+                      </div>
+                    )}
+                  </div>
+                )}
 
                 <div className="grid gap-4 xl:grid-cols-[minmax(0,1fr)_minmax(0,1.15fr)]">
                   <div className="overflow-hidden rounded-lg border border-slate-200 dark:border-white/10">

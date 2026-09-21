@@ -523,6 +523,24 @@ Deployment note:
 - Dry-run targets: `python backend/scripts/import_target_model.py --kind perso --file Portefeuille_Perso_MultiEnveloppes_v4.xlsx --dry-run` and `python backend/scripts/import_target_model.py --kind pro --file Portefeuille_PRO_v3.xlsx --dry-run`
 - Apply targets: same commands with `SUPABASE_URL=... SUPABASE_SERVICE_ROLE_KEY=... --apply`.
 
+### 2026-09-21 - Allocation Contracts V1
+
+Status: IMPLEMENTED AND VALIDATED LOCALLY, SCHEMA DEPLOY AND TARGET APPLY NOT AUTHORIZED
+
+Scope delivered:
+- PERSO crypto is an explicit strategic bucket and SQL position mapping; missing values are not converted to zero.
+- Advice rows preserve `UNKNOWN`, `PARTIAL`, `STALE`, and `UNMATCHED` states and block recommendations outside `READY`.
+- PRO Core 70% / Satellite 30% is stored in native `target_sleeve_allocations` rows, with aggregate regional buckets derived from those rows.
+- The EUR 120,000 PRO reserve is a model constraint outside the risky-allocation denominator; imports fail closed when the configured floor differs.
+- Backend payloads, the additive local Supabase migration, frontend types, `/targets`, and `/arbitrage` readers are aligned.
+- Correction V1 makes the migration transition fail-closed: legacy/pre-import models remain `UNKNOWN` and `UNAVAILABLE` until reimported with `allocation_contracts_v1` and their complete PERSO or PRO contract; unattributed portfolio scopes are exposed as unmatched instead of defaulting to PERSO.
+- PRO reserve valuation uses a separate conservative eligibility contract (bank/Revolut cash, liquid money-market/XEON, or qualified EU-Bills); generic bonds remain in `cash_bonds` but never satisfy the EUR 120,000 reserve floor.
+
+Validation and deployment boundary:
+- Both approved workbooks pass local dry-run validation; PRO resolves to 70% Core, 30% Satellite, and a EUR 120,000 excluded reserve.
+- Apply `backend/sql/20260921_allocation_contracts_v1.sql` only through a separately authorized schema deployment, then re-import both target models before expecting the new frontend fields.
+- No migration, target import, order, transaction, or instrument selection was activated by this workstream.
+
 Dry-run reference on user PDFs:
 - Lucya/Cardif: 2333 strict ISIN accepted, 0 rejected after checksum validation.
 - Linxea funds: 576 extracted source rows, 576 `IDENTIFIER_MISSING`, PDF label says 588 results.

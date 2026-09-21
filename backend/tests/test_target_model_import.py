@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from openpyxl import Workbook
+from openpyxl import Workbook, load_workbook
 
 from scripts.import_target_model import parse_target_model, run_import
 
@@ -74,12 +74,14 @@ def _write_personal(path):
     ws = workbook.active
     ws.title = "Strategic_Target_Perso"
     ws.append(["Bucket", "Target %", "Lower Band %", "Upper Band %"])
-    ws.append(["Actions US", 0.42, 0.35, 0.55])
-    ws.append(["Actions Europe", 0.23, 0.15, 0.30])
-    ws.append(["Actions Japon", 0.07, 0.03, 0.12])
-    ws.append(["Actions Emergents", 0.13, 0.05, 0.20])
-    ws.append(["Or", 0.08, 0.04, 0.12])
-    ws.append(["Obligations / Cash", 0.07, 0.03, 0.15])
+    ws.append(["Actions US", 0.43, 0.35, 0.50])
+    ws.append(["Actions Europe", 0.15, 0.10, 0.20])
+    ws.append(["Actions Japon", 0.10, 0.07, 0.13])
+    ws.append(["Actions Pacifique ex-JP", 0.05, 0.02, 0.08])
+    ws.append(["Actions Emergents", 0.15, 0.10, 0.20])
+    ws.append(["Or", 0.05, 0.03, 0.08])
+    ws.append(["Obligations / Cash", 0.05, 0.03, 0.10])
+    ws.append(["Crypto", 0.02, 0, 0.04])
 
     ws = workbook.create_sheet("Envelope_Targets")
     ws.append(["Envelope-level targets"])
@@ -122,7 +124,28 @@ def _write_pro(path):
         ws.cell(row=index, column=3, value=values[2])
 
     ws = workbook.create_sheet("Portefeuille_cible")
-    ws["B4"] = 100000
+    ws["B4"] = 120000
+
+    ws = workbook.create_sheet("Modele_Core_Satellite")
+    ws.append([])
+    ws.append(["Recommandation Core / Satellite sur le surplus"])
+    ws.append([])
+    ws.append(["Bloc", "Composante", "Région", "% du surplus", "Type d’instrument", "Statut"])
+    sleeve_rows = [
+        ("Core", "Actions indicées", "US", 0.28, "ETF large et liquide", "À valider"),
+        ("Core", "Actions indicées", "Europe", 0.12, "ETF large et liquide", "À valider"),
+        ("Core", "Actions indicées", "Japon", 0.07, "ETF large et liquide", "À valider"),
+        ("Core", "Actions indicées", "Pacifique hors Japon", 0.04, "ETF large et liquide", "À valider"),
+        ("Core", "Actions indicées", "Marchés émergents", 0.09, "ETF large et liquide", "À valider"),
+        ("Core", "Or", "Or", 0.10, "ETC or physique ou équivalent", "À valider"),
+        ("Satellite", "Quality / Growth / GARP", "US", 0.13, "ETF/fonds/actions après revue", "À valider"),
+        ("Satellite", "Quality / Growth / GARP", "Europe", 0.06, "ETF/fonds/actions après revue", "À valider"),
+        ("Satellite", "Quality / Growth / GARP", "Japon", 0.03, "ETF/fonds/actions après revue", "À valider"),
+        ("Satellite", "Quality / Growth / GARP", "Pacifique hors Japon", 0.01, "ETF/fonds/actions après revue", "À valider"),
+        ("Satellite", "Quality / Growth / GARP", "Marchés émergents", 0.07, "ETF/fonds/actions après revue", "À valider"),
+    ]
+    for row in sleeve_rows:
+        ws.append(row)
 
     ws = workbook.create_sheet("IBKR_Positions")
     for _ in range(4):
@@ -147,8 +170,13 @@ def test_personal_target_model_reads_global_and_envelope_targets(tmp_path):
     report = parse_target_model(source, kind="perso")
 
     assert report["ok"] is True
+    assert report["allocation_contract_version"] == "allocation_contracts_v1"
     assert report["target_total_pct"] == 100
-    assert len(report["buckets"]) == 6
+    assert len(report["buckets"]) == 8
+    crypto = next(row for row in report["buckets"] if row.bucket_key == "crypto")
+    assert crypto.target_weight_pct == 2
+    assert crypto.lower_band_pct == 0
+    assert crypto.upper_band_pct == 4
     assert len(report["envelope_lines"]) == 1
     assert report["envelope_lines"][0].envelope == "Cardif_Lucya_PostArb"
     assert report["audit_holdings"][0].notes.startswith("audit only")
@@ -163,11 +191,15 @@ def test_pro_target_model_uses_calculation_sheet_authority(tmp_path):
 
     assert report["ok"] is True
     assert buckets["gold"] == 10
-    assert buckets["actions_us"] == 40.5
+    assert buckets["actions_us"] == 41
     assert buckets["actions_europe"] == 18
-    assert buckets["actions_japan"] == 9
-    assert buckets["actions_pacific_ex_japan"] == 4.5
-    assert buckets["actions_emerging"] == 18
+    assert buckets["actions_japan"] == 10
+    assert buckets["actions_pacific_ex_japan"] == 5
+    assert buckets["actions_emerging"] == 16
+    assert report["reserve_floor_eur"] == 120000
+    assert report["reserve_excluded_from_risky_allocation"] is True
+    assert sum(row.target_weight_pct for row in report["sleeve_allocations"] if row.sleeve_key == "CORE") == 70
+    assert sum(row.target_weight_pct for row in report["sleeve_allocations"] if row.sleeve_key == "SATELLITE") == 30
 
 
 def test_target_model_apply_replaces_child_rows(tmp_path):
@@ -179,6 +211,51 @@ def test_target_model_apply_replaces_child_rows(tmp_path):
 
     assert report["ok"] is True
     assert fake.rows["target_models"][0]["id"] == "target_model:perso:active"
-    assert len(fake.rows["target_buckets"]) == 6
+    assert fake.rows["target_models"][0]["allocation_contract_version"] == "allocation_contracts_v1"
+    assert len(fake.rows["target_buckets"]) == 8
+    assert fake.rows["target_models"][0]["reserve_floor_eur"] is None
+    assert fake.rows["target_sleeve_allocations"] == []
     assert len(fake.rows["target_envelope_lines"]) == 1
     assert len(fake.rows["target_model_audit_holdings"]) == 2
+
+
+def test_pro_target_model_fails_closed_when_reserve_is_not_120k(tmp_path):
+    source = tmp_path / "pro.xlsx"
+    _write_pro(source)
+    persisted = load_workbook(source)
+    persisted["Portefeuille_cible"]["B4"] = 100000
+    persisted.save(source)
+
+    report = parse_target_model(source, kind="pro")
+
+    assert report["ok"] is False
+    assert any("reserve floor must equal EUR 120000" in row["reason"] for row in report["rejected"])
+
+
+def test_pro_target_model_apply_writes_native_sleeves_and_reserve(tmp_path):
+    source = tmp_path / "pro.xlsx"
+    _write_pro(source)
+    fake = _Supabase()
+
+    report = run_import(source, kind="pro", dry_run=False, supabase_client=fake)
+
+    assert report["ok"] is True
+    assert fake.rows["target_models"][0]["allocation_contract_version"] == "allocation_contracts_v1"
+    assert fake.rows["target_models"][0]["reserve_floor_eur"] == 120000
+    assert fake.rows["target_models"][0]["reserve_excluded_from_risky_allocation"] is True
+    assert len(fake.rows["target_sleeve_allocations"]) == 11
+
+
+def test_invalid_target_model_does_not_write(tmp_path):
+    source = tmp_path / "pro.xlsx"
+    _write_pro(source)
+    persisted = load_workbook(source)
+    persisted["Portefeuille_cible"]["B4"] = 100000
+    persisted.save(source)
+    fake = _Supabase()
+
+    report = run_import(source, kind="pro", dry_run=False, supabase_client=fake)
+
+    assert report["ok"] is False
+    assert report["write"]["model_upserted"] is None
+    assert fake.rows == {}
