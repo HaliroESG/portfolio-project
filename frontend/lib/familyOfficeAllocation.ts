@@ -7,6 +7,7 @@ import type {
   FamilyOfficePositionRow,
   PortfolioScope,
   PortfolioDecisionItemRow,
+  TargetBucketRow,
   TargetEnvelopeLineRow,
   TargetModelRow,
   TargetSleeveAllocationRow,
@@ -76,6 +77,7 @@ export interface FamilyOfficeAllocationAssessment {
 
 export interface FamilyOfficeAllocationAssessmentOptions {
   expectedScope: PortfolioScope
+  targetBuckets?: TargetBucketRow[]
   targetSleeves?: TargetSleeveAllocationRow[]
   referenceDate?: string
 }
@@ -381,6 +383,7 @@ const PRO_SLEEVE_WEIGHTS = new Map<string, number>([
 
 function targetModelContractReady(
   targetModel: TargetModelRow | null,
+  targetBuckets: TargetBucketRow[],
   targetSleeves: TargetSleeveAllocationRow[],
   expectedScope: PortfolioScope,
 ): boolean {
@@ -393,10 +396,35 @@ function targetModelContractReady(
     || Math.abs(targetModel.target_total_pct - 100) > 0.05
   ) return false
 
-  if (expectedScope === 'PERSO') return true
+  const bucketWeights = new Map<string, number>()
+  for (const row of targetBuckets) {
+    if (row.model_id !== targetModel.id
+      || row.portfolio_scope !== expectedScope
+      || bucketWeights.has(row.bucket_key)
+      || !Number.isFinite(row.target_weight_pct)
+      || row.target_weight_pct < 0
+      || row.target_weight_pct > 100
+    ) return false
+    bucketWeights.set(row.bucket_key, row.target_weight_pct)
+  }
+  const bucketTotal = Array.from(bucketWeights.values()).reduce((sum, weight) => sum + weight, 0)
+  if (bucketWeights.size === 0 || Math.abs(bucketTotal - 100) > 0.05) return false
+
+  if (expectedScope === 'PERSO') {
+    const cryptoBucket = targetBuckets.find((row) => row.bucket_key === 'crypto')
+    return Boolean(
+      cryptoBucket
+      && Math.abs(cryptoBucket.target_weight_pct - 2) <= 0.05
+      && cryptoBucket.lower_band_pct !== null
+      && Math.abs(cryptoBucket.lower_band_pct) <= 0.05
+      && cryptoBucket.upper_band_pct !== null
+      && Math.abs(cryptoBucket.upper_band_pct - 4) <= 0.05,
+    )
+  }
   if (targetModel.reserve_excluded_from_risky_allocation !== true
     || targetModel.reserve_floor_eur === null
     || Math.abs(targetModel.reserve_floor_eur - 120000) > 0.01
+    || bucketWeights.size !== 6
     || targetSleeves.length !== PRO_SLEEVE_WEIGHTS.size
   ) return false
 
@@ -407,10 +435,21 @@ function targetModelContractReady(
     if (observed.has(key) || !PRO_SLEEVE_WEIGHTS.has(key)) return false
     observed.set(key, row.target_weight_pct)
   }
-  return Array.from(PRO_SLEEVE_WEIGHTS.entries()).every(([key, expected]) => {
+  if (!Array.from(PRO_SLEEVE_WEIGHTS.entries()).every(([key, expected]) => {
     const actual = observed.get(key)
     return actual !== undefined && Math.abs(actual - expected) <= 0.05
-  })
+  })) return false
+
+  const sleeveBucketWeights = new Map<string, number>()
+  for (const [key, weight] of observed.entries()) {
+    const bucketKey = key.slice(key.indexOf(':') + 1)
+    sleeveBucketWeights.set(bucketKey, (sleeveBucketWeights.get(bucketKey) ?? 0) + weight)
+  }
+  return bucketWeights.size === sleeveBucketWeights.size
+    && Array.from(bucketWeights.entries()).every(([bucketKey, weight]) => {
+      const sleeveWeight = sleeveBucketWeights.get(bucketKey)
+      return sleeveWeight !== undefined && Math.abs(sleeveWeight - weight) <= 0.05
+    })
 }
 
 function envelopeTokens(value: string): string[] {
@@ -457,10 +496,11 @@ export function assessFamilyOfficeAllocation(
   targetLines: TargetEnvelopeLineRow[],
   options: FamilyOfficeAllocationAssessmentOptions,
 ): FamilyOfficeAllocationAssessment {
+  const targetBuckets = options.targetBuckets ?? []
   const targetSleeves = options.targetSleeves ?? []
   const referenceDate = options.referenceDate ?? new Date().toISOString().slice(0, 10)
   const targetTotal = targetModel?.target_total_pct ?? null
-  const targetModelReady = targetModelContractReady(targetModel, targetSleeves, options.expectedScope)
+  const targetModelReady = targetModelContractReady(targetModel, targetBuckets, targetSleeves, options.expectedScope)
   const portfolioValueComplete = allocationRows.length > 0 && allocationRows.every((row) => row.current_value_eur !== null)
   const totalValue = portfolioValueComplete
     ? allocationRows.reduce((sum, row) => sum + (row.current_value_eur ?? 0), 0)

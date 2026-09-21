@@ -26,6 +26,7 @@ import type {
   PortfolioScope,
   SupportIdentifierState,
   SupportSourceQuality,
+  TargetBucketRow,
   TargetEnvelopeLineRow,
   TargetModelRow,
   TargetSleeveAllocationRow,
@@ -469,6 +470,22 @@ export default function ArbitragePage() {
     ? targetModels.find((model) => model.portfolio_scope === selectedScope) ?? null
     : null
   const {
+    data: targetBuckets = [],
+    error: targetBucketsError,
+    isLoading: targetBucketsLoading,
+  } = useSWR(
+    selectedTargetModel ? ['fo-arbitrage-target-buckets', selectedTargetModel.id] : null,
+    async () => {
+      const { data, error } = await supabase
+        .from('target_buckets')
+        .select('id,model_id,portfolio_scope,bucket_key,bucket_label,parent_bucket_key,target_weight_pct,lower_band_pct,upper_band_pct,source_sheet,source_row,updated_at')
+        .eq('model_id', selectedTargetModel!.id)
+        .order('source_row', { ascending: true })
+      if (error) throw error
+      return (data ?? []) as unknown as TargetBucketRow[]
+    },
+  )
+  const {
     data: targetSleeves = [],
     error: targetSleevesError,
     isLoading: targetSleevesLoading,
@@ -504,16 +521,17 @@ export default function ArbitragePage() {
     () => selectedScope
       ? assessFamilyOfficeAllocation(allocationRows, selectedTargetModel, targetLines, {
         expectedScope: selectedScope,
+        targetBuckets,
         targetSleeves,
       })
       : { rows: [], total_value_eur: null, target_total_pct: null, target_model_ready: false },
-    [allocationRows, selectedScope, selectedTargetModel, targetLines, targetSleeves],
+    [allocationRows, selectedScope, selectedTargetModel, targetBuckets, targetLines, targetSleeves],
   )
   const rows = useMemo(() => toPortfolioDecisionRows(assessment), [assessment])
-  const error = allocationError ?? targetModelError ?? targetSleevesError ?? targetLinesError
+  const error = allocationError ?? targetModelError ?? targetBucketsError ?? targetSleevesError ?? targetLinesError
   const isLoading = allocationLoading
     || targetModelLoading
-    || Boolean(selectedTargetModel && (targetSleevesLoading || targetLinesLoading))
+    || Boolean(selectedTargetModel && (targetBucketsLoading || targetSleevesLoading || targetLinesLoading))
 
   const { data: adviceRows = [], error: adviceError } = useSWR(
     selectedScope ? ['allocation-advice', selectedScope] : null,

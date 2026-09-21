@@ -299,7 +299,11 @@ export default function TargetsPage() {
     },
   )
 
-  const { data: targetBuckets = [] } = useSWR(
+  const {
+    data: targetBuckets = [],
+    error: targetBucketsError,
+    isLoading: targetBucketsLoading,
+  } = useSWR(
     selectedTargetModel ? ['target-buckets', selectedTargetModel.id] : null,
     async () => {
       const { data, error } = await supabase
@@ -341,6 +345,7 @@ export default function TargetsPage() {
     () => targetEnvelopeLinesReady && selectedScope
       ? assessFamilyOfficeAllocation(allocationRows, selectedTargetModel, targetEnvelopeLines, {
         expectedScope: selectedScope,
+        targetBuckets,
         targetSleeves,
       })
       : {
@@ -349,7 +354,7 @@ export default function TargetsPage() {
         target_total_pct: selectedTargetModel?.target_total_pct ?? null,
         target_model_ready: false,
       },
-    [allocationRows, selectedScope, selectedTargetModel, targetEnvelopeLines, targetEnvelopeLinesReady, targetSleeves],
+    [allocationRows, selectedScope, selectedTargetModel, targetBuckets, targetEnvelopeLines, targetEnvelopeLinesReady, targetSleeves],
   )
 
   const positionViews = useMemo(() => assessment.rows.map((row): PositionView => ({
@@ -422,9 +427,10 @@ export default function TargetsPage() {
 
   const sourceLoading = allocationLoading
     || targetModelLoading
+    || Boolean(selectedTargetModel && targetBucketsLoading)
     || Boolean(selectedTargetModel && targetEnvelopeLinesLoading)
     || Boolean(selectedTargetModel?.portfolio_scope === 'PRO' && targetSleevesLoading)
-  const sourceError = allocationError ?? targetModelError ?? targetEnvelopeLinesError ?? targetSleevesError
+  const sourceError = allocationError ?? targetModelError ?? targetBucketsError ?? targetEnvelopeLinesError ?? targetSleevesError
 
   const { lastSync, lastSyncIso } = useMemo(() => {
     if (positionViews.length === 0) return { lastSync: '', lastSyncIso: null as string | null }

@@ -9,6 +9,7 @@ const {
 const assessFamilyOfficeAllocation = (rows, targetModel, targetLines, options = {}) => (
   assessFamilyOfficeAllocationAtDate(rows, targetModel, targetLines, {
     expectedScope: options.expectedScope ?? targetModel?.portfolio_scope ?? 'PERSO',
+    targetBuckets: options.targetBuckets ?? (targetModel?.portfolio_scope === 'PERSO' ? persoBuckets : []),
     targetSleeves: options.targetSleeves ?? [],
     referenceDate: '2026-09-20',
   })
@@ -102,6 +103,35 @@ const target = (overrides = {}) => ({
   ...overrides,
 })
 
+const bucket = (overrides = {}) => ({
+  id: 1,
+  model_id: 'model-1',
+  portfolio_scope: 'PERSO',
+  bucket_key: 'actions_us',
+  bucket_label: 'Actions US',
+  parent_bucket_key: null,
+  target_weight_pct: 98,
+  lower_band_pct: 35,
+  upper_band_pct: 50,
+  source_sheet: 'Strategic_Target_Perso',
+  source_row: 2,
+  updated_at: '2026-09-18T12:00:00Z',
+  ...overrides,
+})
+
+const persoBuckets = [
+  bucket(),
+  bucket({
+    id: 2,
+    bucket_key: 'crypto',
+    bucket_label: 'Crypto',
+    target_weight_pct: 2,
+    lower_band_pct: 0,
+    upper_band_pct: 4,
+    source_row: 3,
+  }),
+]
+
 const source = {
   accounts,
   positions: [
@@ -145,6 +175,12 @@ const mismatchedScope = assessFamilyOfficeAllocation(rows, model(), lines, { exp
 assert.equal(mismatchedScope.target_model_ready, false)
 assert.ok(mismatchedScope.rows.every((row) => row.action === 'UNAVAILABLE'))
 
+const missingCryptoContract = assessFamilyOfficeAllocation(rows, model(), lines, {
+  targetBuckets: [bucket({ target_weight_pct: 100 })],
+})
+assert.equal(missingCryptoContract.target_model_ready, false)
+assert.ok(missingCryptoContract.rows.every((row) => row.action === 'UNAVAILABLE'))
+
 const proSleeveWeights = [
   ['CORE', 'actions_us', 28],
   ['CORE', 'actions_europe', 12],
@@ -180,8 +216,28 @@ const proSleeves = proSleeveWeights.map(([sleeve, bucket, weight], index) => ({
   source_row: index + 5,
   updated_at: '2026-09-18T12:00:00Z',
 }))
+const proBuckets = [
+  ['actions_us', 41],
+  ['actions_europe', 18],
+  ['actions_japan', 10],
+  ['actions_pacific_ex_japan', 5],
+  ['actions_emerging', 16],
+  ['gold', 10],
+].map(([bucketKey, weight], index) => bucket({
+  id: index + 1,
+  model_id: 'pro-model',
+  portfolio_scope: 'PRO',
+  bucket_key: bucketKey,
+  bucket_label: bucketKey,
+  target_weight_pct: weight,
+  lower_band_pct: null,
+  upper_band_pct: null,
+  source_sheet: 'Modele_Core_Satellite',
+  source_row: index + 5,
+}))
 const readyPro = assessFamilyOfficeAllocation(rows, proModel, proLines, {
   expectedScope: 'PRO',
+  targetBuckets: proBuckets,
   targetSleeves: proSleeves,
 })
 assert.equal(readyPro.target_model_ready, true)
@@ -189,6 +245,7 @@ assert.deepEqual(readyPro.rows.map((row) => row.action), ['HOLD', 'HOLD', 'HOLD'
 
 const incompletePro = assessFamilyOfficeAllocation(rows, proModel, proLines, {
   expectedScope: 'PRO',
+  targetBuckets: proBuckets,
   targetSleeves: proSleeves.slice(1),
 })
 assert.equal(incompletePro.target_model_ready, false)
@@ -198,10 +255,22 @@ const missingProReserve = assessFamilyOfficeAllocation(
   rows,
   { ...proModel, reserve_floor_eur: null },
   proLines,
-  { expectedScope: 'PRO', targetSleeves: proSleeves },
+  { expectedScope: 'PRO', targetBuckets: proBuckets, targetSleeves: proSleeves },
 )
 assert.equal(missingProReserve.target_model_ready, false)
 assert.ok(missingProReserve.rows.every((row) => row.action === 'UNAVAILABLE'))
+
+const mismatchedProBuckets = assessFamilyOfficeAllocation(rows, proModel, proLines, {
+  expectedScope: 'PRO',
+  targetBuckets: proBuckets.map((row) => row.bucket_key === 'actions_us'
+    ? { ...row, target_weight_pct: 42 }
+    : row.bucket_key === 'actions_europe'
+      ? { ...row, target_weight_pct: 17 }
+      : row),
+  targetSleeves: proSleeves,
+})
+assert.equal(mismatchedProBuckets.target_model_ready, false)
+assert.ok(mismatchedProBuckets.rows.every((row) => row.action === 'UNAVAILABLE'))
 
 const noTargets = assessFamilyOfficeAllocation(rows, null, [])
 assert.ok(noTargets.rows.every((row) => row.action === 'UNAVAILABLE'))
