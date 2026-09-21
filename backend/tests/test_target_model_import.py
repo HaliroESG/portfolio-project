@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from copy import deepcopy
+
 from openpyxl import Workbook, load_workbook
 
 from scripts.import_target_model import parse_target_model, run_import
@@ -62,11 +64,51 @@ class _Table:
 
 
 class _Supabase:
-    def __init__(self):
+    def __init__(self, *, fail_rpc: bool = False):
         self.rows = {}
+        self.fail_rpc = fail_rpc
+        self.rpc_calls = []
 
     def table(self, name):
         return _Table(self, name)
+
+    def rpc(self, name, params):
+        self.rpc_calls.append((name, deepcopy(params)))
+        return _Rpc(self, name, params)
+
+
+class _Rpc:
+    def __init__(self, client, name, params):
+        self.client = client
+        self.name = name
+        self.params = params
+
+    def execute(self):
+        if self.client.fail_rpc:
+            raise RuntimeError("injected RPC failure")
+
+        next_rows = deepcopy(self.client.rows)
+        model = deepcopy(self.params["p_model"])
+        model_id = model["id"]
+        models = next_rows.setdefault("target_models", [])
+        existing = next((row for row in models if row.get("id") == model_id), None)
+        if existing:
+            existing.update(model)
+        else:
+            models.append(model)
+
+        table_params = {
+            "target_buckets": "p_buckets",
+            "target_sleeve_allocations": "p_sleeve_allocations",
+            "target_envelope_lines": "p_envelope_lines",
+            "target_model_audit_holdings": "p_audit_holdings",
+        }
+        for table, parameter in table_params.items():
+            retained = [row for row in next_rows.get(table, []) if row.get("model_id") != model_id]
+            next_rows[table] = retained + deepcopy(self.params[parameter])
+
+        self.client.rows = next_rows
+        return _Response({"model_upserted": model_id})
 
 
 def _write_personal(path):
@@ -210,6 +252,8 @@ def test_target_model_apply_replaces_child_rows(tmp_path):
     report = run_import(source, kind="perso", dry_run=False, supabase_client=fake)
 
     assert report["ok"] is True
+    assert len(fake.rpc_calls) == 1
+    assert fake.rpc_calls[0][0] == "apply_target_model_v1"
     assert fake.rows["target_models"][0]["id"] == "target_model:perso:active"
     assert fake.rows["target_models"][0]["allocation_contract_version"] == "allocation_contracts_v1"
     assert len(fake.rows["target_buckets"]) == 8
@@ -240,6 +284,7 @@ def test_pro_target_model_apply_writes_native_sleeves_and_reserve(tmp_path):
     report = run_import(source, kind="pro", dry_run=False, supabase_client=fake)
 
     assert report["ok"] is True
+    assert len(fake.rpc_calls) == 1
     assert fake.rows["target_models"][0]["allocation_contract_version"] == "allocation_contracts_v1"
     assert fake.rows["target_models"][0]["reserve_floor_eur"] == 120000
     assert fake.rows["target_models"][0]["reserve_excluded_from_risky_allocation"] is True
@@ -259,3 +304,26 @@ def test_invalid_target_model_does_not_write(tmp_path):
     assert report["ok"] is False
     assert report["write"]["model_upserted"] is None
     assert fake.rows == {}
+    assert fake.rpc_calls == []
+
+
+def test_apply_uses_one_atomic_rpc_and_preserves_existing_rows_on_failure(tmp_path):
+    source = tmp_path / "personal.xlsx"
+    _write_personal(source)
+    original_rows = {
+        "target_models": [{"id": "target_model:perso:active", "source_file": "previous.xlsx"}],
+        "target_buckets": [{"model_id": "target_model:perso:active", "bucket_key": "previous"}],
+    }
+    fake = _Supabase(fail_rpc=True)
+    fake.rows = deepcopy(original_rows)
+
+    try:
+        run_import(source, kind="perso", dry_run=False, supabase_client=fake)
+    except RuntimeError as exc:
+        assert str(exc) == "injected RPC failure"
+    else:
+        raise AssertionError("the injected atomic RPC failure must propagate")
+
+    assert len(fake.rpc_calls) == 1
+    assert fake.rpc_calls[0][0] == "apply_target_model_v1"
+    assert fake.rows == original_rows

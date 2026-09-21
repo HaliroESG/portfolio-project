@@ -20,6 +20,10 @@ def test_migration_defines_native_pro_sleeves_and_reserve_contract():
     assert "m.allocation_contract_version <> 'allocation_contracts_v1'" in sql
     assert "coalesce(s.approved_line_count, 0) = 11" in sql
     assert "coalesce(b.crypto_bucket_count, 0) = 1" in sql
+    assert "create or replace function public.apply_target_model_v1" in sql
+    assert "grant execute on function public.apply_target_model_v1" in sql
+    assert "coalesce(a.aligned_bucket_count, 0) = 6" in sql
+    assert "coalesce(a.misaligned_bucket_count, 0) = 0" in sql
 
 
 def test_allocation_view_preserves_missing_and_unmatched_states_without_zero_filling_values():

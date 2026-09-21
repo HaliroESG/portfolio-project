@@ -5,9 +5,11 @@ import type {
   FamilyOfficeDataState,
   FamilyOfficeEnvelope,
   FamilyOfficePositionRow,
+  PortfolioScope,
   PortfolioDecisionItemRow,
   TargetEnvelopeLineRow,
   TargetModelRow,
+  TargetSleeveAllocationRow,
 } from '../types'
 
 const POSITION_COLUMNS = 'id,owner_user_id,portfolio_id,account_id,instrument_id,instrument_key,isin,ticker,name,instrument_type,currency,snapshot_date,quantity,average_cost,cost_basis_eur,price_local,fx_rate_to_eur,market_value_eur,unrealized_pnl_eur,data_state,price_as_of,fx_as_of,reconciliation_state,calculated_at'
@@ -70,6 +72,12 @@ export interface FamilyOfficeAllocationAssessment {
   total_value_eur: number | null
   target_total_pct: number | null
   target_model_ready: boolean
+}
+
+export interface FamilyOfficeAllocationAssessmentOptions {
+  expectedScope: PortfolioScope
+  targetSleeves?: TargetSleeveAllocationRow[]
+  referenceDate?: string
 }
 
 interface FamilyOfficeAllocationSource {
@@ -356,6 +364,54 @@ export function buildFamilyOfficeAllocationRows(source: FamilyOfficeAllocationSo
 }
 
 const TARGET_ENVELOPE_QUALIFIERS = new Set(['CORE', 'POSTARB', 'POST', 'ARB'])
+const ALLOCATION_CONTRACT_VERSION = 'allocation_contracts_v1'
+const PRO_SLEEVE_WEIGHTS = new Map<string, number>([
+  ['CORE:actions_us', 28],
+  ['CORE:actions_europe', 12],
+  ['CORE:actions_japan', 7],
+  ['CORE:actions_pacific_ex_japan', 4],
+  ['CORE:actions_emerging', 9],
+  ['CORE:gold', 10],
+  ['SATELLITE:actions_us', 13],
+  ['SATELLITE:actions_europe', 6],
+  ['SATELLITE:actions_japan', 3],
+  ['SATELLITE:actions_pacific_ex_japan', 1],
+  ['SATELLITE:actions_emerging', 7],
+])
+
+function targetModelContractReady(
+  targetModel: TargetModelRow | null,
+  targetSleeves: TargetSleeveAllocationRow[],
+  expectedScope: PortfolioScope,
+): boolean {
+  if (!targetModel
+    || !targetModel.is_active
+    || targetModel.status !== 'READY'
+    || targetModel.allocation_contract_version !== ALLOCATION_CONTRACT_VERSION
+    || targetModel.portfolio_scope !== expectedScope
+    || targetModel.target_total_pct === null
+    || Math.abs(targetModel.target_total_pct - 100) > 0.05
+  ) return false
+
+  if (expectedScope === 'PERSO') return true
+  if (targetModel.reserve_excluded_from_risky_allocation !== true
+    || targetModel.reserve_floor_eur === null
+    || Math.abs(targetModel.reserve_floor_eur - 120000) > 0.01
+    || targetSleeves.length !== PRO_SLEEVE_WEIGHTS.size
+  ) return false
+
+  const observed = new Map<string, number>()
+  for (const row of targetSleeves) {
+    if (row.model_id !== targetModel.id || row.portfolio_scope !== 'PRO') return false
+    const key = `${row.sleeve_key}:${row.bucket_key}`
+    if (observed.has(key) || !PRO_SLEEVE_WEIGHTS.has(key)) return false
+    observed.set(key, row.target_weight_pct)
+  }
+  return Array.from(PRO_SLEEVE_WEIGHTS.entries()).every(([key, expected]) => {
+    const actual = observed.get(key)
+    return actual !== undefined && Math.abs(actual - expected) <= 0.05
+  })
+}
 
 function envelopeTokens(value: string): string[] {
   return value
@@ -399,15 +455,12 @@ export function assessFamilyOfficeAllocation(
   allocationRows: FamilyOfficeAllocationRow[],
   targetModel: TargetModelRow | null,
   targetLines: TargetEnvelopeLineRow[],
-  referenceDate = new Date().toISOString().slice(0, 10),
+  options: FamilyOfficeAllocationAssessmentOptions,
 ): FamilyOfficeAllocationAssessment {
+  const targetSleeves = options.targetSleeves ?? []
+  const referenceDate = options.referenceDate ?? new Date().toISOString().slice(0, 10)
   const targetTotal = targetModel?.target_total_pct ?? null
-  const targetModelReady = Boolean(
-    targetModel?.is_active
-      && targetModel.status === 'READY'
-      && targetTotal !== null
-      && Math.abs(targetTotal - 100) <= 0.05,
-  )
+  const targetModelReady = targetModelContractReady(targetModel, targetSleeves, options.expectedScope)
   const portfolioValueComplete = allocationRows.length > 0 && allocationRows.every((row) => row.current_value_eur !== null)
   const totalValue = portfolioValueComplete
     ? allocationRows.reduce((sum, row) => sum + (row.current_value_eur ?? 0), 0)
@@ -430,6 +483,8 @@ export function assessFamilyOfficeAllocation(
       && Math.abs(lines.reduce((sum, line) => sum + (line.target_weight_pct ?? 0), 0) - 100) <= 0.05
     ))
   const targetCoverageReady = targetModelReady
+    && targetModel !== null
+    && targetLines.every((line) => line.model_id === targetModel.id && line.portfolio_scope === options.expectedScope)
     && envelopeTargetsValid
     && allocationRows.every((row) => {
       const matches = matchesByRow.get(row.row_key) ?? []

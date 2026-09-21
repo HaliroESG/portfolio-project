@@ -27,6 +27,7 @@ import type {
 interface PortfolioRow {
   id: string
   name: string | null
+  portfolio_type: string | null
 }
 
 type RawRow = Record<string, unknown>
@@ -97,18 +98,26 @@ function readString(value: unknown): string | null {
   return typeof value === 'string' && value.trim() ? value.trim() : null
 }
 
-function parseScope(value: unknown): PortfolioScope {
-  return value === 'PRO' ? 'PRO' : 'PERSO'
+function parseScope(value: unknown): PortfolioScope | null {
+  if (value === 'PERSO' || value === 'PRO') return value
+  return null
+}
+
+function scopeFromPortfolioType(value: unknown): PortfolioScope | null {
+  if (value === 'PERSONAL') return 'PERSO'
+  if (value === 'PROFESSIONAL') return 'PRO'
+  return null
 }
 
 function parseTargetModel(raw: RawRow): TargetModelRow | null {
   const id = readString(raw.id)
   const modelName = readString(raw.model_name)
   const sourceFile = readString(raw.source_file)
-  if (!id || !modelName || !sourceFile) return null
+  const portfolioScope = parseScope(raw.portfolio_scope)
+  if (!id || !modelName || !sourceFile || !portfolioScope) return null
   return {
     id,
-    portfolio_scope: parseScope(raw.portfolio_scope),
+    portfolio_scope: portfolioScope,
     model_name: modelName,
     source_file: sourceFile,
     source_kind: readString(raw.source_kind) ?? 'unknown',
@@ -139,11 +148,12 @@ function parseTargetSleeveAllocation(raw: RawRow): TargetSleeveAllocationRow | n
   const bucketKey = readString(raw.bucket_key)
   const bucketLabel = readString(raw.bucket_label)
   const targetWeight = readNumber(raw.target_weight_pct as number | string | null)
-  if (id === null || !modelId || !sleeveKey || !componentLabel || !bucketKey || !bucketLabel || targetWeight === null) return null
+  const portfolioScope = parseScope(raw.portfolio_scope)
+  if (id === null || !modelId || !portfolioScope || !sleeveKey || !componentLabel || !bucketKey || !bucketLabel || targetWeight === null) return null
   return {
     id,
     model_id: modelId,
-    portfolio_scope: parseScope(raw.portfolio_scope),
+    portfolio_scope: portfolioScope,
     sleeve_key: sleeveKey,
     component_label: componentLabel,
     bucket_key: bucketKey,
@@ -163,11 +173,12 @@ function parseTargetBucket(raw: RawRow): TargetBucketRow | null {
   const bucketKey = readString(raw.bucket_key)
   const bucketLabel = readString(raw.bucket_label)
   const targetWeight = readNumber(raw.target_weight_pct as number | string | null)
-  if (id === null || !modelId || !bucketKey || !bucketLabel || targetWeight === null) return null
+  const portfolioScope = parseScope(raw.portfolio_scope)
+  if (id === null || !modelId || !portfolioScope || !bucketKey || !bucketLabel || targetWeight === null) return null
   return {
     id,
     model_id: modelId,
-    portfolio_scope: parseScope(raw.portfolio_scope),
+    portfolio_scope: portfolioScope,
     bucket_key: bucketKey,
     bucket_label: bucketLabel,
     parent_bucket_key: readString(raw.parent_bucket_key),
@@ -184,11 +195,12 @@ function parseTargetEnvelopeLine(raw: RawRow): TargetEnvelopeLineRow | null {
   const id = readNumber(raw.id as number | string | null)
   const modelId = readString(raw.model_id)
   const envelope = readString(raw.envelope)
-  if (id === null || !modelId || !envelope) return null
+  const portfolioScope = parseScope(raw.portfolio_scope)
+  if (id === null || !modelId || !portfolioScope || !envelope) return null
   return {
     id,
     model_id: modelId,
-    portfolio_scope: parseScope(raw.portfolio_scope),
+    portfolio_scope: portfolioScope,
     envelope,
     ticker: readString(raw.ticker),
     isin: readString(raw.isin),
@@ -236,15 +248,16 @@ function priorityClass(priority: DriftPriority): string {
 
 export default function TargetsPage() {
   const [selectedPortfolioIdOverride, setSelectedPortfolioIdOverride] = useState<string>('')
-  const [selectedScope, setSelectedScope] = useState<PortfolioScope>('PERSO')
 
   const { data: portfolios } = useSWR('fo-target-portfolios', async () => {
-    const { data, error } = await supabase.from('fo_portfolios').select('id,name').eq('status', 'ACTIVE').order('name')
+    const { data, error } = await supabase.from('fo_portfolios').select('id,name,portfolio_type').eq('status', 'ACTIVE').order('name')
     if (error) throw error
     return (data ?? []) as PortfolioRow[]
   })
 
   const selectedPortfolioId = selectedPortfolioIdOverride || portfolios?.[0]?.id || ''
+  const selectedPortfolio = portfolios?.find((portfolio) => portfolio.id === selectedPortfolioId) ?? null
+  const selectedScope = scopeFromPortfolioType(selectedPortfolio?.portfolio_type)
 
   const { data: allocationRows = [], error: allocationError, isLoading: allocationLoading } = useSWR(
     selectedPortfolioId ? ['fo-allocation-source', selectedPortfolioId] : null,
@@ -263,7 +276,9 @@ export default function TargetsPage() {
       .filter((row): row is TargetModelRow => row !== null)
   })
 
-  const selectedTargetModel = targetModels.find((model) => model.portfolio_scope === selectedScope) ?? null
+  const selectedTargetModel = selectedScope
+    ? targetModels.find((model) => model.portfolio_scope === selectedScope) ?? null
+    : null
 
   const {
     data: targetSleeves = [],
@@ -323,15 +338,18 @@ export default function TargetsPage() {
     || (!targetEnvelopeLinesLoading && !targetEnvelopeLinesError && targetEnvelopeLinesData !== undefined)
 
   const assessment = useMemo(
-    () => targetEnvelopeLinesReady
-      ? assessFamilyOfficeAllocation(allocationRows, selectedTargetModel, targetEnvelopeLines)
+    () => targetEnvelopeLinesReady && selectedScope
+      ? assessFamilyOfficeAllocation(allocationRows, selectedTargetModel, targetEnvelopeLines, {
+        expectedScope: selectedScope,
+        targetSleeves,
+      })
       : {
         rows: [],
         total_value_eur: null,
         target_total_pct: selectedTargetModel?.target_total_pct ?? null,
         target_model_ready: false,
       },
-    [allocationRows, selectedTargetModel, targetEnvelopeLines, targetEnvelopeLinesReady],
+    [allocationRows, selectedScope, selectedTargetModel, targetEnvelopeLines, targetEnvelopeLinesReady, targetSleeves],
   )
 
   const positionViews = useMemo(() => assessment.rows.map((row): PositionView => ({
@@ -489,22 +507,8 @@ export default function TargetsPage() {
                   Two-level target model: strategic buckets for decisions, envelope/instrument lines for execution.
                 </p>
               </div>
-              <div className="flex rounded-lg border border-slate-200 bg-slate-50 p-1 dark:border-white/10 dark:bg-black/20">
-                {(['PERSO', 'PRO'] as PortfolioScope[]).map((scope) => (
-                  <button
-                    key={scope}
-                    type="button"
-                    onClick={() => setSelectedScope(scope)}
-                    className={cn(
-                      'rounded-md px-3 py-2 text-[10px] font-black uppercase tracking-wider transition',
-                      selectedScope === scope
-                        ? 'bg-slate-950 text-white dark:bg-[#00FF88] dark:text-black'
-                        : 'text-slate-500 hover:text-slate-900 dark:text-gray-400 dark:hover:text-white'
-                    )}
-                  >
-                    {scope}
-                  </button>
-                ))}
+              <div className="rounded-lg border border-slate-200 bg-slate-50 px-3 py-2 text-[10px] font-black uppercase tracking-wider text-slate-700 dark:border-white/10 dark:bg-black/20 dark:text-gray-300">
+                Scope {selectedScope ?? 'UNKNOWN'} · bound to portfolio type
               </div>
             </div>
 
@@ -639,7 +643,9 @@ export default function TargetsPage() {
               </div>
             ) : (
               <div className="mt-4 rounded-lg border border-slate-200 bg-slate-50 px-4 py-3 text-xs font-mono text-slate-600 dark:border-white/10 dark:bg-black/20 dark:text-gray-400">
-                No target model imported for {selectedScope}. Run `import_target_model.py --kind {selectedScope === 'PRO' ? 'pro' : 'perso'} --dry-run`, then apply with service-role credentials.
+                {selectedScope
+                  ? <>No target model imported for {selectedScope}. Run `import_target_model.py --kind {selectedScope === 'PRO' ? 'pro' : 'perso'} --dry-run`, then apply with service-role credentials.</>
+                  : <>Portfolio scope is unavailable. No target model or allocation action can be selected.</>}
               </div>
             )}
           </section>

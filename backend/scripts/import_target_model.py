@@ -21,6 +21,7 @@ if str(BACKEND_ROOT) not in sys.path:
 from supabase_key_guard import require_backend_supabase_key  # noqa: E402
 
 ALLOCATION_CONTRACT_VERSION = "allocation_contracts_v1"
+APPLY_TARGET_MODEL_RPC = "apply_target_model_v1"
 
 
 @dataclass(frozen=True)
@@ -564,11 +565,6 @@ def _payload(row: Any) -> dict[str, Any]:
     return payload
 
 
-def _chunks(rows: list[dict[str, Any]], size: int = 500):
-    for index in range(0, len(rows), size):
-        yield rows[index:index + size]
-
-
 def apply_target_model(report: dict[str, Any], *, supabase_client: Any) -> dict[str, Any]:
     now = datetime.now(timezone.utc).isoformat()
     model_payload = {
@@ -587,24 +583,20 @@ def apply_target_model(report: dict[str, Any], *, supabase_client: Any) -> dict[
         "report_json": report["report_json"],
         "updated_at": now,
     }
-    supabase_client.table("target_models").upsert(model_payload, on_conflict="id").execute()
-
-    for table in ("target_buckets", "target_sleeve_allocations", "target_envelope_lines", "target_model_audit_holdings"):
-        supabase_client.table(table).delete().eq("model_id", report["model_id"]).execute()
-
     bucket_payloads = [_payload(row) for row in report["buckets"]]
     sleeve_payloads = [_payload(row) for row in report["sleeve_allocations"]]
     envelope_payloads = [_payload(row) for row in report["envelope_lines"]]
     audit_payloads = [_payload(row) for row in report["audit_holdings"]]
-
-    for chunk in _chunks(bucket_payloads):
-        supabase_client.table("target_buckets").insert(chunk).execute()
-    for chunk in _chunks(sleeve_payloads):
-        supabase_client.table("target_sleeve_allocations").insert(chunk).execute()
-    for chunk in _chunks(envelope_payloads):
-        supabase_client.table("target_envelope_lines").insert(chunk).execute()
-    for chunk in _chunks(audit_payloads):
-        supabase_client.table("target_model_audit_holdings").insert(chunk).execute()
+    supabase_client.rpc(
+        APPLY_TARGET_MODEL_RPC,
+        {
+            "p_model": model_payload,
+            "p_buckets": bucket_payloads,
+            "p_sleeve_allocations": sleeve_payloads,
+            "p_envelope_lines": envelope_payloads,
+            "p_audit_holdings": audit_payloads,
+        },
+    ).execute()
 
     return {
         "model_upserted": report["model_id"],

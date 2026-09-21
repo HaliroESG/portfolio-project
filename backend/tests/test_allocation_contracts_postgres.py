@@ -107,8 +107,13 @@ def _temporary_postgres():
               portfolio_scope text not null,
               model_name text not null,
               source_file text not null,
+              source_kind text not null default 'test',
+              as_of_date date,
               status text not null default 'READY',
               is_active boolean not null default true,
+              target_total_pct numeric,
+              report_json jsonb not null default '{}'::jsonb,
+              imported_at timestamptz not null default now(),
               updated_at timestamptz not null default now()
             );
             create table public.target_buckets (
@@ -117,9 +122,51 @@ def _temporary_postgres():
               portfolio_scope text not null,
               bucket_key text not null,
               bucket_label text not null,
+              parent_bucket_key text,
               target_weight_pct numeric not null,
               lower_band_pct numeric,
-              upper_band_pct numeric
+              upper_band_pct numeric,
+              source_sheet text,
+              source_row integer,
+              updated_at timestamptz not null default now()
+            );
+            create unique index target_buckets_model_bucket_uq
+              on public.target_buckets (model_id, bucket_key);
+            create table public.target_envelope_lines (
+              id bigserial primary key,
+              model_id text not null references public.target_models(id) on delete cascade,
+              portfolio_scope text not null,
+              envelope text not null,
+              ticker text,
+              isin text,
+              instrument text,
+              asset_class text,
+              region text,
+              currency text,
+              target_weight_pct numeric,
+              target_value_eur numeric,
+              notes text,
+              source_sheet text,
+              source_row integer,
+              updated_at timestamptz not null default now()
+            );
+            create table public.target_model_audit_holdings (
+              id bigserial primary key,
+              model_id text not null references public.target_models(id) on delete cascade,
+              portfolio_scope text not null,
+              envelope text not null,
+              ticker text,
+              isin text,
+              instrument text,
+              asset_class text,
+              region text,
+              currency text,
+              market_value_eur numeric,
+              quantity numeric,
+              notes text,
+              source_sheet text,
+              source_row integer,
+              updated_at timestamptz not null default now()
             );
             create table public.portfolios (id text primary key, name text);
             create table public.portfolio_positions (
@@ -160,6 +207,8 @@ def _reset(sql):
         """
         truncate table public.target_sleeve_allocations,
           public.target_buckets,
+          public.target_envelope_lines,
+          public.target_model_audit_holdings,
           public.target_models,
           public.portfolio_positions,
           public.portfolios,
@@ -428,3 +477,87 @@ def test_generic_bond_is_not_pro_reserve_but_eu_bill_and_xeon_are(pg_sql):
         """
     )
     assert after == ["120000|1|READY|HOLD|151000"]
+
+
+def test_pro_bucket_weights_must_equal_aggregated_sleeves(pg_sql):
+    _reset(pg_sql)
+    _insert_valid_pro_contract(pg_sql)
+    pg_sql(
+        """
+        update public.target_buckets
+        set target_weight_pct = case
+          when bucket_key = 'actions_us' then 42
+          when bucket_key = 'actions_europe' then 17
+          else target_weight_pct
+        end
+        where model_id = 'pro';
+        insert into public.portfolios values ('p1', 'PRO Main');
+        insert into public.portfolio_positions
+          (portfolio_id, ticker, name, instrument_type, currency, quantity_current, pru, actual_as_of_date)
+        values
+          ('p1', 'XEON', 'XEON overnight money market', 'ETF', 'EUR', 120000, 1, current_date),
+          ('p1', 'AAPL', 'Apple', 'Equity', 'EUR', 10, 100, current_date);
+        """
+    )
+
+    rows = pg_sql(
+        """
+        select model_contract_state, model_contract_reason, data_state, action
+        from public.allocation_advice_items_latest
+        where portfolio_scope = 'PRO' and bucket_key = 'actions_us';
+        """
+    )
+
+    assert rows == ["UNKNOWN|pro_model_contract_incomplete|UNKNOWN|UNAVAILABLE"]
+
+
+def test_atomic_rpc_rolls_back_parent_and_children_on_mid_apply_failure(pg_sql):
+    _reset(pg_sql)
+    _insert_valid_perso_contract(pg_sql)
+    pg_sql(
+        """
+        do $test$
+        begin
+          perform public.apply_target_model_v1(
+            '{
+              "id":"perso",
+              "portfolio_scope":"PERSO",
+              "model_name":"Replacement",
+              "source_file":"replacement.xlsx",
+              "allocation_contract_version":"allocation_contracts_v1",
+              "source_kind":"perso",
+              "is_active":true,
+              "target_total_pct":100,
+              "reserve_floor_eur":null,
+              "reserve_excluded_from_risky_allocation":false,
+              "status":"READY",
+              "report_json":{}
+            }'::jsonb,
+            '[
+              {"model_id":"perso","portfolio_scope":"PERSO","bucket_key":"actions_us","bucket_label":"US 1","target_weight_pct":49,"source_sheet":"test","source_row":1},
+              {"model_id":"perso","portfolio_scope":"PERSO","bucket_key":"actions_us","bucket_label":"US 2","target_weight_pct":49,"source_sheet":"test","source_row":2},
+              {"model_id":"perso","portfolio_scope":"PERSO","bucket_key":"crypto","bucket_label":"Crypto","target_weight_pct":2,"lower_band_pct":0,"upper_band_pct":4,"source_sheet":"test","source_row":3}
+            ]'::jsonb,
+            '[]'::jsonb,
+            '[]'::jsonb,
+            '[]'::jsonb
+          );
+        exception when unique_violation then
+          null;
+        end
+        $test$;
+        """
+    )
+
+    model = pg_sql("select source_file from public.target_models where id = 'perso';")
+    buckets = pg_sql(
+        """
+        select bucket_key, target_weight_pct
+        from public.target_buckets
+        where model_id = 'perso'
+        order by bucket_key;
+        """
+    )
+
+    assert model == ["perso.xlsx"]
+    assert buckets == ["actions_us|98", "crypto|2"]

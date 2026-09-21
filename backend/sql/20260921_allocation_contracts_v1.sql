@@ -56,6 +56,291 @@ grant select on public.target_sleeve_allocations to anon, authenticated;
 grant select, insert, update, delete on public.target_sleeve_allocations to service_role;
 grant usage, select on sequence public.target_sleeve_allocations_id_seq to service_role;
 
+create or replace function public.apply_target_model_v1(
+  p_model jsonb,
+  p_buckets jsonb,
+  p_sleeve_allocations jsonb,
+  p_envelope_lines jsonb,
+  p_audit_holdings jsonb
+)
+returns jsonb
+language plpgsql
+security invoker
+set search_path = public, pg_temp
+as $$
+declare
+  v_model_id text := p_model ->> 'id';
+  v_scope text := p_model ->> 'portfolio_scope';
+  v_bucket_count integer;
+  v_bucket_total numeric;
+  v_crypto_count integer;
+  v_crypto_ready_count integer;
+  v_sleeve_count integer;
+  v_approved_sleeve_count integer;
+  v_core_total numeric;
+  v_satellite_total numeric;
+  v_aligned_bucket_count integer;
+  v_misaligned_bucket_count integer;
+  v_invalid_child_count integer;
+begin
+  if jsonb_typeof(p_model) is distinct from 'object'
+    or jsonb_typeof(p_buckets) is distinct from 'array'
+    or jsonb_typeof(p_sleeve_allocations) is distinct from 'array'
+    or jsonb_typeof(p_envelope_lines) is distinct from 'array'
+    or jsonb_typeof(p_audit_holdings) is distinct from 'array'
+  then
+    raise exception 'allocation contract RPC payload shape is invalid';
+  end if;
+  if coalesce(v_model_id, '') = '' or v_scope is null or v_scope not in ('PERSO', 'PRO') then
+    raise exception 'allocation contract model identity is invalid';
+  end if;
+  if p_model ->> 'allocation_contract_version' is distinct from 'allocation_contracts_v1'
+    or p_model ->> 'status' is distinct from 'READY'
+    or coalesce((p_model ->> 'is_active')::boolean, false) is not true
+  then
+    raise exception 'allocation contract model is not READY for v1 activation';
+  end if;
+
+  select count(*)
+  into v_invalid_child_count
+  from (
+    select model_id, portfolio_scope
+    from jsonb_to_recordset(p_buckets) as x(model_id text, portfolio_scope text)
+    union all
+    select model_id, portfolio_scope
+    from jsonb_to_recordset(p_sleeve_allocations) as x(model_id text, portfolio_scope text)
+    union all
+    select model_id, portfolio_scope
+    from jsonb_to_recordset(p_envelope_lines) as x(model_id text, portfolio_scope text)
+    union all
+    select model_id, portfolio_scope
+    from jsonb_to_recordset(p_audit_holdings) as x(model_id text, portfolio_scope text)
+  ) child
+  where child.model_id is distinct from v_model_id
+    or child.portfolio_scope is distinct from v_scope;
+  if v_invalid_child_count > 0 then
+    raise exception 'allocation contract child identity does not match its model';
+  end if;
+
+  select
+    count(*),
+    coalesce(sum(target_weight_pct), 0),
+    count(*) filter (where bucket_key = 'crypto'),
+    count(*) filter (
+      where bucket_key = 'crypto'
+        and abs(target_weight_pct - 2) <= 0.05
+        and lower_band_pct is not null
+        and abs(lower_band_pct) <= 0.05
+        and upper_band_pct is not null
+        and abs(upper_band_pct - 4) <= 0.05
+    )
+  into v_bucket_count, v_bucket_total, v_crypto_count, v_crypto_ready_count
+  from jsonb_to_recordset(p_buckets) as x(
+    bucket_key text,
+    target_weight_pct numeric,
+    lower_band_pct numeric,
+    upper_band_pct numeric
+  );
+  if abs(v_bucket_total - 100) > 0.05
+    or abs(coalesce((p_model ->> 'target_total_pct')::numeric, 0) - 100) > 0.05
+  then
+    raise exception 'allocation contract target buckets must total 100 percent';
+  end if;
+
+  if v_scope = 'PERSO' then
+    if v_crypto_count <> 1 or v_crypto_ready_count <> 1 then
+      raise exception 'PERSO crypto contract must be exactly 2 percent with a 0-4 band';
+    end if;
+  else
+    if coalesce((p_model ->> 'reserve_excluded_from_risky_allocation')::boolean, false) is not true
+      or abs(coalesce((p_model ->> 'reserve_floor_eur')::numeric, 0) - 120000) > 0.01
+    then
+      raise exception 'PRO reserve contract must exclude exactly EUR 120000 from risky allocation';
+    end if;
+
+    select
+      count(*),
+      count(*) filter (
+        where
+          (sleeve_key = 'CORE' and bucket_key = 'actions_us' and abs(target_weight_pct - 28) <= 0.05)
+          or (sleeve_key = 'CORE' and bucket_key = 'actions_europe' and abs(target_weight_pct - 12) <= 0.05)
+          or (sleeve_key = 'CORE' and bucket_key = 'actions_japan' and abs(target_weight_pct - 7) <= 0.05)
+          or (sleeve_key = 'CORE' and bucket_key = 'actions_pacific_ex_japan' and abs(target_weight_pct - 4) <= 0.05)
+          or (sleeve_key = 'CORE' and bucket_key = 'actions_emerging' and abs(target_weight_pct - 9) <= 0.05)
+          or (sleeve_key = 'CORE' and bucket_key = 'gold' and abs(target_weight_pct - 10) <= 0.05)
+          or (sleeve_key = 'SATELLITE' and bucket_key = 'actions_us' and abs(target_weight_pct - 13) <= 0.05)
+          or (sleeve_key = 'SATELLITE' and bucket_key = 'actions_europe' and abs(target_weight_pct - 6) <= 0.05)
+          or (sleeve_key = 'SATELLITE' and bucket_key = 'actions_japan' and abs(target_weight_pct - 3) <= 0.05)
+          or (sleeve_key = 'SATELLITE' and bucket_key = 'actions_pacific_ex_japan' and abs(target_weight_pct - 1) <= 0.05)
+          or (sleeve_key = 'SATELLITE' and bucket_key = 'actions_emerging' and abs(target_weight_pct - 7) <= 0.05)
+      ),
+      coalesce(sum(target_weight_pct) filter (where sleeve_key = 'CORE'), 0),
+      coalesce(sum(target_weight_pct) filter (where sleeve_key = 'SATELLITE'), 0)
+    into v_sleeve_count, v_approved_sleeve_count, v_core_total, v_satellite_total
+    from jsonb_to_recordset(p_sleeve_allocations) as x(
+      sleeve_key text,
+      bucket_key text,
+      target_weight_pct numeric
+    );
+
+    with sleeve_bucket_totals as (
+      select bucket_key, sum(target_weight_pct) as target_weight_pct
+      from jsonb_to_recordset(p_sleeve_allocations) as x(bucket_key text, target_weight_pct numeric)
+      group by bucket_key
+    ),
+    bucket_rows as (
+      select bucket_key, target_weight_pct
+      from jsonb_to_recordset(p_buckets) as x(bucket_key text, target_weight_pct numeric)
+    ),
+    alignment as (
+      select
+        count(*) filter (
+          where s.bucket_key is not null
+            and b.bucket_key is not null
+            and abs(s.target_weight_pct - b.target_weight_pct) <= 0.05
+        ) as aligned_bucket_count,
+        count(*) filter (
+          where s.bucket_key is null
+            or b.bucket_key is null
+            or abs(s.target_weight_pct - b.target_weight_pct) > 0.05
+        ) as misaligned_bucket_count
+      from sleeve_bucket_totals s
+      full outer join bucket_rows b using (bucket_key)
+    )
+    select aligned_bucket_count, misaligned_bucket_count
+    into v_aligned_bucket_count, v_misaligned_bucket_count
+    from alignment;
+
+    if v_sleeve_count <> 11
+      or v_approved_sleeve_count <> 11
+      or abs(v_core_total - 70) > 0.05
+      or abs(v_satellite_total - 30) > 0.05
+      or v_bucket_count <> 6
+      or v_aligned_bucket_count <> 6
+      or v_misaligned_bucket_count <> 0
+    then
+      raise exception 'PRO Core/Satellite and strategic bucket contracts are inconsistent';
+    end if;
+  end if;
+
+  insert into public.target_models (
+    id,
+    portfolio_scope,
+    model_name,
+    source_file,
+    allocation_contract_version,
+    source_kind,
+    as_of_date,
+    is_active,
+    target_total_pct,
+    reserve_floor_eur,
+    reserve_excluded_from_risky_allocation,
+    status,
+    report_json,
+    updated_at
+  ) values (
+    v_model_id,
+    v_scope,
+    p_model ->> 'model_name',
+    p_model ->> 'source_file',
+    p_model ->> 'allocation_contract_version',
+    p_model ->> 'source_kind',
+    nullif(p_model ->> 'as_of_date', '')::date,
+    (p_model ->> 'is_active')::boolean,
+    (p_model ->> 'target_total_pct')::numeric,
+    nullif(p_model ->> 'reserve_floor_eur', '')::numeric,
+    coalesce((p_model ->> 'reserve_excluded_from_risky_allocation')::boolean, false),
+    p_model ->> 'status',
+    coalesce(p_model -> 'report_json', '{}'::jsonb),
+    coalesce(nullif(p_model ->> 'updated_at', '')::timestamptz, now())
+  )
+  on conflict (id) do update set
+    portfolio_scope = excluded.portfolio_scope,
+    model_name = excluded.model_name,
+    source_file = excluded.source_file,
+    allocation_contract_version = excluded.allocation_contract_version,
+    source_kind = excluded.source_kind,
+    as_of_date = excluded.as_of_date,
+    is_active = excluded.is_active,
+    target_total_pct = excluded.target_total_pct,
+    reserve_floor_eur = excluded.reserve_floor_eur,
+    reserve_excluded_from_risky_allocation = excluded.reserve_excluded_from_risky_allocation,
+    status = excluded.status,
+    report_json = excluded.report_json,
+    updated_at = excluded.updated_at;
+
+  delete from public.target_buckets where model_id = v_model_id;
+  delete from public.target_sleeve_allocations where model_id = v_model_id;
+  delete from public.target_envelope_lines where model_id = v_model_id;
+  delete from public.target_model_audit_holdings where model_id = v_model_id;
+
+  insert into public.target_buckets (
+    model_id, portfolio_scope, bucket_key, bucket_label, parent_bucket_key,
+    target_weight_pct, lower_band_pct, upper_band_pct, source_sheet, source_row, updated_at
+  )
+  select
+    model_id, portfolio_scope, bucket_key, bucket_label, parent_bucket_key,
+    target_weight_pct, lower_band_pct, upper_band_pct, source_sheet, source_row, coalesce(updated_at, now())
+  from jsonb_to_recordset(p_buckets) as x(
+    model_id text, portfolio_scope text, bucket_key text, bucket_label text,
+    parent_bucket_key text, target_weight_pct numeric, lower_band_pct numeric,
+    upper_band_pct numeric, source_sheet text, source_row integer, updated_at timestamptz
+  );
+
+  insert into public.target_sleeve_allocations (
+    model_id, portfolio_scope, sleeve_key, component_label, bucket_key, bucket_label,
+    target_weight_pct, instrument_policy, activation_status, source_sheet, source_row, updated_at
+  )
+  select
+    model_id, portfolio_scope, sleeve_key, component_label, bucket_key, bucket_label,
+    target_weight_pct, instrument_policy, activation_status, source_sheet, source_row, coalesce(updated_at, now())
+  from jsonb_to_recordset(p_sleeve_allocations) as x(
+    model_id text, portfolio_scope text, sleeve_key text, component_label text,
+    bucket_key text, bucket_label text, target_weight_pct numeric, instrument_policy text,
+    activation_status text, source_sheet text, source_row integer, updated_at timestamptz
+  );
+
+  insert into public.target_envelope_lines (
+    model_id, portfolio_scope, envelope, ticker, isin, instrument, asset_class, region,
+    currency, target_weight_pct, target_value_eur, notes, source_sheet, source_row, updated_at
+  )
+  select
+    model_id, portfolio_scope, envelope, ticker, isin, instrument, asset_class, region,
+    currency, target_weight_pct, target_value_eur, notes, source_sheet, source_row, coalesce(updated_at, now())
+  from jsonb_to_recordset(p_envelope_lines) as x(
+    model_id text, portfolio_scope text, envelope text, ticker text, isin text,
+    instrument text, asset_class text, region text, currency text, target_weight_pct numeric,
+    target_value_eur numeric, notes text, source_sheet text, source_row integer, updated_at timestamptz
+  );
+
+  insert into public.target_model_audit_holdings (
+    model_id, portfolio_scope, envelope, ticker, isin, instrument, asset_class, region,
+    currency, market_value_eur, quantity, notes, source_sheet, source_row, updated_at
+  )
+  select
+    model_id, portfolio_scope, envelope, ticker, isin, instrument, asset_class, region,
+    currency, market_value_eur, quantity, notes, source_sheet, source_row, coalesce(updated_at, now())
+  from jsonb_to_recordset(p_audit_holdings) as x(
+    model_id text, portfolio_scope text, envelope text, ticker text, isin text,
+    instrument text, asset_class text, region text, currency text, market_value_eur numeric,
+    quantity numeric, notes text, source_sheet text, source_row integer, updated_at timestamptz
+  );
+
+  return jsonb_build_object(
+    'model_upserted', v_model_id,
+    'buckets_inserted', jsonb_array_length(p_buckets),
+    'sleeve_allocations_inserted', jsonb_array_length(p_sleeve_allocations),
+    'envelope_lines_inserted', jsonb_array_length(p_envelope_lines),
+    'audit_holdings_inserted', jsonb_array_length(p_audit_holdings)
+  );
+end;
+$$;
+
+revoke all on function public.apply_target_model_v1(jsonb, jsonb, jsonb, jsonb, jsonb)
+  from public, anon, authenticated;
+grant execute on function public.apply_target_model_v1(jsonb, jsonb, jsonb, jsonb, jsonb)
+  to service_role;
+
 drop view if exists public.allocation_advice_items_latest;
 
 create view public.allocation_advice_items_latest
@@ -78,6 +363,7 @@ with active_models as (
 bucket_contracts as (
   select
     model_id,
+    count(*) as bucket_count,
     sum(target_weight_pct) as target_total_pct,
     count(*) filter (where bucket_key = 'crypto') as crypto_bucket_count,
     bool_or(
@@ -114,6 +400,32 @@ sleeve_contracts as (
   from public.target_sleeve_allocations
   group by model_id
 ),
+sleeve_bucket_totals as (
+  select
+    model_id,
+    bucket_key,
+    sum(target_weight_pct) as target_weight_pct
+  from public.target_sleeve_allocations
+  group by model_id, bucket_key
+),
+bucket_sleeve_alignment as (
+  select
+    coalesce(s.model_id, b.model_id) as model_id,
+    count(*) filter (
+      where s.bucket_key is not null
+        and b.bucket_key is not null
+        and abs(s.target_weight_pct - b.target_weight_pct) <= 0.05
+    ) as aligned_bucket_count,
+    count(*) filter (
+      where s.bucket_key is null
+        or b.bucket_key is null
+        or abs(s.target_weight_pct - b.target_weight_pct) > 0.05
+    ) as misaligned_bucket_count
+  from sleeve_bucket_totals s
+  full outer join public.target_buckets b
+    on b.model_id = s.model_id and b.bucket_key = s.bucket_key
+  group by coalesce(s.model_id, b.model_id)
+),
 model_contracts as (
   select
     m.*,
@@ -131,10 +443,13 @@ model_contracts as (
         and m.reserve_excluded_from_risky_allocation
         and abs(coalesce(m.reserve_floor_eur, 0) - 120000) <= 0.01
         and abs(coalesce(b.target_total_pct, 0) - 100) <= 0.05
+        and coalesce(b.bucket_count, 0) = 6
         and coalesce(s.sleeve_line_count, 0) = 11
         and coalesce(s.approved_line_count, 0) = 11
         and abs(coalesce(s.core_total_pct, 0) - 70) <= 0.05
         and abs(coalesce(s.satellite_total_pct, 0) - 30) <= 0.05
+        and coalesce(a.aligned_bucket_count, 0) = 6
+        and coalesce(a.misaligned_bucket_count, 0) = 0
       then 'READY'
       else 'UNKNOWN'
     end as model_contract_state,
@@ -152,16 +467,20 @@ model_contracts as (
         m.reserve_excluded_from_risky_allocation
         and abs(coalesce(m.reserve_floor_eur, 0) - 120000) <= 0.01
         and abs(coalesce(b.target_total_pct, 0) - 100) <= 0.05
+        and coalesce(b.bucket_count, 0) = 6
         and coalesce(s.sleeve_line_count, 0) = 11
         and coalesce(s.approved_line_count, 0) = 11
         and abs(coalesce(s.core_total_pct, 0) - 70) <= 0.05
         and abs(coalesce(s.satellite_total_pct, 0) - 30) <= 0.05
+        and coalesce(a.aligned_bucket_count, 0) = 6
+        and coalesce(a.misaligned_bucket_count, 0) = 0
       ) then 'pro_model_contract_incomplete'
       else null
     end as model_contract_reason
   from active_models m
   left join bucket_contracts b on b.model_id = m.id
   left join sleeve_contracts s on s.model_id = m.id
+  left join bucket_sleeve_alignment a on a.model_id = m.id
 ),
 position_values_raw as (
   select

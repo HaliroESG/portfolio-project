@@ -28,6 +28,7 @@ import type {
   SupportSourceQuality,
   TargetEnvelopeLineRow,
   TargetModelRow,
+  TargetSleeveAllocationRow,
 } from '../../types'
 
 type SortKey = 'priority' | 'ticker' | 'action' | 'amount' | 'drift' | 'confidence'
@@ -39,6 +40,7 @@ type OverlayFilter = 'ALL' | 'STANDARD' | 'MACRO'
 interface PortfolioRow {
   id: string
   name: string | null
+  portfolio_type: string | null
 }
 
 interface ExecutionUniverseRow {
@@ -64,6 +66,12 @@ const ACTION_RANK: Record<PortfolioDecisionAction, number> = {
 }
 
 const DEFAULT_SORT: SortConfig = { key: 'priority', direction: 'asc' }
+
+function scopeFromPortfolioType(value: unknown): PortfolioScope | null {
+  if (value === 'PERSONAL') return 'PERSO'
+  if (value === 'PROFESSIONAL') return 'PRO'
+  return null
+}
 
 function isMissingSchemaError(message: string | undefined): boolean {
   return /could not find the table/i.test(message || '')
@@ -418,7 +426,6 @@ function SortHeader({
 
 export default function ArbitragePage() {
   const [selectedPortfolioIdOverride, setSelectedPortfolioIdOverride] = useState('')
-  const [selectedScope, setSelectedScope] = useState<PortfolioScope>('PERSO')
   const [overlayFilter, setOverlayFilter] = useState<OverlayFilter>('ALL')
   const [actionFilter, setActionFilter] = useState<'ALL' | PortfolioDecisionAction>('ALL')
   const [issueFilter, setIssueFilter] = useState('ALL')
@@ -427,11 +434,13 @@ export default function ArbitragePage() {
   const [sort, setSort] = useState<SortConfig>(DEFAULT_SORT)
 
   const { data: portfolios } = useSWR('fo-arbitrage-portfolios', async () => {
-    const { data, error } = await supabase.from('fo_portfolios').select('id,name').eq('status', 'ACTIVE').order('name')
+    const { data, error } = await supabase.from('fo_portfolios').select('id,name,portfolio_type').eq('status', 'ACTIVE').order('name')
     if (error) throw error
     return (data ?? []) as PortfolioRow[]
   })
   const selectedPortfolioId = selectedPortfolioIdOverride || portfolios?.[0]?.id || ''
+  const selectedPortfolio = portfolios?.find((portfolio) => portfolio.id === selectedPortfolioId) ?? null
+  const selectedScope = scopeFromPortfolioType(selectedPortfolio?.portfolio_type)
 
   const {
     data: allocationRows = [],
@@ -456,7 +465,25 @@ export default function ArbitragePage() {
     return (data ?? []) as unknown as TargetModelRow[]
   })
 
-  const selectedTargetModel = targetModels.find((model) => model.portfolio_scope === selectedScope) ?? null
+  const selectedTargetModel = selectedScope
+    ? targetModels.find((model) => model.portfolio_scope === selectedScope) ?? null
+    : null
+  const {
+    data: targetSleeves = [],
+    error: targetSleevesError,
+    isLoading: targetSleevesLoading,
+  } = useSWR(
+    selectedTargetModel?.portfolio_scope === 'PRO' ? ['fo-arbitrage-target-sleeves', selectedTargetModel.id] : null,
+    async () => {
+      const { data, error } = await supabase
+        .from('target_sleeve_allocations')
+        .select('id,model_id,portfolio_scope,sleeve_key,component_label,bucket_key,bucket_label,target_weight_pct,instrument_policy,activation_status,source_sheet,source_row,updated_at')
+        .eq('model_id', selectedTargetModel!.id)
+        .order('source_row', { ascending: true })
+      if (error) throw error
+      return (data ?? []) as unknown as TargetSleeveAllocationRow[]
+    },
+  )
   const {
     data: targetLines = [],
     error: targetLinesError,
@@ -474,15 +501,22 @@ export default function ArbitragePage() {
   )
 
   const assessment = useMemo(
-    () => assessFamilyOfficeAllocation(allocationRows, selectedTargetModel, targetLines),
-    [allocationRows, selectedTargetModel, targetLines],
+    () => selectedScope
+      ? assessFamilyOfficeAllocation(allocationRows, selectedTargetModel, targetLines, {
+        expectedScope: selectedScope,
+        targetSleeves,
+      })
+      : { rows: [], total_value_eur: null, target_total_pct: null, target_model_ready: false },
+    [allocationRows, selectedScope, selectedTargetModel, targetLines, targetSleeves],
   )
   const rows = useMemo(() => toPortfolioDecisionRows(assessment), [assessment])
-  const error = allocationError ?? targetModelError ?? targetLinesError
-  const isLoading = allocationLoading || targetModelLoading || Boolean(selectedTargetModel && targetLinesLoading)
+  const error = allocationError ?? targetModelError ?? targetSleevesError ?? targetLinesError
+  const isLoading = allocationLoading
+    || targetModelLoading
+    || Boolean(selectedTargetModel && (targetSleevesLoading || targetLinesLoading))
 
   const { data: adviceRows = [], error: adviceError } = useSWR(
-    ['allocation-advice', selectedScope],
+    selectedScope ? ['allocation-advice', selectedScope] : null,
     async () => {
       const { data, error } = await supabase
         .from('allocation_advice_items_latest')
@@ -635,14 +669,9 @@ export default function ArbitragePage() {
           <section className="flex flex-wrap items-center gap-2 rounded-lg border border-slate-200 bg-white px-3 py-3 dark:border-white/10 dark:bg-[#0D1117]">
             <label className="flex min-w-[150px] flex-1 items-center gap-2 rounded-md border border-slate-200 bg-slate-50 px-2 py-2 dark:border-white/10 dark:bg-black/20 sm:flex-none">
               <span className="text-[9px] font-black uppercase tracking-wider text-slate-500 dark:text-gray-400">Scope</span>
-              <select
-                value={selectedScope}
-                onChange={(event) => setSelectedScope(event.target.value as PortfolioScope)}
-                className="min-w-0 flex-1 bg-transparent text-[10px] font-black uppercase text-slate-900 outline-none dark:text-white"
-              >
-                <option value="PERSO">PERSO</option>
-                <option value="PRO">PRO</option>
-              </select>
+              <span className="min-w-0 flex-1 text-[10px] font-black uppercase text-slate-900 dark:text-white">
+                {selectedScope ?? 'UNKNOWN'} · portfolio bound
+              </span>
             </label>
             <FilterSelect label="Action" value={actionFilter} options={['BUY', 'REDUCE', 'EXIT', 'HOLD', 'UNAVAILABLE']} onChange={(value) => setActionFilter(value as 'ALL' | PortfolioDecisionAction)} />
             <FilterSelect label="Overlay" value={overlayFilter} options={['STANDARD', 'MACRO']} onChange={(value) => setOverlayFilter(value as OverlayFilter)} />
@@ -770,7 +799,7 @@ export default function ArbitragePage() {
               <div>
                 <h2 className="text-sm font-black uppercase tracking-tight text-slate-950 dark:text-white">Allocation advice</h2>
                 <div className="mt-1 text-[10px] font-mono text-slate-500 dark:text-gray-400">
-                  {"Flux d'abord by strategic bucket"} - {selectedScope}
+                  {"Flux d'abord by strategic bucket"} - {selectedScope ?? 'UNKNOWN'}
                 </div>
               </div>
               <span className="rounded border border-slate-300 bg-slate-50 px-2 py-1 text-[10px] font-black uppercase tracking-wider text-slate-600 dark:border-white/10 dark:bg-white/5 dark:text-gray-300">
@@ -787,7 +816,12 @@ export default function ArbitragePage() {
               </div>
             ) : adviceRows.length === 0 ? (
               <div className="p-4">
-                <EmptyState title="No allocation advice" message={`No active ${selectedScope} target model is available yet.`} />
+                <EmptyState
+                  title="No allocation advice"
+                  message={selectedScope
+                    ? `No active ${selectedScope} target model is available yet.`
+                    : 'Portfolio scope is unavailable, so allocation advice remains blocked.'}
+                />
               </div>
             ) : (
               <>

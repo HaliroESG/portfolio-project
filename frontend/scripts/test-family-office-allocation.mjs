@@ -6,8 +6,12 @@ const {
   toPortfolioDecisionRows,
 } = await import('../lib/familyOfficeAllocation.ts')
 
-const assessFamilyOfficeAllocation = (rows, targetModel, targetLines) => (
-  assessFamilyOfficeAllocationAtDate(rows, targetModel, targetLines, '2026-09-20')
+const assessFamilyOfficeAllocation = (rows, targetModel, targetLines, options = {}) => (
+  assessFamilyOfficeAllocationAtDate(rows, targetModel, targetLines, {
+    expectedScope: options.expectedScope ?? targetModel?.portfolio_scope ?? 'PERSO',
+    targetSleeves: options.targetSleeves ?? [],
+    referenceDate: '2026-09-20',
+  })
 )
 
 const accounts = [
@@ -68,6 +72,9 @@ const model = (overrides = {}) => ({
   as_of_date: '2026-09-18',
   is_active: true,
   target_total_pct: 100,
+  allocation_contract_version: 'allocation_contracts_v1',
+  reserve_floor_eur: null,
+  reserve_excluded_from_risky_allocation: false,
   status: 'READY',
   report_json: {},
   imported_at: '2026-09-18T12:00:00Z',
@@ -128,6 +135,73 @@ assert.equal(ready.total_value_eur, 800)
 assert.equal(ready.target_model_ready, true)
 assert.deepEqual(ready.rows.map((row) => row.action), ['HOLD', 'HOLD', 'HOLD'])
 assert.deepEqual(ready.rows.map((row) => row.reason_codes), [[], [], []])
+
+const legacyModel = assessFamilyOfficeAllocation(rows, model({ allocation_contract_version: null }), lines)
+assert.equal(legacyModel.target_model_ready, false)
+assert.ok(legacyModel.rows.every((row) => row.action === 'UNAVAILABLE'))
+assert.ok(legacyModel.rows.every((row) => row.reason_codes.includes('TARGET_MODEL_INVALID')))
+
+const mismatchedScope = assessFamilyOfficeAllocation(rows, model(), lines, { expectedScope: 'PRO' })
+assert.equal(mismatchedScope.target_model_ready, false)
+assert.ok(mismatchedScope.rows.every((row) => row.action === 'UNAVAILABLE'))
+
+const proSleeveWeights = [
+  ['CORE', 'actions_us', 28],
+  ['CORE', 'actions_europe', 12],
+  ['CORE', 'actions_japan', 7],
+  ['CORE', 'actions_pacific_ex_japan', 4],
+  ['CORE', 'actions_emerging', 9],
+  ['CORE', 'gold', 10],
+  ['SATELLITE', 'actions_us', 13],
+  ['SATELLITE', 'actions_europe', 6],
+  ['SATELLITE', 'actions_japan', 3],
+  ['SATELLITE', 'actions_pacific_ex_japan', 1],
+  ['SATELLITE', 'actions_emerging', 7],
+]
+const proModel = model({
+  id: 'pro-model',
+  portfolio_scope: 'PRO',
+  reserve_floor_eur: 120000,
+  reserve_excluded_from_risky_allocation: true,
+})
+const proLines = lines.map((line) => ({ ...line, model_id: 'pro-model', portfolio_scope: 'PRO' }))
+const proSleeves = proSleeveWeights.map(([sleeve, bucket, weight], index) => ({
+  id: index + 1,
+  model_id: 'pro-model',
+  portfolio_scope: 'PRO',
+  sleeve_key: sleeve,
+  component_label: 'test',
+  bucket_key: bucket,
+  bucket_label: bucket,
+  target_weight_pct: weight,
+  instrument_policy: null,
+  activation_status: 'NOT_ACTIVATED',
+  source_sheet: 'Modele_Core_Satellite',
+  source_row: index + 5,
+  updated_at: '2026-09-18T12:00:00Z',
+}))
+const readyPro = assessFamilyOfficeAllocation(rows, proModel, proLines, {
+  expectedScope: 'PRO',
+  targetSleeves: proSleeves,
+})
+assert.equal(readyPro.target_model_ready, true)
+assert.deepEqual(readyPro.rows.map((row) => row.action), ['HOLD', 'HOLD', 'HOLD'])
+
+const incompletePro = assessFamilyOfficeAllocation(rows, proModel, proLines, {
+  expectedScope: 'PRO',
+  targetSleeves: proSleeves.slice(1),
+})
+assert.equal(incompletePro.target_model_ready, false)
+assert.ok(incompletePro.rows.every((row) => row.action === 'UNAVAILABLE'))
+
+const missingProReserve = assessFamilyOfficeAllocation(
+  rows,
+  { ...proModel, reserve_floor_eur: null },
+  proLines,
+  { expectedScope: 'PRO', targetSleeves: proSleeves },
+)
+assert.equal(missingProReserve.target_model_ready, false)
+assert.ok(missingProReserve.rows.every((row) => row.action === 'UNAVAILABLE'))
 
 const noTargets = assessFamilyOfficeAllocation(rows, null, [])
 assert.ok(noTargets.rows.every((row) => row.action === 'UNAVAILABLE'))
