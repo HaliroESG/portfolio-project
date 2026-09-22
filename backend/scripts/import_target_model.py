@@ -173,6 +173,7 @@ def parse_personal_model(path: str | Path) -> dict[str, Any]:
     envelope_lines: list[TargetEnvelopeLine] = []
     audit_holdings: list[TargetAuditHolding] = []
     warnings: list[str] = []
+    rejected: list[dict[str, Any]] = []
 
     strategic = workbook["Strategic_Target_Perso"]
     for row_number, row in enumerate(strategic.iter_rows(min_row=2, values_only=True), start=2):
@@ -205,8 +206,16 @@ def parse_personal_model(path: str | Path) -> dict[str, Any]:
         target = _weight_pct(_cell(row, headers, "Target % (within envelope)"))
         if not envelope_name:
             continue
-        if not identifier or not instrument or target is None:
+        if not identifier and not instrument and target is None:
             warnings.append(f"row {row_number}: optional envelope target skipped for {envelope_name}")
+            continue
+        if not identifier or not instrument or target is None:
+            rejected.append({
+                "reason": (
+                    f"row {row_number}: envelope target for {envelope_name} must define "
+                    "identifier, instrument, and a finite target weight"
+                )
+            })
             continue
         envelope_lines.append(
             TargetEnvelopeLine(
@@ -265,6 +274,7 @@ def parse_personal_model(path: str | Path) -> dict[str, Any]:
         warnings=warnings,
         reserve_floor_eur=None,
         reserve_excluded_from_risky_allocation=False,
+        extra_rejected=rejected,
     )
 
 
@@ -527,6 +537,30 @@ def _build_report(
                 "reason": (
                     f"target bucket {bucket.bucket_key} band must be finite, ordered, within 0%-100%, "
                     "and contain the target weight"
+                )
+            })
+    envelope_totals: dict[str, float] = {}
+    invalid_envelopes: set[str] = set()
+    for line in envelope_lines:
+        weight = line.target_weight_pct
+        if weight is None or not math.isfinite(weight) or weight < 0 or weight > 100:
+            invalid_envelopes.add(line.envelope)
+            rejected.append({
+                "reason": (
+                    f"target envelope {line.envelope} row {line.source_row} weight must be "
+                    "finite and within 0%-100%"
+                )
+            })
+            continue
+        envelope_totals[line.envelope] = envelope_totals.get(line.envelope, 0.0) + weight
+    for envelope_name, envelope_total in envelope_totals.items():
+        if envelope_name in invalid_envelopes:
+            continue
+        if abs(envelope_total - 100.0) > 0.05:
+            rejected.append({
+                "reason": (
+                    f"target envelope {envelope_name} total must equal 100% ±0.05 "
+                    f"({envelope_total:.4f}%)"
                 )
             })
     if kind == "perso":

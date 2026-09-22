@@ -58,6 +58,7 @@ export interface FamilyOfficeAllocationRow {
 }
 
 export interface FamilyOfficeAllocationAssessmentRow extends FamilyOfficeAllocationRow {
+  allocation_role: 'TARGETED' | 'PROTECTED_RESERVE' | 'RESERVE_EXCESS' | 'NON_TARGET'
   target_weight_pct: number | null
   current_weight_pct: number | null
   drift_pct: number | null
@@ -398,12 +399,24 @@ function targetModelContractReady(
 
   const bucketWeights = new Map<string, number>()
   for (const row of targetBuckets) {
+    const lowerBand = row.lower_band_pct
+    const upperBand = row.upper_band_pct
     if (row.model_id !== targetModel.id
       || row.portfolio_scope !== expectedScope
       || bucketWeights.has(row.bucket_key)
       || !Number.isFinite(row.target_weight_pct)
       || row.target_weight_pct < 0
       || row.target_weight_pct > 100
+      || (lowerBand === null) !== (upperBand === null)
+      || (lowerBand !== null && upperBand !== null && (
+        !Number.isFinite(lowerBand)
+        || !Number.isFinite(upperBand)
+        || lowerBand < 0
+        || upperBand > 100
+        || lowerBand > upperBand
+        || row.target_weight_pct < lowerBand
+        || row.target_weight_pct > upperBand
+      ))
     ) return false
     bucketWeights.set(row.bucket_key, row.target_weight_pct)
   }
@@ -473,6 +486,20 @@ function isProReserveEligibleRow(row: FamilyOfficeAllocationRow): boolean {
   return /\b(EU|EURO|EUROPEAN)[ -]?(TREASURY[ -]?)?BILLS?\b/.test(descriptor)
 }
 
+function proNonTargetBucketKey(row: FamilyOfficeAllocationRow): 'cash_bonds' | 'crypto' | null {
+  const descriptor = `${row.ticker} ${row.name} ${row.instrument_type}`
+    .normalize('NFKD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .toUpperCase()
+  if (/\b(CRYPTO|DIGITAL ASSET|BITCOIN|ETHEREUM)\b/.test(descriptor)
+    || /^(BTC|BTC-EUR|BTC-USD|ETH|ETH-EUR|ETH-USD)$/.test(normalize(row.ticker))
+  ) return 'crypto'
+  if (/\b(CASH|BOND|BILL|FONDS EURO|OVERNIGHT|MONETAIRE|MONEY MARKET)\b/.test(descriptor)
+    || /^(EUR|USD|CHF|GBP|XEON)$/.test(normalize(row.ticker))
+  ) return 'cash_bonds'
+  return null
+}
+
 function scaledAllocationRow(
   row: FamilyOfficeAllocationRow,
   currentValueEur: number,
@@ -514,7 +541,11 @@ function splitProReserveFloor(
     }
   }
 
-  let remainingFloor = reserveFloorEur
+  const eligibleValuesComplete = eligibleRows.every((row) => row.current_value_eur !== null)
+  const eligibleNetValue = eligibleValuesComplete
+    ? eligibleRows.reduce((sum, row) => sum + (row.current_value_eur ?? 0), 0)
+    : null
+  let remainingExcess = eligibleNetValue === null ? 0 : Math.max(0, eligibleNetValue - reserveFloorEur)
   const rows: FamilyOfficeAllocationRow[] = []
   const reserveRowKeys = new Set<string>()
   const excessRowKeys = new Set<string>()
@@ -525,9 +556,9 @@ function splitProReserveFloor(
       continue
     }
 
-    const protectedValue = Math.min(row.current_value_eur, remainingFloor)
-    const excessValue = row.current_value_eur - protectedValue
-    remainingFloor -= protectedValue
+    const excessValue = Math.min(row.current_value_eur, remainingExcess)
+    const protectedValue = row.current_value_eur - excessValue
+    remainingExcess -= excessValue
     if (protectedValue > 0) {
       const protectedRatio = protectedValue / row.current_value_eur
       const protectedRow = scaledAllocationRow(row, protectedValue, protectedRatio, '', '')
@@ -634,6 +665,14 @@ export function assessFamilyOfficeAllocation(
         : targetLines.filter((line) => targetMatches(row, line)),
     ]),
   )
+  const targetBucketKeys = new Set(targetBuckets.map((row) => row.bucket_key))
+  const nonTargetBucketsByRow = new Map<string, 'cash_bonds' | 'crypto'>()
+  if (options.expectedScope === 'PRO') {
+    for (const row of targetedRiskyRows) {
+      const bucketKey = proNonTargetBucketKey(row)
+      if (bucketKey && !targetBucketKeys.has(bucketKey)) nonTargetBucketsByRow.set(row.row_key, bucketKey)
+    }
+  }
   const targetWeightIsValid = (line: TargetEnvelopeLineRow): boolean => {
     const weight = line.target_weight_pct
     return weight !== null && Number.isFinite(weight) && weight >= 0 && weight <= 100
@@ -655,6 +694,7 @@ export function assessFamilyOfficeAllocation(
     && envelopeTargetsValid
     && targetedRiskyRows.every((row) => {
       const matches = matchesByRow.get(row.row_key) ?? []
+      if (nonTargetBucketsByRow.has(row.row_key)) return matches.length === 0
       return matches.length === 1 && targetWeightIsValid(matches[0])
     })
     && targetLines
@@ -664,9 +704,10 @@ export function assessFamilyOfficeAllocation(
   const rows = assessmentRows.map((row): FamilyOfficeAllocationAssessmentRow => {
     const isReserveRow = reserveRowKeys.has(row.row_key)
     const isExcessRow = excessRowKeys.has(row.row_key)
+    const nonTargetBucket = nonTargetBucketsByRow.get(row.row_key) ?? null
     const matches = matchesByRow.get(row.row_key) ?? []
     const targetLine = matches.length === 1 ? matches[0] : null
-    const targetWeight = targetLine?.target_weight_pct ?? null
+    const targetWeight = nonTargetBucket ? 0 : targetLine?.target_weight_pct ?? null
     const targetEnvelopeKey = targetLine ? normalize(targetLine.envelope) : null
     const envelopeRows = targetEnvelopeKey === null
       ? []
@@ -678,12 +719,13 @@ export function assessFamilyOfficeAllocation(
     const envelopeValue = envelopeValueComplete
       ? envelopeRows.reduce((sum, candidate) => sum + (candidate.current_value_eur ?? 0), 0)
       : null
-    const currentWeight = envelopeValue !== null && envelopeValue > 0 && row.current_value_eur !== null
-      ? row.current_value_eur / envelopeValue * 100
+    const allocationBaseValue = nonTargetBucket ? totalValue : envelopeValue
+    const currentWeight = allocationBaseValue !== null && allocationBaseValue > 0 && row.current_value_eur !== null
+      ? row.current_value_eur / allocationBaseValue * 100
       : null
     const drift = currentWeight !== null && targetWeight !== null ? currentWeight - targetWeight : null
-    const amount = envelopeValue !== null && row.current_value_eur !== null && targetWeight !== null
-      ? targetWeight / 100 * envelopeValue - row.current_value_eur
+    const amount = allocationBaseValue !== null && row.current_value_eur !== null && targetWeight !== null
+      ? targetWeight / 100 * allocationBaseValue - row.current_value_eur
       : null
     const effectiveValuationState = valuationStateAt(row, referenceDate)
     if (isReserveRow) {
@@ -696,6 +738,7 @@ export function assessFamilyOfficeAllocation(
       if (!reserveRowsReady) reserveReasons.push('PRO_RESERVE_NOT_READY')
       return {
         ...row,
+        allocation_role: 'PROTECTED_RESERVE',
         valuation_state: effectiveValuationState,
         target_weight_pct: null,
         current_weight_pct: null,
@@ -721,6 +764,7 @@ export function assessFamilyOfficeAllocation(
       const excessWeight = totalValue !== null && totalValue > 0 ? excessValue / totalValue * 100 : null
       return {
         ...row,
+        allocation_role: 'RESERVE_EXCESS',
         valuation_state: effectiveValuationState,
         target_weight_pct: 0,
         current_weight_pct: excessWeight,
@@ -737,13 +781,13 @@ export function assessFamilyOfficeAllocation(
     if (!targetModel) reasons.push('TARGET_MODEL_MISSING')
     else if (!targetModelReady) reasons.push('TARGET_MODEL_INVALID')
     else if (!targetCoverageReady) reasons.push('TARGET_COVERAGE_INCOMPLETE')
-    if (matches.length === 0) reasons.push('TARGET_LINE_MISSING')
+    if (matches.length === 0 && !nonTargetBucket) reasons.push('TARGET_LINE_MISSING')
     if (matches.length > 1) reasons.push('TARGET_LINE_AMBIGUOUS')
     if (targetLine && targetWeight === null) reasons.push('TARGET_WEIGHT_MISSING')
     if (targetLine && targetWeight !== null && !targetWeightIsValid(targetLine)) reasons.push('TARGET_WEIGHT_INVALID')
     if (targetLine && !envelopeTargetsValid) reasons.push('TARGET_ENVELOPE_TOTAL_INVALID')
     if (!portfolioValueComplete || totalValue === null || totalValue <= 0) reasons.push('PORTFOLIO_VALUE_INCOMPLETE')
-    if (targetLine && (!envelopeValueComplete || envelopeValue === null || envelopeValue <= 0)) reasons.push('TARGET_ENVELOPE_VALUE_INCOMPLETE')
+    if (targetLine && !nonTargetBucket && (!envelopeValueComplete || envelopeValue === null || envelopeValue <= 0)) reasons.push('TARGET_ENVELOPE_VALUE_INCOMPLETE')
     if (row.current_value_eur === null) reasons.push('CURRENT_VALUE_MISSING')
     if (row.data_state !== 'READY') reasons.push(`SOURCE_${row.data_state}`)
     if (effectiveValuationState !== 'READY') reasons.push(`VALUATION_${effectiveValuationState}`)
@@ -754,8 +798,10 @@ export function assessFamilyOfficeAllocation(
     const action = reasons.length === 0 && drift !== null && amount !== null && targetWeight !== null && row.current_value_eur !== null
       ? actionFor(drift, amount, targetWeight, row.current_value_eur)
       : 'UNAVAILABLE'
+    if (nonTargetBucket) reasons.push(`PRO_NON_TARGET_${nonTargetBucket.toUpperCase()}`)
     return {
       ...row,
+      allocation_role: nonTargetBucket ? 'NON_TARGET' : 'TARGETED',
       valuation_state: effectiveValuationState,
       target_weight_pct: targetWeight,
       current_weight_pct: currentWeight,
@@ -776,6 +822,24 @@ export function assessFamilyOfficeAllocation(
   }
 }
 
+function allocationDecisionDataState(
+  row: FamilyOfficeAllocationAssessmentRow,
+  assessment: FamilyOfficeAllocationAssessment,
+): PortfolioDecisionItemRow['data_state'] {
+  if (row.current_value_eur === null) return 'PRICE_MISSING'
+  if (row.allocation_role === 'PROTECTED_RESERVE') {
+    return row.action === 'UNAVAILABLE' ? 'SOURCE_NOT_READY' : 'READY'
+  }
+  if (assessment.total_value_eur === null) return 'PRICE_MISSING'
+  if (row.target_weight_pct === null) return 'TARGET_MISSING'
+  if (!assessment.target_model_ready) return 'TARGET_INVALID'
+  if (row.data_state !== 'READY'
+    || row.valuation_state !== 'READY'
+    || (row.instrument_type !== 'CASH' && row.reconciliation_state !== 'MATCH')
+  ) return 'SOURCE_NOT_READY'
+  return 'READY'
+}
+
 export function toPortfolioDecisionRows(assessment: FamilyOfficeAllocationAssessment): PortfolioDecisionItemRow[] {
   return assessment.rows.map((row) => ({
     portfolio_id: row.portfolio_id,
@@ -793,15 +857,7 @@ export function toPortfolioDecisionRows(assessment: FamilyOfficeAllocationAssess
     action: row.action,
     confidence: row.confidence,
     reason_codes: row.reason_codes,
-    data_state: row.current_value_eur === null || assessment.total_value_eur === null
-      ? 'PRICE_MISSING'
-      : row.target_weight_pct === null
-        ? 'TARGET_MISSING'
-        : !assessment.target_model_ready
-          ? 'TARGET_INVALID'
-          : row.data_state !== 'READY' || row.valuation_state !== 'READY' || (row.instrument_type !== 'CASH' && row.reconciliation_state !== 'MATCH')
-            ? 'SOURCE_NOT_READY'
-            : 'READY',
+    data_state: allocationDecisionDataState(row, assessment),
     price_state: row.current_value_eur === null || row.valuation_state === 'MISSING'
       ? 'MISSING'
       : row.data_state === 'STALE' || row.valuation_state === 'STALE'

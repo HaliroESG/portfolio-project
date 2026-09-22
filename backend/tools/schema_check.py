@@ -266,8 +266,9 @@ CRITICAL_SCHEMA: dict[str, list[str]] = {
     ],
     "target_models": [
         "id", "portfolio_scope", "model_name", "source_file", "source_kind",
-        "as_of_date", "is_active", "target_total_pct", "status", "report_json",
-        "imported_at", "updated_at",
+        "as_of_date", "is_active", "target_total_pct", "allocation_contract_version",
+        "reserve_floor_eur", "reserve_excluded_from_risky_allocation", "status",
+        "report_json", "imported_at", "updated_at",
     ],
     "target_buckets": [
         "id", "model_id", "portfolio_scope", "bucket_key", "bucket_label",
@@ -279,16 +280,36 @@ CRITICAL_SCHEMA: dict[str, list[str]] = {
         "instrument", "asset_class", "region", "currency", "target_weight_pct",
         "target_value_eur", "notes", "source_sheet", "source_row", "updated_at",
     ],
+    "target_sleeve_allocations": [
+        "id", "model_id", "portfolio_scope", "sleeve_key", "component_label",
+        "bucket_key", "bucket_label", "target_weight_pct", "instrument_policy",
+        "activation_status", "source_sheet", "source_row", "updated_at",
+    ],
     "target_model_audit_holdings": [
         "id", "model_id", "portfolio_scope", "envelope", "ticker", "isin",
         "instrument", "asset_class", "region", "currency", "market_value_eur",
         "quantity", "notes", "source_sheet", "source_row", "updated_at",
     ],
     "allocation_advice_items_latest": [
-        "portfolio_scope", "model_id", "model_name", "bucket_key",
+        "portfolio_scope", "portfolio_id", "model_id", "model_name", "source_file", "bucket_key",
         "bucket_label", "current_value_eur", "current_weight_pct",
         "target_weight_pct", "drift_pct", "rebalance_amount_eur",
-        "action", "confidence", "reason_codes", "preferred_execution", "updated_at",
+        "action", "confidence", "reason_codes", "preferred_execution", "data_state",
+        "model_contract_state", "model_contract_reason", "bucket_position_count",
+        "bucket_unavailable_positions", "position_count", "unavailable_positions",
+        "unmatched_positions", "unmatched_scope_positions", "total_value_eur",
+        "allocatable_total_eur", "reserve_floor_eur", "reserve_current_eur",
+        "reserve_eligible_positions", "reserve_state", "updated_at",
+    ],
+}
+
+CRITICAL_RPCS: dict[str, list[str]] = {
+    "apply_target_model_v1": [
+        "p_model",
+        "p_buckets",
+        "p_sleeve_allocations",
+        "p_envelope_lines",
+        "p_audit_holdings",
     ],
 }
 
@@ -320,6 +341,21 @@ def _http_get(base_url: str, api_key: str, table: str, select_expr: str) -> tupl
         return 599, {"message": str(e)}
 
 
+def _http_get_openapi(base_url: str, api_key: str) -> tuple[int, Any]:
+    headers = _headers(api_key)
+    headers["Accept"] = "application/openapi+json"
+    req = Request(f"{base_url}/rest/v1/", headers=headers, method="GET")
+    try:
+        with urlopen(req, timeout=20) as resp:
+            status = getattr(resp, "status", 200)
+            return status, _safe_json_bytes(resp.read())
+    except HTTPError as e:
+        body = e.read() if hasattr(e, "read") else b""
+        return e.code, _safe_json_bytes(body)
+    except URLError as e:
+        return 599, {"message": str(e)}
+
+
 def check_table_exists(base_url: str, api_key: str, table: str) -> tuple[bool, str | None]:
     status, payload = _http_get(base_url, api_key, table, "*")
     if status in (200, 206):
@@ -336,12 +372,47 @@ def check_column_exists(base_url: str, api_key: str, table: str, column: str) ->
     return False, f"HTTP {status}: {msg}"
 
 
+def _openapi_property_names(value: Any) -> set[str]:
+    names: set[str] = set()
+    if isinstance(value, dict):
+        properties = value.get("properties")
+        if isinstance(properties, dict):
+            names.update(str(name) for name in properties)
+        for child in value.values():
+            names.update(_openapi_property_names(child))
+    elif isinstance(value, list):
+        for child in value:
+            names.update(_openapi_property_names(child))
+    return names
+
+
+def check_rpc_exists(
+    base_url: str,
+    api_key: str,
+    rpc_name: str,
+    required_arguments: list[str],
+) -> tuple[bool, str | None]:
+    status, payload = _http_get_openapi(base_url, api_key)
+    if status not in (200, 206):
+        msg = payload.get("message") if isinstance(payload, dict) else str(payload)
+        return False, f"HTTP {status}: {msg}"
+    paths = payload.get("paths") if isinstance(payload, dict) else None
+    if not isinstance(paths, dict) or f"/rpc/{rpc_name}" not in paths:
+        return False, f"RPC {rpc_name} is absent from the PostgREST OpenAPI contract"
+    observed_arguments = _openapi_property_names(paths[f"/rpc/{rpc_name}"])
+    missing_arguments = sorted(set(required_arguments) - observed_arguments)
+    if missing_arguments:
+        return False, f"RPC {rpc_name} is missing arguments: {', '.join(missing_arguments)}"
+    return True, None
+
+
 def run_check(base_url: str, api_key: str) -> dict[str, Any]:
     report: dict[str, Any] = {
         "generated_at": datetime.now(timezone.utc).isoformat(),
         "supabase_url": base_url,
         "pass": True,
         "tables": {},
+        "rpcs": {},
     }
 
     for table, required_columns in CRITICAL_SCHEMA.items():
@@ -369,6 +440,17 @@ def run_check(base_url: str, api_key: str) -> dict[str, Any]:
             "missing_columns": missing_columns,
             "errors": errors,
             "pass": table_pass,
+        }
+
+    for rpc_name, required_arguments in CRITICAL_RPCS.items():
+        exists, rpc_error = check_rpc_exists(base_url, api_key, rpc_name, required_arguments)
+        if not exists:
+            report["pass"] = False
+        report["rpcs"][rpc_name] = {
+            "exists": exists,
+            "required_arguments": required_arguments,
+            "errors": [] if rpc_error is None else [rpc_error],
+            "pass": exists,
         }
 
     return report

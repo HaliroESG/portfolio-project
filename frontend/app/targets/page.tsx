@@ -173,8 +173,20 @@ function parseTargetBucket(raw: RawRow): TargetBucketRow | null {
   const bucketKey = readString(raw.bucket_key)
   const bucketLabel = readString(raw.bucket_label)
   const targetWeight = readNumber(raw.target_weight_pct as number | string | null)
+  const lowerBand = readNumber(raw.lower_band_pct as number | string | null)
+  const upperBand = readNumber(raw.upper_band_pct as number | string | null)
+  const lowerBandProvided = raw.lower_band_pct !== null && raw.lower_band_pct !== undefined
+  const upperBandProvided = raw.upper_band_pct !== null && raw.upper_band_pct !== undefined
   const portfolioScope = parseScope(raw.portfolio_scope)
-  if (id === null || !modelId || !portfolioScope || !bucketKey || !bucketLabel || targetWeight === null) return null
+  if (id === null
+    || !modelId
+    || !portfolioScope
+    || !bucketKey
+    || !bucketLabel
+    || targetWeight === null
+    || (lowerBandProvided && lowerBand === null)
+    || (upperBandProvided && upperBand === null)
+  ) return null
   return {
     id,
     model_id: modelId,
@@ -183,8 +195,8 @@ function parseTargetBucket(raw: RawRow): TargetBucketRow | null {
     bucket_label: bucketLabel,
     parent_bucket_key: readString(raw.parent_bucket_key),
     target_weight_pct: targetWeight,
-    lower_band_pct: readNumber(raw.lower_band_pct as number | string | null),
-    upper_band_pct: readNumber(raw.upper_band_pct as number | string | null),
+    lower_band_pct: lowerBand,
+    upper_band_pct: upperBand,
     source_sheet: readString(raw.source_sheet),
     source_row: readNumber(raw.source_row as number | string | null),
     updated_at: readString(raw.updated_at) ?? '',
@@ -383,7 +395,8 @@ export default function TargetsPage() {
   }, [positionViews])
 
   const targetStats = useMemo(() => {
-    const configured = positionViews.filter((row) => row.targetPct !== null)
+    const targetable = positionViews.filter((row) => row.allocation_role !== 'PROTECTED_RESERVE')
+    const configured = targetable.filter((row) => row.targetPct !== null)
     const totalTarget = configured.reduce((sum, row) => sum + (row.targetPct ?? 0), 0)
     const portfolioValueEur = assessment.total_value_eur
     const actionCount = positionViews.filter((row) => row.priority === 'ACTION').length
@@ -396,7 +409,7 @@ export default function TargetsPage() {
     return {
       positions: positionViews.length,
       configured: configured.length,
-      missing: positionViews.length - configured.length,
+      missing: targetable.length - configured.length,
       totalTarget,
       portfolioValueEur,
       actionCount,
@@ -405,7 +418,7 @@ export default function TargetsPage() {
       staleActual,
       latestTargetUpdate,
       latestTargetFile,
-      ready: assessment.target_model_ready && positionViews.length > 0 && positionViews.length === configured.length,
+      ready: assessment.target_model_ready && targetable.length > 0 && targetable.length === configured.length,
     }
   }, [assessment.target_model_ready, assessment.total_value_eur, positionViews, selectedTargetModel])
 
@@ -728,7 +741,9 @@ export default function TargetsPage() {
                 <div className="flex flex-wrap items-center justify-between gap-2 border-b border-slate-200 px-4 py-3 dark:border-white/10">
                   <h2 className="text-sm font-black uppercase tracking-tight text-slate-950 dark:text-white">{group}</h2>
                   <span className="text-[10px] font-mono text-slate-500 dark:text-gray-400">
-                    {rows.length} positions - {rows.filter((row) => row.targetPct === null).length} missing
+                    {rows.length} positions - {rows.filter((row) => (
+                      row.allocation_role !== 'PROTECTED_RESERVE' && row.targetPct === null
+                    )).length} missing
                   </span>
                 </div>
 

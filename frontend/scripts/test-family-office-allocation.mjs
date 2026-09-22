@@ -19,6 +19,7 @@ const accounts = [
   { id: 'a1', external_account_id: 'lucya-1', name: 'Lucya Cardif', envelope: 'AV' },
   { id: 'a2', external_account_id: 'SECOND_ACCOUNT', name: 'Second Account', envelope: 'PEA' },
   { id: 'a3', external_account_id: 'CASH_CORE', name: 'Cash Core', envelope: 'CASH' },
+  { id: 'a4', external_account_id: 'CASH_OFFSET', name: 'Cash Offset', envelope: 'CASH' },
 ]
 
 const position = (overrides = {}) => ({
@@ -111,8 +112,8 @@ const bucket = (overrides = {}) => ({
   bucket_label: 'Actions US',
   parent_bucket_key: null,
   target_weight_pct: 98,
-  lower_band_pct: 35,
-  upper_band_pct: 50,
+  lower_band_pct: 90,
+  upper_band_pct: 100,
   source_sheet: 'Strategic_Target_Perso',
   source_row: 2,
   updated_at: '2026-09-18T12:00:00Z',
@@ -180,6 +181,14 @@ const missingCryptoContract = assessFamilyOfficeAllocation(rows, model(), lines,
 })
 assert.equal(missingCryptoContract.target_model_ready, false)
 assert.ok(missingCryptoContract.rows.every((row) => row.action === 'UNAVAILABLE'))
+
+const invalidGenericBucketBand = assessFamilyOfficeAllocation(rows, model(), lines, {
+  targetBuckets: persoBuckets.map((row) => row.bucket_key === 'actions_us'
+    ? { ...row, lower_band_pct: 35, upper_band_pct: 50 }
+    : row),
+})
+assert.equal(invalidGenericBucketBand.target_model_ready, false)
+assert.ok(invalidGenericBucketBand.rows.every((row) => row.reason_codes.includes('TARGET_MODEL_INVALID')))
 
 const proSleeveWeights = [
   ['CORE', 'actions_us', 28],
@@ -252,6 +261,8 @@ assert.deepEqual(readyPro.rows.map((row) => row.action), ['HOLD', 'HOLD', 'HOLD'
 const readyProReserve = readyPro.rows.find((row) => row.instrument_type === 'CASH')
 assert.equal(readyProReserve?.target_line_id, null)
 assert.deepEqual(readyProReserve?.reason_codes, ['PRO_RESERVE_EXCLUDED'])
+assert.equal(readyProReserve?.allocation_role, 'PROTECTED_RESERVE')
+assert.equal(toPortfolioDecisionRows(readyPro).find((row) => row.asset_class === 'CASH')?.data_state, 'READY')
 
 const excessReserveProRows = buildFamilyOfficeAllocationRows({
   ...source,
@@ -270,6 +281,26 @@ assert.equal(protectedReserveRow?.current_value_eur, 120000)
 assert.equal(excessReserveRow?.current_value_eur, 30000)
 assert.equal(excessReserveRow?.target_weight_pct, 0)
 assert.equal(excessReserveRow?.action, 'EXIT')
+
+const netReserveProRows = buildFamilyOfficeAllocationRows({
+  ...source,
+  cash: [
+    cash({ id: 'cash-positive', account_id: 'a3', balance_local: 130000, balance_eur: 130000 }),
+    cash({ id: 'cash-negative', account_id: 'a4', balance_local: -10000, balance_eur: -10000 }),
+  ],
+})
+const netReservePro = assessFamilyOfficeAllocation(netReserveProRows, proModel, proLines, {
+  expectedScope: 'PRO',
+  targetBuckets: proBuckets,
+  targetSleeves: proSleeves,
+})
+assert.equal(netReservePro.target_model_ready, true)
+assert.equal(netReservePro.total_value_eur, 300)
+assert.equal(netReservePro.rows.filter((row) => row.allocation_role === 'RESERVE_EXCESS').length, 0)
+assert.deepEqual(
+  netReservePro.rows.filter((row) => row.allocation_role === 'PROTECTED_RESERVE').map((row) => row.current_value_eur).sort((a, b) => a - b),
+  [-10000, 130000],
+)
 
 const fondsEuroProRows = buildFamilyOfficeAllocationRows({
   ...source,
@@ -295,7 +326,8 @@ const fondsEuroPro = assessFamilyOfficeAllocation(fondsEuroProRows, proModel, pr
   targetSleeves: proSleeves,
 })
 assert.equal(fondsEuroPro.target_model_ready, false)
-assert.ok(fondsEuroPro.rows.find((row) => row.ticker === 'FGDIQ')?.reason_codes.includes('TARGET_LINE_MISSING'))
+assert.equal(fondsEuroPro.rows.find((row) => row.ticker === 'FGDIQ')?.allocation_role, 'NON_TARGET')
+assert.ok(!fondsEuroPro.rows.find((row) => row.ticker === 'FGDIQ')?.reason_codes.includes('TARGET_LINE_MISSING'))
 assert.ok(!fondsEuroPro.rows.find((row) => row.ticker === 'FGDIQ')?.reason_codes.includes('PRO_RESERVE_EXCLUDED'))
 
 const incompletePro = assessFamilyOfficeAllocation(proRows, proModel, proLines, {
@@ -353,8 +385,11 @@ const genericBondPro = assessFamilyOfficeAllocation(genericBondProRows, proModel
   targetBuckets: proBuckets,
   targetSleeves: proSleeves,
 })
-assert.equal(genericBondPro.target_model_ready, false)
-assert.ok(genericBondPro.rows.find((row) => row.ticker === 'BOND')?.reason_codes.includes('TARGET_LINE_MISSING'))
+assert.equal(genericBondPro.target_model_ready, true)
+assert.equal(genericBondPro.rows.find((row) => row.ticker === 'BOND')?.allocation_role, 'NON_TARGET')
+assert.equal(genericBondPro.rows.find((row) => row.ticker === 'BOND')?.target_weight_pct, 0)
+assert.equal(genericBondPro.rows.find((row) => row.ticker === 'BOND')?.action, 'EXIT')
+assert.ok(genericBondPro.rows.find((row) => row.ticker === 'BOND')?.reason_codes.includes('PRO_NON_TARGET_CASH_BONDS'))
 
 const mismatchedProBuckets = assessFamilyOfficeAllocation(proRows, proModel, proLines, {
   expectedScope: 'PRO',

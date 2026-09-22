@@ -378,16 +378,11 @@ const checks = await Promise.all([
     () => supabase.from('support_source_rows').select('source_id,external_id,isin,name,support_type,source_quality,identifier_state,envelope,updated_at', { count: 'exact' }).limit(5),
     'Apply backend/sql/20260526_supports_targets_advice.sql and run import_support_universe.py for Linxea/Fortuneo partial source rows.'
   ),
-  optionalReadModelCheck(
-    'target_models',
-    () => supabase.from('target_models').select('id,portfolio_scope,model_name,source_file,target_total_pct,status,updated_at', { count: 'exact' }).limit(5),
-    'Apply backend/sql/20260526_supports_targets_advice.sql and run import_target_model.py.'
-  ),
-  optionalReadModelCheck(
-    'allocation_advice_items_latest',
-    () => supabase.from('allocation_advice_items_latest').select('portfolio_scope,model_id,bucket_key,action,preferred_execution,confidence,updated_at', { count: 'exact' }).limit(5),
-    'Apply backend/sql/20260526_supports_targets_advice.sql and import active target models.'
-  ),
+  q('target_models', () => supabase.from('target_models').select('id,portfolio_scope,model_name,source_file,source_kind,as_of_date,is_active,target_total_pct,allocation_contract_version,reserve_floor_eur,reserve_excluded_from_risky_allocation,status,report_json,imported_at,updated_at', { count: 'exact' }).limit(5)),
+  q('target_buckets', () => supabase.from('target_buckets').select('id,model_id,portfolio_scope,bucket_key,bucket_label,parent_bucket_key,target_weight_pct,lower_band_pct,upper_band_pct,source_sheet,source_row,updated_at', { count: 'exact' }).limit(5)),
+  q('target_sleeve_allocations', () => supabase.from('target_sleeve_allocations').select('id,model_id,portfolio_scope,sleeve_key,component_label,bucket_key,bucket_label,target_weight_pct,instrument_policy,activation_status,source_sheet,source_row,updated_at', { count: 'exact' }).limit(5)),
+  q('target_envelope_lines', () => supabase.from('target_envelope_lines').select('id,model_id,portfolio_scope,envelope,ticker,isin,instrument,asset_class,region,currency,target_weight_pct,target_value_eur,notes,source_sheet,source_row,updated_at', { count: 'exact' }).limit(5)),
+  q('allocation_advice_items_latest', () => supabase.from('allocation_advice_items_latest').select('portfolio_scope,portfolio_id,model_id,model_name,source_file,bucket_key,bucket_label,current_value_eur,current_weight_pct,target_weight_pct,drift_pct,rebalance_amount_eur,action,confidence,reason_codes,preferred_execution,data_state,model_contract_state,model_contract_reason,bucket_position_count,bucket_unavailable_positions,position_count,unavailable_positions,unmatched_positions,unmatched_scope_positions,total_value_eur,allocatable_total_eur,reserve_floor_eur,reserve_current_eur,reserve_eligible_positions,reserve_state,updated_at', { count: 'exact' }).limit(5)),
   q('fo_owner_profiles', () => supabase.from('fo_owner_profiles').select('user_id,email,base_currency,created_at', { count: 'exact' }).limit(2)),
   q('fo_portfolios', () => supabase.from('fo_portfolios').select('id,owner_user_id,name,portfolio_type,base_currency,status,updated_at', { count: 'exact' }).limit(5)),
   q('fo_accounts', () => supabase.from('fo_accounts').select('id,owner_user_id,portfolio_id,institution_id,external_account_id,name,envelope,base_currency,status,opened_on,closed_on,created_at,updated_at', { count: 'exact' }).limit(5)),

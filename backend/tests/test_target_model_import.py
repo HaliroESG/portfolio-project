@@ -130,7 +130,7 @@ def _write_personal(path):
     ws.append([])
     ws.append([])
     ws.append(["Envelope", "ISIN/Ticker", "Instrument", "Target % (within envelope)", "Target Value (EUR)", "Notes"])
-    ws.append(["Cardif_Lucya_PostArb", "LU0496786574", "Amundi Core S&P 500 Swap ETF", 0.56, 5652.17, "core"])
+    ws.append(["Cardif_Lucya_PostArb", "LU0496786574", "Amundi Core S&P 500 Swap ETF", 1.0, 5652.17, "core"])
     ws.append(["Fortuneo_CTO", None, None, None, None, "Optional"])
 
     ws = workbook.create_sheet("Holdings_All")
@@ -239,6 +239,55 @@ def test_personal_target_model_dry_run_rejects_each_invalid_bucket(tmp_path):
     reasons = [row["reason"] for row in report["rejected"]]
     assert any("actions_us" in reason and "within 0%-100%" in reason for reason in reasons)
     assert any("actions_europe" in reason and "within 0%-100%" in reason for reason in reasons)
+
+
+def test_personal_target_model_dry_run_rejects_incomplete_envelope_line(tmp_path):
+    source = tmp_path / "personal-incomplete-envelope.xlsx"
+    _write_personal(source)
+    persisted = load_workbook(source)
+    persisted["Envelope_Targets"]["B6"] = "ETF2"
+    persisted["Envelope_Targets"]["C6"] = "ETF Two"
+    persisted.save(source)
+
+    report = run_import(source, kind="perso", dry_run=True)
+
+    assert report["ok"] is False
+    assert any(
+        "row 6" in row["reason"] and "finite target weight" in row["reason"]
+        for row in report["rejected"]
+    )
+
+
+def test_personal_target_model_dry_run_rejects_invalid_envelope_total(tmp_path):
+    source = tmp_path / "personal-invalid-envelope-total.xlsx"
+    _write_personal(source)
+    persisted = load_workbook(source)
+    persisted["Envelope_Targets"]["D5"] = 0.9
+    persisted.save(source)
+
+    report = run_import(source, kind="perso", dry_run=True)
+
+    assert report["ok"] is False
+    assert any(
+        "Cardif_Lucya_PostArb total must equal 100%" in row["reason"]
+        for row in report["rejected"]
+    )
+
+
+def test_personal_target_model_dry_run_rejects_out_of_range_envelope_weight(tmp_path):
+    source = tmp_path / "personal-invalid-envelope-weight.xlsx"
+    _write_personal(source)
+    persisted = load_workbook(source)
+    persisted["Envelope_Targets"]["D5"] = 150
+    persisted.save(source)
+
+    report = run_import(source, kind="perso", dry_run=True)
+
+    assert report["ok"] is False
+    assert any(
+        "Cardif_Lucya_PostArb row 5 weight must be finite and within 0%-100%" in row["reason"]
+        for row in report["rejected"]
+    )
 
 
 def test_pro_target_model_uses_calculation_sheet_authority(tmp_path):
