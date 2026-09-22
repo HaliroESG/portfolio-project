@@ -168,23 +168,75 @@ def _temporary_postgres():
               source_row integer,
               updated_at timestamptz not null default now()
             );
-            create table public.portfolios (id text primary key, name text);
-            create table public.portfolio_positions (
+            create table public.fo_portfolios (
+              id text primary key,
+              portfolio_type text not null
+            );
+            create table public.fo_instruments (
+              id text primary key,
+              instrument_key text not null,
+              isin text,
+              ticker text,
+              name text not null,
+              instrument_type text not null,
+              currency text not null
+            );
+            create table public.fo_position_snapshots (
               id bigserial primary key,
               portfolio_id text not null,
-              ticker text,
-              name text,
-              instrument_type text,
-              currency text,
-              quantity_current numeric,
-              pru numeric,
-              actual_as_of_date date
+              account_id text not null,
+              instrument_id text not null,
+              snapshot_date date not null,
+              quantity numeric,
+              average_cost numeric,
+              cost_basis_eur numeric,
+              price_local numeric,
+              fx_rate_to_eur numeric,
+              market_value_eur numeric,
+              unrealized_pnl_eur numeric,
+              data_state text not null,
+              price_as_of date,
+              fx_as_of date,
+              reconciliation_state text not null default 'MATCH',
+              calculated_at timestamptz not null default now()
             );
-            create table public.market_watch (ticker text, last_price numeric, currency text);
-            create table public.currencies (id text, rate_to_eur numeric);
+            create table public.fo_cash_balances_daily (
+              id bigserial primary key,
+              portfolio_id text not null,
+              account_id text not null,
+              balance_date date not null,
+              currency text not null,
+              balance_local numeric not null,
+              fx_rate_to_eur numeric,
+              balance_eur numeric,
+              data_state text not null,
+              calculated_at timestamptz not null default now()
+            );
+            create view public.fo_positions_latest as
+            select
+              fo_position_snapshots.id, null::text as owner_user_id, portfolio_id, account_id, instrument_id,
+              instrument_key, isin, ticker, name, instrument_type, currency,
+              snapshot_date, quantity, average_cost, cost_basis_eur, price_local,
+              fx_rate_to_eur, market_value_eur, unrealized_pnl_eur, data_state,
+              price_as_of, fx_as_of, reconciliation_state, calculated_at
+            from public.fo_position_snapshots
+            join public.fo_instruments on fo_instruments.id = fo_position_snapshots.instrument_id;
+            create view public.fo_cash_balances_latest as
+            select id, null::text as owner_user_id, portfolio_id, account_id, balance_date,
+              currency, balance_local, fx_rate_to_eur, balance_eur, data_state, calculated_at
+            from public.fo_cash_balances_daily;
             """
         )
         sql("", file=MIGRATION)
+        sql(
+            """
+            grant usage on schema public to authenticated, service_role;
+            grant select on public.target_models, public.target_buckets,
+              public.fo_portfolios, public.fo_instruments, public.fo_position_snapshots,
+              public.fo_cash_balances_daily, public.fo_positions_latest,
+              public.fo_cash_balances_latest to authenticated, service_role;
+            """
+        )
         yield sql
     finally:
         subprocess.run(
@@ -210,11 +262,79 @@ def _reset(sql):
           public.target_envelope_lines,
           public.target_model_audit_holdings,
           public.target_models,
-          public.portfolio_positions,
-          public.portfolios,
-          public.market_watch,
-          public.currencies
+          public.fo_position_snapshots,
+          public.fo_cash_balances_daily,
+          public.fo_instruments,
+          public.fo_portfolios
         restart identity cascade;
+        """
+    )
+
+
+def _literal(value: str) -> str:
+    return "'" + value.replace("'", "''") + "'"
+
+
+def _insert_position(
+    sql,
+    *,
+    portfolio_id: str,
+    portfolio_type: str,
+    ticker: str,
+    name: str,
+    instrument_type: str,
+    market_value_eur: str,
+    currency: str = "EUR",
+    data_state: str = "READY",
+    as_of: str = "current_date",
+):
+    instrument_id = f"{portfolio_id}:{ticker}"
+    sql(
+        f"""
+        insert into public.fo_portfolios (id, portfolio_type)
+        values ({_literal(portfolio_id)}, {_literal(portfolio_type)})
+        on conflict (id) do nothing;
+        insert into public.fo_instruments
+          (id, instrument_key, ticker, name, instrument_type, currency)
+        values (
+          {_literal(instrument_id)}, {_literal(instrument_id)}, {_literal(ticker)},
+          {_literal(name)}, {_literal(instrument_type)}, {_literal(currency)}
+        )
+        on conflict (id) do nothing;
+        insert into public.fo_position_snapshots
+          (portfolio_id, account_id, instrument_id, snapshot_date, quantity,
+           average_cost, price_local, fx_rate_to_eur, market_value_eur, data_state,
+           price_as_of, fx_as_of, reconciliation_state)
+        values (
+          {_literal(portfolio_id)}, {_literal(portfolio_id + ':account')}, {_literal(instrument_id)},
+          {as_of}, 1, 999, null, 1, {market_value_eur}, {_literal(data_state)},
+          {as_of}, {as_of}, 'MATCH'
+        );
+        """
+    )
+
+
+def _insert_cash(
+    sql,
+    *,
+    portfolio_id: str,
+    portfolio_type: str,
+    balance_eur: str,
+    data_state: str = "READY",
+    as_of: str = "current_date",
+):
+    sql(
+        f"""
+        insert into public.fo_portfolios (id, portfolio_type)
+        values ({_literal(portfolio_id)}, {_literal(portfolio_type)})
+        on conflict (id) do nothing;
+        insert into public.fo_cash_balances_daily
+          (portfolio_id, account_id, balance_date, currency, balance_local,
+           fx_rate_to_eur, balance_eur, data_state)
+        values (
+          {_literal(portfolio_id)}, {_literal(portfolio_id + ':cash')}, {as_of},
+          'EUR', {balance_eur}, 1, {balance_eur}, {_literal(data_state)}
+        );
         """
     )
 
@@ -280,13 +400,15 @@ def test_pre_import_models_cannot_emit_ready_advice(pg_sql):
         values
           ('perso-old', 'PERSO', 'actions_us', 'Actions US', 100),
           ('pro-old', 'PRO', 'actions_us', 'Actions US', 100);
-        insert into public.portfolios values ('p1', 'PERSO Main'), ('p2', 'PRO Main');
-        insert into public.portfolio_positions
-          (portfolio_id, ticker, name, instrument_type, currency, quantity_current, pru, actual_as_of_date)
-        values
-          ('p1', 'AAPL', 'Apple', 'Equity', 'EUR', 10, 100, current_date),
-          ('p2', 'AAPL', 'Apple', 'Equity', 'EUR', 10, 100, current_date);
         """
+    )
+    _insert_position(
+        pg_sql, portfolio_id="p1", portfolio_type="PERSONAL", ticker="AAPL",
+        name="Apple", instrument_type="EQUITY", market_value_eur="1000",
+    )
+    _insert_position(
+        pg_sql, portfolio_id="p2", portfolio_type="PROFESSIONAL", ticker="AAPL",
+        name="Apple", instrument_type="EQUITY", market_value_eur="1000",
     )
 
     perso_rows = pg_sql(
@@ -335,13 +457,15 @@ def test_current_contract_version_does_not_bypass_shape_qualification(pg_sql):
         values
           ('perso-incomplete', 'PERSO', 'actions_us', 'Actions US', 100),
           ('pro-incomplete', 'PRO', 'actions_us', 'Actions US', 100);
-        insert into public.portfolios values ('p1', 'PERSO Main'), ('p2', 'PRO Main');
-        insert into public.portfolio_positions
-          (portfolio_id, ticker, name, instrument_type, currency, quantity_current, pru, actual_as_of_date)
-        values
-          ('p1', 'AAPL', 'Apple', 'Equity', 'EUR', 10, 100, current_date),
-          ('p2', 'AAPL', 'Apple', 'Equity', 'EUR', 10, 100, current_date);
         """
+    )
+    _insert_position(
+        pg_sql, portfolio_id="p1", portfolio_type="PERSONAL", ticker="AAPL",
+        name="Apple", instrument_type="EQUITY", market_value_eur="1000",
+    )
+    _insert_position(
+        pg_sql, portfolio_id="p2", portfolio_type="PROFESSIONAL", ticker="AAPL",
+        name="Apple", instrument_type="EQUITY", market_value_eur="1000",
     )
 
     rows = pg_sql(
@@ -362,14 +486,10 @@ def test_current_contract_version_does_not_bypass_shape_qualification(pg_sql):
 def test_model_status_must_be_ready_even_when_contract_rows_are_complete(pg_sql):
     _reset(pg_sql)
     _insert_valid_perso_contract(pg_sql)
-    pg_sql(
-        """
-        update public.target_models set status = 'INVALID' where id = 'perso';
-        insert into public.portfolios values ('p1', 'PERSO Main');
-        insert into public.portfolio_positions
-          (portfolio_id, ticker, name, instrument_type, currency, quantity_current, pru, actual_as_of_date)
-        values ('p1', 'BTC', 'Bitcoin', 'Crypto asset', 'EUR', 1, 50000, current_date);
-        """
+    pg_sql("update public.target_models set status = 'INVALID' where id = 'perso';")
+    _insert_position(
+        pg_sql, portfolio_id="p1", portfolio_type="PERSONAL", ticker="BTC",
+        name="Bitcoin", instrument_type="CRYPTO", market_value_eur="50000",
     )
 
     rows = pg_sql(
@@ -386,13 +506,9 @@ def test_model_status_must_be_ready_even_when_contract_rows_are_complete(pg_sql)
 def test_unmatched_portfolio_scope_is_visible_and_never_counted_as_perso(pg_sql):
     _reset(pg_sql)
     _insert_valid_perso_contract(pg_sql)
-    pg_sql(
-        """
-        insert into public.portfolios values ('p1', 'Household Main');
-        insert into public.portfolio_positions
-          (portfolio_id, ticker, name, instrument_type, currency, quantity_current, pru, actual_as_of_date)
-        values ('p1', 'BTC', 'Bitcoin', 'Crypto asset', 'EUR', 1, 50000, current_date);
-        """
+    _insert_position(
+        pg_sql, portfolio_id="p1", portfolio_type="OTHER", ticker="BTC",
+        name="Bitcoin", instrument_type="CRYPTO", market_value_eur="50000",
     )
 
     target = pg_sql(
@@ -418,15 +534,13 @@ def test_unmatched_portfolio_scope_is_visible_and_never_counted_as_perso(pg_sql)
 def test_generic_bond_is_not_pro_reserve_but_eu_bill_and_xeon_are(pg_sql):
     _reset(pg_sql)
     _insert_valid_pro_contract(pg_sql)
-    pg_sql(
-        """
-        insert into public.portfolios values ('p1', 'PRO Main');
-        insert into public.portfolio_positions
-          (portfolio_id, ticker, name, instrument_type, currency, quantity_current, pru, actual_as_of_date)
-        values
-          ('p1', 'BOND', 'Generic Corporate Bond', 'Bond', 'EUR', 150000, 1, current_date),
-          ('p1', 'AAPL', 'Apple', 'Equity', 'EUR', 10, 100, current_date);
-        """
+    _insert_position(
+        pg_sql, portfolio_id="p1", portfolio_type="PROFESSIONAL", ticker="BOND",
+        name="Generic Corporate Bond", instrument_type="BOND", market_value_eur="150000",
+    )
+    _insert_position(
+        pg_sql, portfolio_id="p1", portfolio_type="PROFESSIONAL", ticker="AAPL",
+        name="Apple", instrument_type="EQUITY", market_value_eur="1000",
     )
 
     before = pg_sql(
@@ -439,12 +553,9 @@ def test_generic_bond_is_not_pro_reserve_but_eu_bill_and_xeon_are(pg_sql):
     )
     assert before == ["|0|UNKNOWN|UNAVAILABLE||current_value_unknown,pro_reserve_unknown"]
 
-    pg_sql(
-        """
-        insert into public.portfolio_positions
-          (portfolio_id, ticker, name, instrument_type, currency, quantity_current, pru, actual_as_of_date)
-        values ('p1', 'EUBILL', 'EU Treasury Bill', 'T-Bill', 'EUR', 120000, 1, current_date);
-        """
+    _insert_position(
+        pg_sql, portfolio_id="p1", portfolio_type="PROFESSIONAL", ticker="EUBILL",
+        name="EU Treasury Bill", instrument_type="BOND", market_value_eur="120000",
     )
     eu_bill = pg_sql(
         """
@@ -458,15 +569,13 @@ def test_generic_bond_is_not_pro_reserve_but_eu_bill_and_xeon_are(pg_sql):
 
     pg_sql(
         """
-        delete from public.portfolio_positions where ticker = 'EUBILL';
+        delete from public.fo_position_snapshots where instrument_id = 'p1:EUBILL';
+        delete from public.fo_instruments where id = 'p1:EUBILL';
         """
     )
-    pg_sql(
-        """
-        insert into public.portfolio_positions
-          (portfolio_id, ticker, name, instrument_type, currency, quantity_current, pru, actual_as_of_date)
-        values ('p1', 'XEON', 'XEON overnight money market', 'ETF', 'EUR', 120000, 1, current_date);
-        """
+    _insert_position(
+        pg_sql, portfolio_id="p1", portfolio_type="PROFESSIONAL", ticker="XEON",
+        name="XEON overnight money market", instrument_type="ETF", market_value_eur="120000",
     )
     after = pg_sql(
         """
@@ -491,13 +600,15 @@ def test_pro_bucket_weights_must_equal_aggregated_sleeves(pg_sql):
           else target_weight_pct
         end
         where model_id = 'pro';
-        insert into public.portfolios values ('p1', 'PRO Main');
-        insert into public.portfolio_positions
-          (portfolio_id, ticker, name, instrument_type, currency, quantity_current, pru, actual_as_of_date)
-        values
-          ('p1', 'XEON', 'XEON overnight money market', 'ETF', 'EUR', 120000, 1, current_date),
-          ('p1', 'AAPL', 'Apple', 'Equity', 'EUR', 10, 100, current_date);
         """
+    )
+    _insert_position(
+        pg_sql, portfolio_id="p1", portfolio_type="PROFESSIONAL", ticker="XEON",
+        name="XEON overnight money market", instrument_type="ETF", market_value_eur="120000",
+    )
+    _insert_position(
+        pg_sql, portfolio_id="p1", portfolio_type="PROFESSIONAL", ticker="AAPL",
+        name="Apple", instrument_type="EQUITY", market_value_eur="1000",
     )
 
     rows = pg_sql(
@@ -561,3 +672,126 @@ def test_atomic_rpc_rolls_back_parent_and_children_on_mid_apply_failure(pg_sql):
 
     assert model == ["perso.xlsx"]
     assert buckets == ["actions_us|98", "crypto|2"]
+
+
+def test_private_allocation_contract_objects_are_not_readable_by_anon(pg_sql):
+    _reset(pg_sql)
+    _insert_valid_perso_contract(pg_sql)
+
+    with pytest.raises(subprocess.CalledProcessError):
+        pg_sql("set role anon; select count(*) from public.target_sleeve_allocations;")
+    with pytest.raises(subprocess.CalledProcessError):
+        pg_sql("set role anon; select count(*) from public.allocation_advice_items_latest;")
+
+    assert pg_sql(
+        "set role authenticated; select count(*) from public.target_sleeve_allocations;"
+    ) == ["SET", "0"]
+    assert pg_sql(
+        "set role service_role; select count(*) from public.allocation_advice_items_latest;"
+    ) == ["SET", "2"]
+
+
+def test_canonical_market_value_is_required_and_average_cost_is_never_a_fallback(pg_sql):
+    _reset(pg_sql)
+    _insert_valid_perso_contract(pg_sql)
+    _insert_position(
+        pg_sql, portfolio_id="p1", portfolio_type="PERSONAL", ticker="AAPL",
+        name="Apple", instrument_type="EQUITY", market_value_eur="null",
+    )
+
+    rows = pg_sql(
+        """
+        select current_value_eur, data_state, action,
+          array_to_string(reason_codes, ',')
+        from public.allocation_advice_items_latest
+        where portfolio_scope = 'PERSO' and bucket_key = 'actions_us';
+        """
+    )
+
+    assert rows == ["|UNKNOWN|UNAVAILABLE|current_value_unknown,position_value_unavailable,flows_first"]
+
+
+def test_pro_non_target_bond_is_explicit_and_eu_bill_is_not_unmatched(pg_sql):
+    _reset(pg_sql)
+    _insert_valid_pro_contract(pg_sql)
+    _insert_position(
+        pg_sql, portfolio_id="p1", portfolio_type="PROFESSIONAL", ticker="BOND",
+        name="Generic Corporate Bond", instrument_type="BOND", market_value_eur="150000",
+    )
+    _insert_position(
+        pg_sql, portfolio_id="p1", portfolio_type="PROFESSIONAL", ticker="EUBILL",
+        name="EU Treasury Bill", instrument_type="BOND", market_value_eur="120000",
+    )
+    _insert_position(
+        pg_sql, portfolio_id="p1", portfolio_type="PROFESSIONAL", ticker="AAPL",
+        name="Apple", instrument_type="EQUITY", market_value_eur="1000",
+    )
+
+    rows = pg_sql(
+        """
+        select bucket_key, current_value_eur, target_weight_pct, unmatched_positions,
+          action, data_state
+        from public.allocation_advice_items_latest
+        where portfolio_scope = 'PRO' and bucket_key = 'cash_bonds';
+        """
+    )
+
+    assert rows == ["cash_bonds|150000|0|0|REDUCE|READY"]
+
+
+def test_rpc_rejects_out_of_range_bucket_before_replacing_existing_contract(pg_sql):
+    _reset(pg_sql)
+    _insert_valid_perso_contract(pg_sql)
+
+    with pytest.raises(subprocess.CalledProcessError):
+        pg_sql(
+            """
+            select public.apply_target_model_v1(
+              '{
+                "id":"perso","portfolio_scope":"PERSO","model_name":"Invalid",
+                "source_file":"invalid.xlsx","allocation_contract_version":"allocation_contracts_v1",
+                "source_kind":"perso","is_active":true,"target_total_pct":100,
+                "reserve_floor_eur":null,"reserve_excluded_from_risky_allocation":false,
+                "status":"READY","report_json":{}
+              }'::jsonb,
+              '[
+                {"model_id":"perso","portfolio_scope":"PERSO","bucket_key":"actions_us","bucket_label":"US","target_weight_pct":150},
+                {"model_id":"perso","portfolio_scope":"PERSO","bucket_key":"crypto","bucket_label":"Crypto","target_weight_pct":-50,"lower_band_pct":0,"upper_band_pct":4}
+              ]'::jsonb,
+              '[]'::jsonb, '[]'::jsonb, '[]'::jsonb
+            );
+            """
+        )
+
+    assert pg_sql("select source_file from public.target_models where id = 'perso';") == ["perso.xlsx"]
+    assert pg_sql(
+        "select bucket_key, target_weight_pct from public.target_buckets where model_id = 'perso' order by bucket_key;"
+    ) == ["actions_us|98", "crypto|2"]
+
+
+def test_advice_actions_use_configured_bucket_bands(pg_sql):
+    _reset(pg_sql)
+    _insert_valid_perso_contract(pg_sql)
+    _insert_position(
+        pg_sql, portfolio_id="p1", portfolio_type="PERSONAL", ticker="AAPL",
+        name="Apple", instrument_type="EQUITY", market_value_eur="95500",
+    )
+    _insert_position(
+        pg_sql, portfolio_id="p1", portfolio_type="PERSONAL", ticker="BTC",
+        name="Bitcoin", instrument_type="CRYPTO", market_value_eur="4500",
+    )
+
+    rows = pg_sql(
+        """
+        select bucket_key, round(current_weight_pct, 2), action,
+          preferred_execution, array_to_string(reason_codes, ',')
+        from public.allocation_advice_items_latest
+        where portfolio_scope = 'PERSO' and bucket_key in ('actions_us', 'crypto')
+        order by bucket_key;
+        """
+    )
+
+    assert rows == [
+        "actions_us|95.50|HOLD|MONITOR|in_band,flows_first",
+        "crypto|4.50|REDUCE|INTERNAL_ARBITRAGE|flows_first",
+    ]

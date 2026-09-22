@@ -461,6 +461,18 @@ function envelopeTokens(value: string): string[] {
     .filter((token) => token.length > 0 && !TARGET_ENVELOPE_QUALIFIERS.has(token))
 }
 
+function isProReserveEligibleRow(row: FamilyOfficeAllocationRow): boolean {
+  if (normalize(row.currency) !== 'EUR') return false
+  if (normalize(row.instrument_type) === 'CASH') return true
+
+  const descriptor = `${row.ticker} ${row.name} ${row.instrument_type}`
+    .normalize('NFKD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .toUpperCase()
+  if (/\b(XEON|OVERNIGHT|MONEY MARKET|MONETAIRE|FONDS EURO)\b/.test(descriptor)) return true
+  return /\b(EU|EURO|EUROPEAN)[ -]?(TREASURY[ -]?)?BILLS?\b/.test(descriptor)
+}
+
 function accountMatchesTargetEnvelope(account: FamilyOfficeAllocationSourceAccount, envelope: string): boolean {
   const exactCandidates = [account.account_id, account.external_account_id, account.account_name, account.envelope]
   if (exactCandidates.some((candidate) => candidate && normalize(candidate) === normalize(envelope))) return true
@@ -500,13 +512,47 @@ export function assessFamilyOfficeAllocation(
   const targetSleeves = options.targetSleeves ?? []
   const referenceDate = options.referenceDate ?? new Date().toISOString().slice(0, 10)
   const targetTotal = targetModel?.target_total_pct ?? null
+  const reserveFloor = targetModel?.reserve_floor_eur ?? null
   const targetModelReady = targetModelContractReady(targetModel, targetBuckets, targetSleeves, options.expectedScope)
+  const reserveRowKeys = new Set(
+    options.expectedScope === 'PRO'
+      ? allocationRows.filter(isProReserveEligibleRow).map((row) => row.row_key)
+      : [],
+  )
+  const riskyRows = allocationRows.filter((row) => !reserveRowKeys.has(row.row_key))
+  const reserveRows = allocationRows.filter((row) => reserveRowKeys.has(row.row_key))
+  const reserveValueComplete = reserveRows.length > 0 && reserveRows.every((row) => row.current_value_eur !== null)
+  const reserveCurrentValue = reserveValueComplete
+    ? reserveRows.reduce((sum, row) => sum + (row.current_value_eur ?? 0), 0)
+    : null
+  const reserveRowsReady = reserveRows.every((row) => (
+    row.data_state === 'READY'
+    && valuationStateAt(row, referenceDate) === 'READY'
+    && (row.instrument_type === 'CASH' || row.reconciliation_state === 'MATCH')
+  ))
+  const proReserveReady = options.expectedScope !== 'PRO' || Boolean(
+    targetModel?.reserve_excluded_from_risky_allocation
+    && reserveFloor !== null
+    && reserveCurrentValue !== null
+    && reserveCurrentValue >= reserveFloor
+    && reserveRowsReady,
+  )
   const portfolioValueComplete = allocationRows.length > 0 && allocationRows.every((row) => row.current_value_eur !== null)
-  const totalValue = portfolioValueComplete
+  const grossValue = portfolioValueComplete
     ? allocationRows.reduce((sum, row) => sum + (row.current_value_eur ?? 0), 0)
     : null
+  const totalValue = grossValue === null
+    ? null
+    : options.expectedScope === 'PRO'
+      ? proReserveReady && reserveFloor !== null
+        ? grossValue - reserveFloor
+        : null
+      : grossValue
   const matchesByRow = new Map(
-    allocationRows.map((row) => [row.row_key, targetLines.filter((line) => targetMatches(row, line))]),
+    allocationRows.map((row) => [
+      row.row_key,
+      reserveRowKeys.has(row.row_key) ? [] : targetLines.filter((line) => targetMatches(row, line)),
+    ]),
   )
   const targetWeightIsValid = (line: TargetEnvelopeLineRow): boolean => {
     const weight = line.target_weight_pct
@@ -523,25 +569,27 @@ export function assessFamilyOfficeAllocation(
       && Math.abs(lines.reduce((sum, line) => sum + (line.target_weight_pct ?? 0), 0) - 100) <= 0.05
     ))
   const targetCoverageReady = targetModelReady
+    && proReserveReady
     && targetModel !== null
     && targetLines.every((line) => line.model_id === targetModel.id && line.portfolio_scope === options.expectedScope)
     && envelopeTargetsValid
-    && allocationRows.every((row) => {
+    && riskyRows.every((row) => {
       const matches = matchesByRow.get(row.row_key) ?? []
       return matches.length === 1 && targetWeightIsValid(matches[0])
     })
     && targetLines
       .filter((line) => (line.target_weight_pct ?? 0) > 0)
-      .every((line) => allocationRows.filter((row) => targetMatches(row, line)).length === 1)
+      .every((line) => riskyRows.filter((row) => targetMatches(row, line)).length === 1)
 
   const rows = allocationRows.map((row): FamilyOfficeAllocationAssessmentRow => {
+    const isReserveRow = reserveRowKeys.has(row.row_key)
     const matches = matchesByRow.get(row.row_key) ?? []
     const targetLine = matches.length === 1 ? matches[0] : null
     const targetWeight = targetLine?.target_weight_pct ?? null
     const targetEnvelopeKey = targetLine ? normalize(targetLine.envelope) : null
     const envelopeRows = targetEnvelopeKey === null
       ? []
-      : allocationRows.filter((candidate) => {
+      : riskyRows.filter((candidate) => {
         const candidateMatches = matchesByRow.get(candidate.row_key) ?? []
         return candidateMatches.length === 1 && normalize(candidateMatches[0].envelope) === targetEnvelopeKey
       })
@@ -557,6 +605,27 @@ export function assessFamilyOfficeAllocation(
       ? targetWeight / 100 * envelopeValue - row.current_value_eur
       : null
     const effectiveValuationState = valuationStateAt(row, referenceDate)
+    if (isReserveRow) {
+      const reserveReasons = ['PRO_RESERVE_EXCLUDED']
+      if (!targetModelReady) reserveReasons.push('TARGET_MODEL_INVALID')
+      if (!reserveValueComplete || reserveCurrentValue === null) reserveReasons.push('PRO_RESERVE_INCOMPLETE')
+      else if (reserveFloor === null || reserveCurrentValue < reserveFloor) {
+        reserveReasons.push('PRO_RESERVE_BELOW_FLOOR')
+      }
+      if (!reserveRowsReady) reserveReasons.push('PRO_RESERVE_NOT_READY')
+      return {
+        ...row,
+        valuation_state: effectiveValuationState,
+        target_weight_pct: null,
+        current_weight_pct: null,
+        drift_pct: null,
+        rebalance_amount_eur: null,
+        action: targetModelReady && proReserveReady ? 'HOLD' : 'UNAVAILABLE',
+        confidence: targetModelReady && proReserveReady ? 100 : 0,
+        reason_codes: reserveReasons,
+        target_line_id: null,
+      }
+    }
     const reasons: string[] = []
 
     if (!targetModel) reasons.push('TARGET_MODEL_MISSING')

@@ -200,7 +200,9 @@ const proModel = model({
   reserve_floor_eur: 120000,
   reserve_excluded_from_risky_allocation: true,
 })
-const proLines = lines.map((line) => ({ ...line, model_id: 'pro-model', portfolio_scope: 'PRO' }))
+const proLines = lines
+  .filter((line) => line.asset_class !== 'CASH')
+  .map((line) => ({ ...line, model_id: 'pro-model', portfolio_scope: 'PRO' }))
 const proSleeves = proSleeveWeights.map(([sleeve, bucket, weight], index) => ({
   id: index + 1,
   model_id: 'pro-model',
@@ -235,15 +237,23 @@ const proBuckets = [
   source_sheet: 'Modele_Core_Satellite',
   source_row: index + 5,
 }))
-const readyPro = assessFamilyOfficeAllocation(rows, proModel, proLines, {
+const proRows = buildFamilyOfficeAllocationRows({
+  ...source,
+  cash: [cash({ balance_local: 120000, balance_eur: 120000 })],
+})
+const readyPro = assessFamilyOfficeAllocation(proRows, proModel, proLines, {
   expectedScope: 'PRO',
   targetBuckets: proBuckets,
   targetSleeves: proSleeves,
 })
 assert.equal(readyPro.target_model_ready, true)
+assert.equal(readyPro.total_value_eur, 300)
 assert.deepEqual(readyPro.rows.map((row) => row.action), ['HOLD', 'HOLD', 'HOLD'])
+const readyProReserve = readyPro.rows.find((row) => row.instrument_type === 'CASH')
+assert.equal(readyProReserve?.target_line_id, null)
+assert.deepEqual(readyProReserve?.reason_codes, ['PRO_RESERVE_EXCLUDED'])
 
-const incompletePro = assessFamilyOfficeAllocation(rows, proModel, proLines, {
+const incompletePro = assessFamilyOfficeAllocation(proRows, proModel, proLines, {
   expectedScope: 'PRO',
   targetBuckets: proBuckets,
   targetSleeves: proSleeves.slice(1),
@@ -252,7 +262,7 @@ assert.equal(incompletePro.target_model_ready, false)
 assert.ok(incompletePro.rows.every((row) => row.action === 'UNAVAILABLE'))
 
 const missingProReserve = assessFamilyOfficeAllocation(
-  rows,
+  proRows,
   { ...proModel, reserve_floor_eur: null },
   proLines,
   { expectedScope: 'PRO', targetBuckets: proBuckets, targetSleeves: proSleeves },
@@ -260,7 +270,48 @@ const missingProReserve = assessFamilyOfficeAllocation(
 assert.equal(missingProReserve.target_model_ready, false)
 assert.ok(missingProReserve.rows.every((row) => row.action === 'UNAVAILABLE'))
 
-const mismatchedProBuckets = assessFamilyOfficeAllocation(rows, proModel, proLines, {
+const belowFloorProRows = buildFamilyOfficeAllocationRows({
+  ...source,
+  cash: [cash({ balance_local: 119999, balance_eur: 119999 })],
+})
+const belowFloorPro = assessFamilyOfficeAllocation(belowFloorProRows, proModel, proLines, {
+  expectedScope: 'PRO',
+  targetBuckets: proBuckets,
+  targetSleeves: proSleeves,
+})
+assert.equal(belowFloorPro.target_model_ready, false)
+assert.ok(belowFloorPro.rows.filter((row) => row.instrument_type !== 'CASH').every((row) => (
+  row.action === 'UNAVAILABLE' && row.reason_codes.includes('TARGET_COVERAGE_INCOMPLETE')
+)))
+assert.ok(belowFloorPro.rows.find((row) => row.instrument_type === 'CASH')?.reason_codes.includes('PRO_RESERVE_BELOW_FLOOR'))
+
+const genericBondProRows = buildFamilyOfficeAllocationRows({
+  ...source,
+  positions: [
+    ...source.positions,
+    position({
+      id: 'bond',
+      account_id: 'a3',
+      instrument_id: 'bond',
+      instrument_key: 'isin:FR0000000099',
+      isin: 'FR0000000099',
+      ticker: 'BOND',
+      name: 'Generic Corporate Bond',
+      instrument_type: 'BOND',
+      market_value_eur: 10000,
+    }),
+  ],
+  cash: [cash({ balance_local: 120000, balance_eur: 120000 })],
+})
+const genericBondPro = assessFamilyOfficeAllocation(genericBondProRows, proModel, proLines, {
+  expectedScope: 'PRO',
+  targetBuckets: proBuckets,
+  targetSleeves: proSleeves,
+})
+assert.equal(genericBondPro.target_model_ready, false)
+assert.ok(genericBondPro.rows.find((row) => row.ticker === 'BOND')?.reason_codes.includes('TARGET_LINE_MISSING'))
+
+const mismatchedProBuckets = assessFamilyOfficeAllocation(proRows, proModel, proLines, {
   expectedScope: 'PRO',
   targetBuckets: proBuckets.map((row) => row.bucket_key === 'actions_us'
     ? { ...row, target_weight_pct: 42 }

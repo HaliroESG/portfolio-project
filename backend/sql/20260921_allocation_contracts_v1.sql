@@ -46,13 +46,14 @@ alter table public.target_sleeve_allocations enable row level security;
 
 drop policy if exists target_sleeve_allocations_read on public.target_sleeve_allocations;
 create policy target_sleeve_allocations_read on public.target_sleeve_allocations
-  for select to anon, authenticated using (true);
+  for select to authenticated using (true);
 
 drop policy if exists target_sleeve_allocations_service_role_write on public.target_sleeve_allocations;
 create policy target_sleeve_allocations_service_role_write on public.target_sleeve_allocations
   for all to service_role using (true) with check (true);
 
-grant select on public.target_sleeve_allocations to anon, authenticated;
+revoke all on public.target_sleeve_allocations from public, anon;
+grant select on public.target_sleeve_allocations to authenticated;
 grant select, insert, update, delete on public.target_sleeve_allocations to service_role;
 grant usage, select on sequence public.target_sleeve_allocations_id_seq to service_role;
 
@@ -82,6 +83,7 @@ declare
   v_aligned_bucket_count integer;
   v_misaligned_bucket_count integer;
   v_invalid_child_count integer;
+  v_invalid_bucket_count integer;
 begin
   if jsonb_typeof(p_model) is distinct from 'object'
     or jsonb_typeof(p_buckets) is distinct from 'array'
@@ -141,6 +143,28 @@ begin
     lower_band_pct numeric,
     upper_band_pct numeric
   );
+  select count(*)
+  into v_invalid_bucket_count
+  from jsonb_to_recordset(p_buckets) as x(
+    target_weight_pct numeric,
+    lower_band_pct numeric,
+    upper_band_pct numeric
+  )
+  where target_weight_pct is null
+    or target_weight_pct::text in ('NaN', 'Infinity', '-Infinity')
+    or target_weight_pct < 0
+    or target_weight_pct > 100
+    or (lower_band_pct is null) <> (upper_band_pct is null)
+    or lower_band_pct::text in ('NaN', 'Infinity', '-Infinity')
+    or upper_band_pct::text in ('NaN', 'Infinity', '-Infinity')
+    or lower_band_pct < 0
+    or upper_band_pct > 100
+    or lower_band_pct > upper_band_pct
+    or target_weight_pct < lower_band_pct
+    or target_weight_pct > upper_band_pct;
+  if v_invalid_bucket_count > 0 then
+    raise exception 'allocation contract target bucket weights or bands are invalid';
+  end if;
   if abs(v_bucket_total - 100) > 0.05
     or abs(coalesce((p_model ->> 'target_total_pct')::numeric, 0) - 100) > 0.05
   then
@@ -365,6 +389,20 @@ bucket_contracts as (
     model_id,
     count(*) as bucket_count,
     sum(target_weight_pct) as target_total_pct,
+    count(*) filter (
+      where target_weight_pct is null
+        or target_weight_pct::text in ('NaN', 'Infinity', '-Infinity')
+        or target_weight_pct < 0
+        or target_weight_pct > 100
+        or (lower_band_pct is null) <> (upper_band_pct is null)
+        or lower_band_pct::text in ('NaN', 'Infinity', '-Infinity')
+        or upper_band_pct::text in ('NaN', 'Infinity', '-Infinity')
+        or lower_band_pct < 0
+        or upper_band_pct > 100
+        or lower_band_pct > upper_band_pct
+        or target_weight_pct < lower_band_pct
+        or target_weight_pct > upper_band_pct
+    ) as invalid_bucket_count,
     count(*) filter (where bucket_key = 'crypto') as crypto_bucket_count,
     bool_or(
       bucket_key = 'crypto'
@@ -436,6 +474,7 @@ model_contracts as (
       then 'UNKNOWN'
       when m.portfolio_scope = 'PERSO'
         and abs(coalesce(b.target_total_pct, 0) - 100) <= 0.05
+        and coalesce(b.invalid_bucket_count, 0) = 0
         and coalesce(b.crypto_bucket_count, 0) = 1
         and coalesce(b.crypto_contract_ready, false)
       then 'READY'
@@ -443,6 +482,7 @@ model_contracts as (
         and m.reserve_excluded_from_risky_allocation
         and abs(coalesce(m.reserve_floor_eur, 0) - 120000) <= 0.01
         and abs(coalesce(b.target_total_pct, 0) - 100) <= 0.05
+        and coalesce(b.invalid_bucket_count, 0) = 0
         and coalesce(b.bucket_count, 0) = 6
         and coalesce(s.sleeve_line_count, 0) = 11
         and coalesce(s.approved_line_count, 0) = 11
@@ -460,6 +500,7 @@ model_contracts as (
       then 'target_model_contract_version_missing'
       when m.portfolio_scope = 'PERSO' and not (
         abs(coalesce(b.target_total_pct, 0) - 100) <= 0.05
+        and coalesce(b.invalid_bucket_count, 0) = 0
         and coalesce(b.crypto_bucket_count, 0) = 1
         and coalesce(b.crypto_contract_ready, false)
       ) then 'perso_model_contract_incomplete'
@@ -467,6 +508,7 @@ model_contracts as (
         m.reserve_excluded_from_risky_allocation
         and abs(coalesce(m.reserve_floor_eur, 0) - 120000) <= 0.01
         and abs(coalesce(b.target_total_pct, 0) - 100) <= 0.05
+        and coalesce(b.invalid_bucket_count, 0) = 0
         and coalesce(b.bucket_count, 0) = 6
         and coalesce(s.sleeve_line_count, 0) = 11
         and coalesce(s.approved_line_count, 0) = 11
@@ -482,13 +524,44 @@ model_contracts as (
   left join sleeve_contracts s on s.model_id = m.id
   left join bucket_sleeve_alignment a on a.model_id = m.id
 ),
-position_values_raw as (
+canonical_holdings as (
   select
     case
-      when po.name ilike 'PRO%' then 'PRO'
-      when po.name ilike 'PERSO%' then 'PERSO'
+      when po.portfolio_type = 'PERSONAL' then 'PERSO'
+      when po.portfolio_type = 'PROFESSIONAL' then 'PRO'
       else null
     end as portfolio_scope,
+    p.ticker,
+    p.name,
+    p.instrument_type,
+    p.currency,
+    p.snapshot_date as actual_as_of_date,
+    p.data_state,
+    p.market_value_eur as current_value_eur
+  from public.fo_positions_latest p
+  join public.fo_portfolios po on po.id = p.portfolio_id
+
+  union all
+
+  select
+    case
+      when po.portfolio_type = 'PERSONAL' then 'PERSO'
+      when po.portfolio_type = 'PROFESSIONAL' then 'PRO'
+      else null
+    end as portfolio_scope,
+    'CASH_' || upper(c.currency) as ticker,
+    'Cash ' || upper(c.currency) as name,
+    'CASH'::text as instrument_type,
+    c.currency,
+    c.balance_date as actual_as_of_date,
+    c.data_state,
+    c.balance_eur as current_value_eur
+  from public.fo_cash_balances_latest c
+  join public.fo_portfolios po on po.id = c.portfolio_id
+),
+position_values_raw as (
+  select
+    p.portfolio_scope,
     case
       when coalesce(p.instrument_type, '') ilike '%crypto%'
         or coalesce(p.instrument_type, '') ilike '%digital asset%'
@@ -498,6 +571,7 @@ position_values_raw as (
       when upper(coalesce(p.ticker, '')) in ('CASH', 'EUR', 'USD', 'CHF', 'GBP', 'XEON')
         or coalesce(p.instrument_type, '') ilike '%cash%'
         or coalesce(p.instrument_type, '') ilike '%bond%'
+        or coalesce(p.instrument_type, '') ilike '%bill%'
         or coalesce(p.name, '') ilike '%fonds euro%'
         or coalesce(p.name, '') ilike '%overnight%'
         or coalesce(p.name, '') ilike '%monétaire%'
@@ -534,31 +608,23 @@ position_values_raw as (
       else 'unmapped'
     end as bucket_key,
     case
-      when upper(coalesce(p.ticker, '')) in ('CASH', 'EUR', 'USD', 'CHF', 'GBP', 'XEON')
-        or coalesce(p.instrument_type, '') ilike '%cash%'
-        or coalesce(p.name, '') ~* '(^|[^a-z])(revolut|bank account|compte bancaire|overnight|monétaire|money market|xeon)([^a-z]|$)'
-        or (
-          (coalesce(p.instrument_type, '') ilike '%bill%' or coalesce(p.name, '') ilike '%bill%')
-          and upper(coalesce(nullif(p.currency, ''), nullif(m.currency, ''), '')) = 'EUR'
-          and coalesce(p.name, '') ~* '(^|[^a-z])(eu|euro|european)[ -]?(treasury[ -]?)?bills?([^a-z]|$)'
+      when upper(coalesce(p.currency, '')) = 'EUR'
+        and (
+          coalesce(p.instrument_type, '') ilike '%cash%'
+          or upper(coalesce(p.ticker, '')) in ('CASH', 'CASH_EUR', 'EUR', 'XEON')
+          or coalesce(p.name, '') ~* '(^|[^a-z])(revolut|bank account|compte bancaire|overnight|monétaire|money market|xeon)([^a-z]|$)'
+          or (
+            (coalesce(p.instrument_type, '') ilike '%bill%' or coalesce(p.name, '') ilike '%bill%')
+            and coalesce(p.name, '') ~* '(^|[^a-z])(eu|euro|european)[ -]?(treasury[ -]?)?bills?([^a-z]|$)'
+          )
         )
       then true
       else false
     end as reserve_eligible,
     p.actual_as_of_date,
-    case
-      when p.quantity_current is null then null
-      when coalesce(nullif(m.last_price::numeric, 0), nullif(p.pru::numeric, 0)) is null then null
-      when upper(coalesce(nullif(p.currency, ''), nullif(m.currency, ''), 'EUR')) = 'EUR'
-        then p.quantity_current::numeric * coalesce(nullif(m.last_price::numeric, 0), nullif(p.pru::numeric, 0))
-      when nullif(c.rate_to_eur::numeric, 0) is null then null
-      else p.quantity_current::numeric * coalesce(nullif(m.last_price::numeric, 0), nullif(p.pru::numeric, 0)) * c.rate_to_eur::numeric
-    end as current_value_eur
-  from public.portfolio_positions p
-  left join public.portfolios po on po.id::text = p.portfolio_id
-  left join public.market_watch m on upper(m.ticker) = upper(p.ticker)
-  left join public.currencies c
-    on upper(c.id) = upper(coalesce(nullif(p.currency, ''), nullif(m.currency, ''), 'EUR'))
+    p.data_state,
+    p.current_value_eur
+  from canonical_holdings p
 ),
 current_by_bucket as (
   select
@@ -566,8 +632,15 @@ current_by_bucket as (
     bucket_key,
     sum(current_value_eur) as current_value_eur,
     count(*) as position_count,
-    count(*) filter (where current_value_eur is null) as unavailable_positions,
-    count(*) filter (where actual_as_of_date is null or actual_as_of_date < current_date - 3) as stale_positions
+    count(*) filter (
+      where current_value_eur is null
+        or data_state in ('PARTIAL', 'MISSING', 'UNRECONCILED')
+    ) as unavailable_positions,
+    count(*) filter (
+      where data_state = 'STALE'
+        or actual_as_of_date is null
+        or actual_as_of_date < current_date - 3
+    ) as stale_positions
   from position_values_raw
   where portfolio_scope is not null
   group by portfolio_scope, bucket_key
@@ -577,12 +650,25 @@ scope_stats as (
     portfolio_scope,
     count(*) as position_count,
     sum(current_value_eur) as known_total_value_eur,
-    count(*) filter (where current_value_eur is null) as unavailable_positions,
-    count(*) filter (where actual_as_of_date is null or actual_as_of_date < current_date - 3) as stale_positions,
+    count(*) filter (
+      where current_value_eur is null
+        or data_state in ('PARTIAL', 'MISSING', 'UNRECONCILED')
+    ) as unavailable_positions,
+    count(*) filter (
+      where data_state = 'STALE'
+        or actual_as_of_date is null
+        or actual_as_of_date < current_date - 3
+    ) as stale_positions,
     count(*) filter (where bucket_key = 'unmapped') as unmatched_positions,
     count(*) filter (where reserve_eligible) as reserve_eligible_positions,
-    count(*) filter (where reserve_eligible and current_value_eur is null) as reserve_unavailable_positions,
-    count(*) filter (where reserve_eligible and (actual_as_of_date is null or actual_as_of_date < current_date - 3)) as reserve_stale_positions,
+    count(*) filter (
+      where reserve_eligible
+        and (current_value_eur is null or data_state in ('PARTIAL', 'MISSING', 'UNRECONCILED'))
+    ) as reserve_unavailable_positions,
+    count(*) filter (
+      where reserve_eligible
+        and (data_state = 'STALE' or actual_as_of_date is null or actual_as_of_date < current_date - 3)
+    ) as reserve_stale_positions,
     sum(current_value_eur) filter (where reserve_eligible) as reserve_current_eur
   from position_values_raw
   where portfolio_scope is not null
@@ -592,7 +678,10 @@ unmatched_scope_stats as (
   select
     count(*) as position_count,
     sum(current_value_eur) as known_total_value_eur,
-    count(*) filter (where current_value_eur is null) as unavailable_positions
+    count(*) filter (
+      where current_value_eur is null
+        or data_state in ('PARTIAL', 'MISSING', 'UNRECONCILED')
+    ) as unavailable_positions
   from position_values_raw
   where portfolio_scope is null
 ),
@@ -652,6 +741,20 @@ model_scope as (
   left join scope_stats s on s.portfolio_scope = m.portfolio_scope
   cross join unmatched_scope_stats u
 ),
+allocatable_current_by_bucket as (
+  select
+    c.*,
+    case
+      when c.portfolio_scope = 'PRO' and c.bucket_key = 'cash_bonds'
+      then greatest(
+        0::numeric,
+        c.current_value_eur - least(coalesce(m.reserve_current_eur, 0), coalesce(m.reserve_floor_eur, 0))
+      )
+      else c.current_value_eur
+    end as allocatable_current_value_eur
+  from current_by_bucket c
+  join model_scope m on m.portfolio_scope = c.portfolio_scope
+),
 target_rows as (
   select
     m.portfolio_scope,
@@ -661,11 +764,13 @@ target_rows as (
     b.bucket_key,
     b.bucket_label,
     case
-      when c.position_count is not null then c.current_value_eur
+      when c.position_count is not null then c.allocatable_current_value_eur
       when m.model_contract_state = 'READY' and m.scope_data_state in ('READY', 'STALE') then 0::numeric
       else null
     end as current_value_eur,
     b.target_weight_pct,
+    b.lower_band_pct,
+    b.upper_band_pct,
     case
       when m.model_contract_state <> 'READY' then 'UNKNOWN'
       when m.scope_data_state = 'UNKNOWN' then 'UNKNOWN'
@@ -695,8 +800,57 @@ target_rows as (
     m.updated_at
   from model_scope m
   join public.target_buckets b on b.model_id = m.id
-  left join current_by_bucket c
+  left join allocatable_current_by_bucket c
     on c.portfolio_scope = m.portfolio_scope and c.bucket_key = b.bucket_key
+),
+non_target_rows as (
+  select
+    m.portfolio_scope,
+    m.id as model_id,
+    m.model_name,
+    m.source_file,
+    c.bucket_key,
+    'Non-target allocation: ' || c.bucket_key as bucket_label,
+    c.allocatable_current_value_eur as current_value_eur,
+    0::numeric as target_weight_pct,
+    0::numeric as lower_band_pct,
+    0::numeric as upper_band_pct,
+    case
+      when m.model_contract_state <> 'READY' then 'UNKNOWN'
+      when m.scope_data_state = 'UNKNOWN' then 'UNKNOWN'
+      when m.scope_data_state = 'PARTIAL' then 'PARTIAL'
+      when m.scope_data_state = 'STALE' then 'STALE'
+      when m.reserve_state = 'UNKNOWN' then 'UNKNOWN'
+      when m.reserve_state = 'PARTIAL' then 'PARTIAL'
+      when m.reserve_state = 'STALE' then 'STALE'
+      when c.unavailable_positions > 0 then 'PARTIAL'
+      when c.stale_positions > 0 then 'STALE'
+      else 'READY'
+    end as data_state,
+    c.position_count as bucket_position_count,
+    c.unavailable_positions as bucket_unavailable_positions,
+    m.position_count,
+    m.unavailable_positions,
+    m.unmatched_positions,
+    m.unmatched_scope_positions,
+    m.total_value_eur,
+    m.allocatable_total_eur,
+    m.reserve_floor_eur,
+    m.reserve_current_eur,
+    m.reserve_eligible_positions,
+    m.reserve_state,
+    m.model_contract_state,
+    m.model_contract_reason,
+    m.updated_at
+  from model_scope m
+  join allocatable_current_by_bucket c on c.portfolio_scope = m.portfolio_scope
+  where c.bucket_key <> 'unmapped'
+    and (c.allocatable_current_value_eur is null or c.allocatable_current_value_eur <> 0)
+    and not exists (
+      select 1
+      from public.target_buckets b
+      where b.model_id = m.id and b.bucket_key = c.bucket_key
+    )
 ),
 unmatched_rows as (
   select
@@ -708,6 +862,8 @@ unmatched_rows as (
     'Unmatched positions'::text as bucket_label,
     c.current_value_eur,
     0::numeric as target_weight_pct,
+    null::numeric as lower_band_pct,
+    null::numeric as upper_band_pct,
     'UNMATCHED'::text as data_state,
     c.position_count as bucket_position_count,
     c.unavailable_positions as bucket_unavailable_positions,
@@ -738,6 +894,8 @@ unmatched_scope_rows as (
     'Unmatched portfolio scope'::text as bucket_label,
     m.unmatched_scope_value_eur as current_value_eur,
     0::numeric as target_weight_pct,
+    null::numeric as lower_band_pct,
+    null::numeric as upper_band_pct,
     'UNMATCHED'::text as data_state,
     m.unmatched_scope_positions as bucket_position_count,
     m.unmatched_scope_unavailable_positions as bucket_unavailable_positions,
@@ -767,6 +925,8 @@ model_contract_rows as (
     'Target model contract'::text as bucket_label,
     null::numeric as current_value_eur,
     null::numeric as target_weight_pct,
+    null::numeric as lower_band_pct,
+    null::numeric as upper_band_pct,
     'UNKNOWN'::text as data_state,
     0::bigint as bucket_position_count,
     0::bigint as bucket_unavailable_positions,
@@ -796,6 +956,8 @@ reserve_rows as (
     'PRO reserve outside risky allocation'::text as bucket_label,
     m.reserve_current_eur as current_value_eur,
     null::numeric as target_weight_pct,
+    null::numeric as lower_band_pct,
+    null::numeric as upper_band_pct,
     case when m.model_contract_state = 'READY' then m.reserve_state else 'UNKNOWN' end as data_state,
     m.reserve_eligible_positions as bucket_position_count,
     m.reserve_unavailable_positions as bucket_unavailable_positions,
@@ -817,10 +979,18 @@ reserve_rows as (
 ),
 advice_base as (
   select * from target_rows
+  union all select * from non_target_rows
   union all select * from unmatched_rows
   union all select * from unmatched_scope_rows
   union all select * from model_contract_rows
   union all select * from reserve_rows
+),
+advice_with_bounds as (
+  select
+    advice_base.*,
+    coalesce(lower_band_pct, target_weight_pct - 3) as effective_lower_band_pct,
+    coalesce(upper_band_pct, target_weight_pct + 3) as effective_upper_band_pct
+  from advice_base
 )
 select
   portfolio_scope,
@@ -851,8 +1021,9 @@ select
     when target_weight_pct is null then 'HOLD'
     when allocatable_total_eur is null or allocatable_total_eur <= 0 then 'UNAVAILABLE'
     when target_weight_pct = 0 and current_value_eur >= 100 then 'REDUCE'
-    when ((current_value_eur / allocatable_total_eur) * 100 - target_weight_pct) <= -3 then 'BUY'
-    when ((current_value_eur / allocatable_total_eur) * 100 - target_weight_pct) >= 3 then 'REDUCE'
+    when target_weight_pct = 0 then 'HOLD'
+    when (current_value_eur / allocatable_total_eur) * 100 < effective_lower_band_pct then 'BUY'
+    when (current_value_eur / allocatable_total_eur) * 100 > effective_upper_band_pct then 'REDUCE'
     else 'HOLD'
   end as action,
   greatest(
@@ -880,7 +1051,8 @@ select
     case when reserve_state = 'PARTIAL' and (reserve_current_eur is null or reserve_current_eur >= reserve_floor_eur) then 'pro_reserve_partial'::text end,
     case when reserve_state = 'STALE' then 'pro_reserve_stale'::text end,
     case when data_state = 'READY' and target_weight_pct is not null and allocatable_total_eur > 0
-      and abs((current_value_eur / allocatable_total_eur) * 100 - target_weight_pct) < 1 then 'in_band'::text end,
+      and (current_value_eur / allocatable_total_eur) * 100 between effective_lower_band_pct and effective_upper_band_pct
+      then 'in_band'::text end,
     case when data_state = 'READY' and target_weight_pct is not null and allocatable_total_eur > 0
       and abs((target_weight_pct / 100) * allocatable_total_eur - current_value_eur) < 100 then 'below_min_trade'::text end,
     case
@@ -891,8 +1063,10 @@ select
   case
     when data_state <> 'READY' or allocatable_total_eur is null then 'CURRENT_UNAVAILABLE'
     when target_weight_pct is null then 'MONITOR'
-    when ((current_value_eur / allocatable_total_eur) * 100 - target_weight_pct) <= -3 then 'NEW_CASH_FIRST'
-    when ((current_value_eur / allocatable_total_eur) * 100 - target_weight_pct) >= 3 then 'INTERNAL_ARBITRAGE'
+    when target_weight_pct = 0 and current_value_eur >= 100 then 'INTERNAL_ARBITRAGE'
+    when target_weight_pct = 0 then 'MONITOR'
+    when (current_value_eur / allocatable_total_eur) * 100 < effective_lower_band_pct then 'NEW_CASH_FIRST'
+    when (current_value_eur / allocatable_total_eur) * 100 > effective_upper_band_pct then 'INTERNAL_ARBITRAGE'
     else 'MONITOR'
   end as preferred_execution,
   data_state,
@@ -911,6 +1085,7 @@ select
   reserve_eligible_positions,
   reserve_state,
   updated_at
-from advice_base;
+from advice_with_bounds;
 
-grant select on public.allocation_advice_items_latest to anon, authenticated;
+revoke all on public.allocation_advice_items_latest from public, anon;
+grant select on public.allocation_advice_items_latest to authenticated, service_role;
