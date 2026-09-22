@@ -406,6 +406,7 @@ with active_models as (
     model_name,
     source_file,
     status,
+    target_total_pct,
     allocation_contract_version,
     reserve_floor_eur,
     reserve_excluded_from_risky_allocation,
@@ -503,6 +504,7 @@ model_contracts as (
         or m.allocation_contract_version is null
       then 'UNKNOWN'
       when m.portfolio_scope = 'PERSO'
+        and abs(coalesce(m.target_total_pct, 0) - 100) <= 0.05
         and abs(coalesce(b.target_total_pct, 0) - 100) <= 0.05
         and coalesce(b.invalid_bucket_count, 0) = 0
         and coalesce(b.crypto_bucket_count, 0) = 1
@@ -511,6 +513,7 @@ model_contracts as (
       when m.portfolio_scope = 'PRO'
         and m.reserve_excluded_from_risky_allocation
         and abs(coalesce(m.reserve_floor_eur, 0) - 120000) <= 0.01
+        and abs(coalesce(m.target_total_pct, 0) - 100) <= 0.05
         and abs(coalesce(b.target_total_pct, 0) - 100) <= 0.05
         and coalesce(b.invalid_bucket_count, 0) = 0
         and coalesce(b.bucket_count, 0) = 6
@@ -529,7 +532,8 @@ model_contracts as (
         or m.allocation_contract_version is null
       then 'target_model_contract_version_missing'
       when m.portfolio_scope = 'PERSO' and not (
-        abs(coalesce(b.target_total_pct, 0) - 100) <= 0.05
+        abs(coalesce(m.target_total_pct, 0) - 100) <= 0.05
+        and abs(coalesce(b.target_total_pct, 0) - 100) <= 0.05
         and coalesce(b.invalid_bucket_count, 0) = 0
         and coalesce(b.crypto_bucket_count, 0) = 1
         and coalesce(b.crypto_contract_ready, false)
@@ -537,6 +541,7 @@ model_contracts as (
       when m.portfolio_scope = 'PRO' and not (
         m.reserve_excluded_from_risky_allocation
         and abs(coalesce(m.reserve_floor_eur, 0) - 120000) <= 0.01
+        and abs(coalesce(m.target_total_pct, 0) - 100) <= 0.05
         and abs(coalesce(b.target_total_pct, 0) - 100) <= 0.05
         and coalesce(b.invalid_bucket_count, 0) = 0
         and coalesce(b.bucket_count, 0) = 6
@@ -561,6 +566,7 @@ canonical_holdings as (
       when po.portfolio_type = 'PROFESSIONAL' then 'PRO'
       else null
     end as portfolio_scope,
+    p.portfolio_id,
     p.ticker,
     p.name,
     p.instrument_type,
@@ -582,6 +588,7 @@ canonical_holdings as (
       when po.portfolio_type = 'PROFESSIONAL' then 'PRO'
       else null
     end as portfolio_scope,
+    c.portfolio_id,
     'CASH_' || upper(c.currency) as ticker,
     'Cash ' || upper(c.currency) as name,
     'CASH'::text as instrument_type,
@@ -595,6 +602,7 @@ canonical_holdings as (
 position_values_raw as (
   select
     p.portfolio_scope,
+    p.portfolio_id,
     case
       when coalesce(p.instrument_type, '') ilike '%crypto%'
         or coalesce(p.instrument_type, '') ilike '%digital asset%'
@@ -662,6 +670,7 @@ position_values_raw as (
 current_by_bucket as (
   select
     portfolio_scope,
+    portfolio_id,
     bucket_key,
     sum(current_value_eur) as current_value_eur,
     count(*) as position_count,
@@ -676,11 +685,12 @@ current_by_bucket as (
     ) as stale_positions
   from position_values_raw
   where portfolio_scope is not null
-  group by portfolio_scope, bucket_key
+  group by portfolio_scope, portfolio_id, bucket_key
 ),
 scope_stats as (
   select
     portfolio_scope,
+    portfolio_id,
     count(*) as position_count,
     sum(current_value_eur) as known_total_value_eur,
     count(*) filter (
@@ -705,7 +715,7 @@ scope_stats as (
     sum(current_value_eur) filter (where reserve_eligible) as reserve_current_eur
   from position_values_raw
   where portfolio_scope is not null
-  group by portfolio_scope
+  group by portfolio_scope, portfolio_id
 ),
 unmatched_scope_stats as (
   select
@@ -721,6 +731,7 @@ unmatched_scope_stats as (
 model_scope as (
   select
     m.*,
+    s.portfolio_id,
     coalesce(s.position_count, 0) as position_count,
     coalesce(s.unavailable_positions, 0) as unavailable_positions,
     coalesce(s.stale_positions, 0) as stale_positions,
@@ -786,11 +797,13 @@ allocatable_current_by_bucket as (
       else c.current_value_eur
     end as allocatable_current_value_eur
   from current_by_bucket c
-  join model_scope m on m.portfolio_scope = c.portfolio_scope
+  join model_scope m
+    on m.portfolio_scope = c.portfolio_scope and m.portfolio_id = c.portfolio_id
 ),
 target_rows as (
   select
     m.portfolio_scope,
+    m.portfolio_id,
     m.id as model_id,
     m.model_name,
     m.source_file,
@@ -834,11 +847,14 @@ target_rows as (
   from model_scope m
   join public.target_buckets b on b.model_id = m.id
   left join allocatable_current_by_bucket c
-    on c.portfolio_scope = m.portfolio_scope and c.bucket_key = b.bucket_key
+    on c.portfolio_scope = m.portfolio_scope
+    and c.portfolio_id = m.portfolio_id
+    and c.bucket_key = b.bucket_key
 ),
 non_target_rows as (
   select
     m.portfolio_scope,
+    m.portfolio_id,
     m.id as model_id,
     m.model_name,
     m.source_file,
@@ -876,7 +892,8 @@ non_target_rows as (
     m.model_contract_reason,
     m.updated_at
   from model_scope m
-  join allocatable_current_by_bucket c on c.portfolio_scope = m.portfolio_scope
+  join allocatable_current_by_bucket c
+    on c.portfolio_scope = m.portfolio_scope and c.portfolio_id = m.portfolio_id
   where c.bucket_key <> 'unmapped'
     and (c.allocatable_current_value_eur is null or c.allocatable_current_value_eur <> 0)
     and not exists (
@@ -888,6 +905,7 @@ non_target_rows as (
 unmatched_rows as (
   select
     m.portfolio_scope,
+    m.portfolio_id,
     m.id as model_id,
     m.model_name,
     m.source_file,
@@ -915,11 +933,14 @@ unmatched_rows as (
     m.updated_at
   from model_scope m
   join current_by_bucket c
-    on c.portfolio_scope = m.portfolio_scope and c.bucket_key = 'unmapped'
+    on c.portfolio_scope = m.portfolio_scope
+    and c.portfolio_id = m.portfolio_id
+    and c.bucket_key = 'unmapped'
 ),
 unmatched_scope_rows as (
   select
     m.portfolio_scope,
+    m.portfolio_id,
     m.id as model_id,
     m.model_name,
     m.source_file,
@@ -951,6 +972,7 @@ unmatched_scope_rows as (
 model_contract_rows as (
   select
     m.portfolio_scope,
+    m.portfolio_id,
     m.id as model_id,
     m.model_name,
     m.source_file,
@@ -982,6 +1004,7 @@ model_contract_rows as (
 reserve_rows as (
   select
     m.portfolio_scope,
+    m.portfolio_id,
     m.id as model_id,
     m.model_name,
     m.source_file,
@@ -1027,6 +1050,7 @@ advice_with_bounds as (
 )
 select
   portfolio_scope,
+  portfolio_id,
   model_id,
   model_name,
   source_file,

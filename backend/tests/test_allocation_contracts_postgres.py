@@ -347,8 +347,8 @@ def _insert_valid_perso_contract(sql):
     sql(
         """
         insert into public.target_models
-          (id, portfolio_scope, model_name, source_file, status, allocation_contract_version)
-        values ('perso', 'PERSO', 'Perso', 'perso.xlsx', 'READY', 'allocation_contracts_v1');
+          (id, portfolio_scope, model_name, source_file, status, target_total_pct, allocation_contract_version)
+        values ('perso', 'PERSO', 'Perso', 'perso.xlsx', 'READY', 100, 'allocation_contracts_v1');
         insert into public.target_buckets
           (model_id, portfolio_scope, bucket_key, bucket_label, target_weight_pct, lower_band_pct, upper_band_pct)
         values
@@ -362,8 +362,8 @@ def _insert_valid_pro_contract(sql):
     sql(
         """
         insert into public.target_models
-          (id, portfolio_scope, model_name, source_file, status, allocation_contract_version, reserve_floor_eur, reserve_excluded_from_risky_allocation)
-        values ('pro', 'PRO', 'Pro', 'pro.xlsx', 'READY', 'allocation_contracts_v1', 120000, true);
+          (id, portfolio_scope, model_name, source_file, status, target_total_pct, allocation_contract_version, reserve_floor_eur, reserve_excluded_from_risky_allocation)
+        values ('pro', 'PRO', 'Pro', 'pro.xlsx', 'READY', 100, 'allocation_contracts_v1', 120000, true);
         insert into public.target_buckets
           (model_id, portfolio_scope, bucket_key, bucket_label, target_weight_pct)
         values
@@ -883,3 +883,59 @@ def test_advice_holds_when_band_breach_is_below_minimum_trade(pg_sql):
     )
 
     assert rows == ["4.50|HOLD|MONITOR|below_min_trade,flows_first"]
+
+
+def test_advice_keeps_same_scope_portfolios_separate(pg_sql):
+    _reset(pg_sql)
+    _insert_valid_perso_contract(pg_sql)
+    _insert_position(
+        pg_sql, portfolio_id="p1", portfolio_type="PERSONAL", ticker="AAPL",
+        name="Apple", instrument_type="EQUITY", market_value_eur="980",
+    )
+    _insert_position(
+        pg_sql, portfolio_id="p1", portfolio_type="PERSONAL", ticker="BTC",
+        name="Bitcoin", instrument_type="CRYPTO", market_value_eur="20",
+    )
+    _insert_position(
+        pg_sql, portfolio_id="p2", portfolio_type="PERSONAL", ticker="AAPL",
+        name="Apple", instrument_type="EQUITY", market_value_eur="4900",
+    )
+    _insert_position(
+        pg_sql, portfolio_id="p2", portfolio_type="PERSONAL", ticker="BTC",
+        name="Bitcoin", instrument_type="CRYPTO", market_value_eur="100",
+    )
+
+    rows = pg_sql(
+        """
+        select portfolio_id, current_value_eur, total_value_eur
+        from public.allocation_advice_items_latest
+        where portfolio_scope = 'PERSO' and bucket_key = 'actions_us'
+        order by portfolio_id;
+        """
+    )
+
+    assert rows == ["p1|980|1000", "p2|4900|5000"]
+
+
+def test_parent_model_total_must_equal_100_for_ready_advice(pg_sql):
+    _reset(pg_sql)
+    _insert_valid_perso_contract(pg_sql)
+    pg_sql("update public.target_models set target_total_pct = 99 where id = 'perso';")
+    _insert_position(
+        pg_sql, portfolio_id="p1", portfolio_type="PERSONAL", ticker="AAPL",
+        name="Apple", instrument_type="EQUITY", market_value_eur="980",
+    )
+    _insert_position(
+        pg_sql, portfolio_id="p1", portfolio_type="PERSONAL", ticker="BTC",
+        name="Bitcoin", instrument_type="CRYPTO", market_value_eur="20",
+    )
+
+    rows = pg_sql(
+        """
+        select model_contract_state, model_contract_reason, action
+        from public.allocation_advice_items_latest
+        where portfolio_id = 'p1' and bucket_key = 'actions_us';
+        """
+    )
+
+    assert rows == ["UNKNOWN|perso_model_contract_incomplete|UNAVAILABLE"]

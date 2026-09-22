@@ -157,14 +157,16 @@ function resolveExecutionStatus(quality: SupportSourceQuality, identifierState: 
 }
 
 function parseAdviceRow(raw: RawRow): AllocationAdviceRow | null {
+  const portfolioId = readString(raw.portfolio_id)
   const modelId = readString(raw.model_id)
   const modelName = readString(raw.model_name)
   const sourceFile = readString(raw.source_file)
   const bucketKey = readString(raw.bucket_key)
   const bucketLabel = readString(raw.bucket_label)
-  if (!modelId || !modelName || !sourceFile || !bucketKey || !bucketLabel) return null
+  if (!portfolioId || !modelId || !modelName || !sourceFile || !bucketKey || !bucketLabel) return null
   return {
     portfolio_scope: parsePortfolioScope(raw.portfolio_scope),
+    portfolio_id: portfolioId,
     model_id: modelId,
     model_name: modelName,
     source_file: sourceFile,
@@ -534,12 +536,13 @@ export default function ArbitragePage() {
     || Boolean(selectedTargetModel && (targetBucketsLoading || targetSleevesLoading || targetLinesLoading))
 
   const { data: adviceRows = [], error: adviceError } = useSWR(
-    selectedScope ? ['allocation-advice', selectedScope] : null,
+    selectedScope && selectedPortfolioId ? ['allocation-advice', selectedPortfolioId] : null,
     async () => {
       const { data, error } = await supabase
         .from('allocation_advice_items_latest')
-        .select('portfolio_scope,model_id,model_name,source_file,bucket_key,bucket_label,current_value_eur,current_weight_pct,target_weight_pct,drift_pct,rebalance_amount_eur,action,confidence,reason_codes,preferred_execution,data_state,model_contract_state,model_contract_reason,bucket_position_count,bucket_unavailable_positions,position_count,unavailable_positions,unmatched_positions,unmatched_scope_positions,total_value_eur,allocatable_total_eur,reserve_floor_eur,reserve_current_eur,reserve_eligible_positions,reserve_state,updated_at')
+        .select('portfolio_scope,portfolio_id,model_id,model_name,source_file,bucket_key,bucket_label,current_value_eur,current_weight_pct,target_weight_pct,drift_pct,rebalance_amount_eur,action,confidence,reason_codes,preferred_execution,data_state,model_contract_state,model_contract_reason,bucket_position_count,bucket_unavailable_positions,position_count,unavailable_positions,unmatched_positions,unmatched_scope_positions,total_value_eur,allocatable_total_eur,reserve_floor_eur,reserve_current_eur,reserve_eligible_positions,reserve_state,updated_at')
         .eq('portfolio_scope', selectedScope)
+        .eq('portfolio_id', selectedPortfolioId)
         .order('action', { ascending: true })
       if (error) throw error
       return ((data ?? []) as unknown as RawRow[])

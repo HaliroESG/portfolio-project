@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import math
 import os
 import re
 import sys
@@ -499,6 +500,35 @@ def _build_report(
     bucket_keys = [bucket.bucket_key for bucket in buckets]
     if len(bucket_keys) != len(set(bucket_keys)):
         rejected.append({"reason": "target bucket keys must be unique"})
+    for bucket in buckets:
+        weight = bucket.target_weight_pct
+        lower = bucket.lower_band_pct
+        upper = bucket.upper_band_pct
+        if not math.isfinite(weight) or weight < 0 or weight > 100:
+            rejected.append({
+                "reason": f"target bucket {bucket.bucket_key} weight must be finite and within 0%-100%"
+            })
+            continue
+        if (lower is None) != (upper is None):
+            rejected.append({
+                "reason": f"target bucket {bucket.bucket_key} must define both band bounds or neither"
+            })
+            continue
+        if lower is not None and upper is not None and (
+            not math.isfinite(lower)
+            or not math.isfinite(upper)
+            or lower < 0
+            or upper > 100
+            or lower > upper
+            or weight < lower
+            or weight > upper
+        ):
+            rejected.append({
+                "reason": (
+                    f"target bucket {bucket.bucket_key} band must be finite, ordered, within 0%-100%, "
+                    "and contain the target weight"
+                )
+            })
     if kind == "perso":
         crypto_bucket = next((bucket for bucket in buckets if bucket.bucket_key == "crypto"), None)
         if crypto_bucket is None:

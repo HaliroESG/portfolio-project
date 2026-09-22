@@ -24,6 +24,7 @@ def test_migration_defines_native_pro_sleeves_and_reserve_contract():
     assert "grant execute on function public.apply_target_model_v1" in sql
     assert "coalesce(a.aligned_bucket_count, 0) = 6" in sql
     assert "coalesce(a.misaligned_bucket_count, 0) = 0" in sql
+    assert "abs(coalesce(m.target_total_pct, 0) - 100) <= 0.05" in sql
 
 
 def test_allocation_view_preserves_missing_and_unmatched_states_without_zero_filling_values():
@@ -71,6 +72,9 @@ def test_advice_uses_private_canonical_sources_and_never_cost_fallbacks():
     assert "p.pru" not in sql
     assert "grant select on public.allocation_advice_items_latest to authenticated, service_role" in sql
     assert "grant select on public.target_sleeve_allocations to anon" not in sql
+    assert "p.portfolio_id" in sql
+    assert "group by portfolio_scope, portfolio_id, bucket_key" in sql
+    assert "c.portfolio_id = m.portfolio_id" in sql
 
 
 def test_bucket_bounds_and_non_target_rows_are_fail_closed():

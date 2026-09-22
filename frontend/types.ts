@@ -966,6 +966,7 @@ export type AllocationAdviceDataState = 'READY' | 'UNKNOWN' | 'PARTIAL' | 'STALE
 
 export interface AllocationAdviceRow {
   portfolio_scope: PortfolioScope
+  portfolio_id: string
   model_id: string
   model_name: string
   source_file: string

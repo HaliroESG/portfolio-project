@@ -224,6 +224,23 @@ def test_personal_target_model_reads_global_and_envelope_targets(tmp_path):
     assert report["audit_holdings"][0].notes.startswith("audit only")
 
 
+def test_personal_target_model_dry_run_rejects_each_invalid_bucket(tmp_path):
+    source = tmp_path / "personal-invalid-buckets.xlsx"
+    _write_personal(source)
+    persisted = load_workbook(source)
+    persisted["Strategic_Target_Perso"]["B2"] = 150
+    persisted["Strategic_Target_Perso"]["B3"] = -92
+    persisted.save(source)
+
+    report = run_import(source, kind="perso", dry_run=True)
+
+    assert report["target_total_pct"] == 100
+    assert report["ok"] is False
+    reasons = [row["reason"] for row in report["rejected"]]
+    assert any("actions_us" in reason and "within 0%-100%" in reason for reason in reasons)
+    assert any("actions_europe" in reason and "within 0%-100%" in reason for reason in reasons)
+
+
 def test_pro_target_model_uses_calculation_sheet_authority(tmp_path):
     source = tmp_path / "pro.xlsx"
     _write_pro(source)
