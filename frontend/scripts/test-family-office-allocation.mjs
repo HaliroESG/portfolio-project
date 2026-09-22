@@ -253,6 +253,51 @@ const readyProReserve = readyPro.rows.find((row) => row.instrument_type === 'CAS
 assert.equal(readyProReserve?.target_line_id, null)
 assert.deepEqual(readyProReserve?.reason_codes, ['PRO_RESERVE_EXCLUDED'])
 
+const excessReserveProRows = buildFamilyOfficeAllocationRows({
+  ...source,
+  cash: [cash({ balance_local: 150000, balance_eur: 150000 })],
+})
+const excessReservePro = assessFamilyOfficeAllocation(excessReserveProRows, proModel, proLines, {
+  expectedScope: 'PRO',
+  targetBuckets: proBuckets,
+  targetSleeves: proSleeves,
+})
+assert.equal(excessReservePro.target_model_ready, true)
+assert.equal(excessReservePro.total_value_eur, 30300)
+const protectedReserveRow = excessReservePro.rows.find((row) => row.reason_codes.includes('PRO_RESERVE_EXCLUDED'))
+const excessReserveRow = excessReservePro.rows.find((row) => row.reason_codes.includes('PRO_RESERVE_EXCESS'))
+assert.equal(protectedReserveRow?.current_value_eur, 120000)
+assert.equal(excessReserveRow?.current_value_eur, 30000)
+assert.equal(excessReserveRow?.target_weight_pct, 0)
+assert.equal(excessReserveRow?.action, 'EXIT')
+
+const fondsEuroProRows = buildFamilyOfficeAllocationRows({
+  ...source,
+  positions: [
+    ...source.positions,
+    position({
+      id: 'fonds-euro',
+      account_id: 'a3',
+      instrument_id: 'fonds-euro',
+      instrument_key: 'fund:fgdiq',
+      isin: null,
+      ticker: 'FGDIQ',
+      name: 'Fonds euro',
+      instrument_type: 'FUND',
+      market_value_eur: 120000,
+    }),
+  ],
+  cash: [],
+})
+const fondsEuroPro = assessFamilyOfficeAllocation(fondsEuroProRows, proModel, proLines, {
+  expectedScope: 'PRO',
+  targetBuckets: proBuckets,
+  targetSleeves: proSleeves,
+})
+assert.equal(fondsEuroPro.target_model_ready, false)
+assert.ok(fondsEuroPro.rows.find((row) => row.ticker === 'FGDIQ')?.reason_codes.includes('TARGET_LINE_MISSING'))
+assert.ok(!fondsEuroPro.rows.find((row) => row.ticker === 'FGDIQ')?.reason_codes.includes('PRO_RESERVE_EXCLUDED'))
+
 const incompletePro = assessFamilyOfficeAllocation(proRows, proModel, proLines, {
   expectedScope: 'PRO',
   targetBuckets: proBuckets,

@@ -287,8 +287,12 @@ def _insert_position(
     currency: str = "EUR",
     data_state: str = "READY",
     as_of: str = "current_date",
+    price_as_of: str | None = None,
+    fx_as_of: str | None = None,
 ):
     instrument_id = f"{portfolio_id}:{ticker}"
+    price_date = price_as_of or as_of
+    fx_date = fx_as_of or as_of
     sql(
         f"""
         insert into public.fo_portfolios (id, portfolio_type)
@@ -308,7 +312,7 @@ def _insert_position(
         values (
           {_literal(portfolio_id)}, {_literal(portfolio_id + ':account')}, {_literal(instrument_id)},
           {as_of}, 1, 999, null, 1, {market_value_eur}, {_literal(data_state)},
-          {as_of}, {as_of}, 'MATCH'
+          {price_date}, {fx_date}, 'MATCH'
         );
         """
     )
@@ -650,7 +654,9 @@ def test_atomic_rpc_rolls_back_parent_and_children_on_mid_apply_failure(pg_sql):
               {"model_id":"perso","portfolio_scope":"PERSO","bucket_key":"crypto","bucket_label":"Crypto","target_weight_pct":2,"lower_band_pct":0,"upper_band_pct":4,"source_sheet":"test","source_row":3}
             ]'::jsonb,
             '[]'::jsonb,
-            '[]'::jsonb,
+            '[
+              {"model_id":"perso","portfolio_scope":"PERSO","envelope":"PEA","ticker":"AAPL","target_weight_pct":100}
+            ]'::jsonb,
             '[]'::jsonb
           );
         exception when unique_violation then
@@ -758,7 +764,9 @@ def test_rpc_rejects_out_of_range_bucket_before_replacing_existing_contract(pg_s
                 {"model_id":"perso","portfolio_scope":"PERSO","bucket_key":"actions_us","bucket_label":"US","target_weight_pct":150},
                 {"model_id":"perso","portfolio_scope":"PERSO","bucket_key":"crypto","bucket_label":"Crypto","target_weight_pct":-50,"lower_band_pct":0,"upper_band_pct":4}
               ]'::jsonb,
-              '[]'::jsonb, '[]'::jsonb, '[]'::jsonb
+              '[]'::jsonb,
+              '[{"model_id":"perso","portfolio_scope":"PERSO","envelope":"PEA","ticker":"AAPL","target_weight_pct":100}]'::jsonb,
+              '[]'::jsonb
             );
             """
         )
@@ -767,6 +775,62 @@ def test_rpc_rejects_out_of_range_bucket_before_replacing_existing_contract(pg_s
     assert pg_sql(
         "select bucket_key, target_weight_pct from public.target_buckets where model_id = 'perso' order by bucket_key;"
     ) == ["actions_us|98", "crypto|2"]
+
+
+def test_rpc_rejects_invalid_envelope_weights_before_replacing_existing_contract(pg_sql):
+    _reset(pg_sql)
+    _insert_valid_perso_contract(pg_sql)
+
+    with pytest.raises(subprocess.CalledProcessError):
+        pg_sql(
+            """
+            select public.apply_target_model_v1(
+              '{
+                "id":"perso","portfolio_scope":"PERSO","model_name":"Invalid",
+                "source_file":"invalid-envelope.xlsx","allocation_contract_version":"allocation_contracts_v1",
+                "source_kind":"perso","is_active":true,"target_total_pct":100,
+                "reserve_floor_eur":null,"reserve_excluded_from_risky_allocation":false,
+                "status":"READY","report_json":{}
+              }'::jsonb,
+              '[
+                {"model_id":"perso","portfolio_scope":"PERSO","bucket_key":"actions_us","bucket_label":"US","target_weight_pct":98},
+                {"model_id":"perso","portfolio_scope":"PERSO","bucket_key":"crypto","bucket_label":"Crypto","target_weight_pct":2,"lower_band_pct":0,"upper_band_pct":4}
+              ]'::jsonb,
+              '[]'::jsonb,
+              '[
+                {"model_id":"perso","portfolio_scope":"PERSO","envelope":"PEA","ticker":"AAPL","target_weight_pct":150},
+                {"model_id":"perso","portfolio_scope":"PERSO","envelope":"PEA","ticker":"BTC","target_weight_pct":-50}
+              ]'::jsonb,
+              '[]'::jsonb
+            );
+            """
+        )
+
+    assert pg_sql("select source_file from public.target_models where id = 'perso';") == ["perso.xlsx"]
+
+
+def test_position_valuation_freshness_uses_oldest_price_or_fx_date(pg_sql):
+    _reset(pg_sql)
+    _insert_valid_perso_contract(pg_sql)
+    _insert_position(
+        pg_sql, portfolio_id="p1", portfolio_type="PERSONAL", ticker="AAPL",
+        name="Apple", instrument_type="EQUITY", market_value_eur="98000",
+        price_as_of="current_date - 10", fx_as_of="current_date",
+    )
+    _insert_position(
+        pg_sql, portfolio_id="p1", portfolio_type="PERSONAL", ticker="BTC",
+        name="Bitcoin", instrument_type="CRYPTO", market_value_eur="2000",
+    )
+
+    rows = pg_sql(
+        """
+        select data_state, action, array_to_string(reason_codes, ',')
+        from public.allocation_advice_items_latest
+        where portfolio_scope = 'PERSO' and bucket_key = 'actions_us';
+        """
+    )
+
+    assert rows == ["STALE|UNAVAILABLE|current_value_stale,flows_first"]
 
 
 def test_advice_actions_use_configured_bucket_bands(pg_sql):
@@ -795,3 +859,27 @@ def test_advice_actions_use_configured_bucket_bands(pg_sql):
         "actions_us|95.50|HOLD|MONITOR|in_band,flows_first",
         "crypto|4.50|REDUCE|INTERNAL_ARBITRAGE|flows_first",
     ]
+
+
+def test_advice_holds_when_band_breach_is_below_minimum_trade(pg_sql):
+    _reset(pg_sql)
+    _insert_valid_perso_contract(pg_sql)
+    _insert_position(
+        pg_sql, portfolio_id="p1", portfolio_type="PERSONAL", ticker="AAPL",
+        name="Apple", instrument_type="EQUITY", market_value_eur="955",
+    )
+    _insert_position(
+        pg_sql, portfolio_id="p1", portfolio_type="PERSONAL", ticker="BTC",
+        name="Bitcoin", instrument_type="CRYPTO", market_value_eur="45",
+    )
+
+    rows = pg_sql(
+        """
+        select round(current_weight_pct, 2), action, preferred_execution,
+          array_to_string(reason_codes, ',')
+        from public.allocation_advice_items_latest
+        where portfolio_scope = 'PERSO' and bucket_key = 'crypto';
+        """
+    )
+
+    assert rows == ["4.50|HOLD|MONITOR|below_min_trade,flows_first"]

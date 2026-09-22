@@ -469,8 +469,85 @@ function isProReserveEligibleRow(row: FamilyOfficeAllocationRow): boolean {
     .normalize('NFKD')
     .replace(/[\u0300-\u036f]/g, '')
     .toUpperCase()
-  if (/\b(XEON|OVERNIGHT|MONEY MARKET|MONETAIRE|FONDS EURO)\b/.test(descriptor)) return true
+  if (/\b(XEON|OVERNIGHT|MONEY MARKET|MONETAIRE|REVOLUT|BANK ACCOUNT|COMPTE BANCAIRE)\b/.test(descriptor)) return true
   return /\b(EU|EURO|EUROPEAN)[ -]?(TREASURY[ -]?)?BILLS?\b/.test(descriptor)
+}
+
+function scaledAllocationRow(
+  row: FamilyOfficeAllocationRow,
+  currentValueEur: number,
+  ratio: number,
+  suffix: string,
+  nameSuffix: string,
+): FamilyOfficeAllocationRow {
+  return {
+    ...row,
+    row_key: `${row.row_key}${suffix}`,
+    name: `${row.name}${nameSuffix}`,
+    current_quantity: row.current_quantity * ratio,
+    current_value_eur: currentValueEur,
+    source_accounts: row.source_accounts.map((account) => ({
+      ...account,
+      quantity: account.quantity * ratio,
+      value_eur: account.value_eur === null ? null : account.value_eur * ratio,
+    })),
+  }
+}
+
+function splitProReserveFloor(
+  allocationRows: FamilyOfficeAllocationRow[],
+  reserveFloorEur: number | null,
+  expectedScope: PortfolioScope,
+): {
+  rows: FamilyOfficeAllocationRow[]
+  reserveRowKeys: Set<string>
+  excessRowKeys: Set<string>
+  eligibleRows: FamilyOfficeAllocationRow[]
+} {
+  const eligibleRows = expectedScope === 'PRO' ? allocationRows.filter(isProReserveEligibleRow) : []
+  if (expectedScope !== 'PRO' || reserveFloorEur === null || reserveFloorEur < 0) {
+    return {
+      rows: allocationRows,
+      reserveRowKeys: new Set(eligibleRows.map((row) => row.row_key)),
+      excessRowKeys: new Set(),
+      eligibleRows,
+    }
+  }
+
+  let remainingFloor = reserveFloorEur
+  const rows: FamilyOfficeAllocationRow[] = []
+  const reserveRowKeys = new Set<string>()
+  const excessRowKeys = new Set<string>()
+  for (const row of allocationRows) {
+    if (!isProReserveEligibleRow(row) || row.current_value_eur === null || row.current_value_eur <= 0) {
+      rows.push(row)
+      if (isProReserveEligibleRow(row)) reserveRowKeys.add(row.row_key)
+      continue
+    }
+
+    const protectedValue = Math.min(row.current_value_eur, remainingFloor)
+    const excessValue = row.current_value_eur - protectedValue
+    remainingFloor -= protectedValue
+    if (protectedValue > 0) {
+      const protectedRatio = protectedValue / row.current_value_eur
+      const protectedRow = scaledAllocationRow(row, protectedValue, protectedRatio, '', '')
+      rows.push(protectedRow)
+      reserveRowKeys.add(protectedRow.row_key)
+    }
+    if (excessValue > 0) {
+      const excessRatio = excessValue / row.current_value_eur
+      const excessRow = scaledAllocationRow(
+        row,
+        excessValue,
+        excessRatio,
+        ':reserve-excess',
+        ' · excess above reserve floor',
+      )
+      rows.push(excessRow)
+      excessRowKeys.add(excessRow.row_key)
+    }
+  }
+  return { rows, reserveRowKeys, excessRowKeys, eligibleRows }
 }
 
 function accountMatchesTargetEnvelope(account: FamilyOfficeAllocationSourceAccount, envelope: string): boolean {
@@ -514,18 +591,19 @@ export function assessFamilyOfficeAllocation(
   const targetTotal = targetModel?.target_total_pct ?? null
   const reserveFloor = targetModel?.reserve_floor_eur ?? null
   const targetModelReady = targetModelContractReady(targetModel, targetBuckets, targetSleeves, options.expectedScope)
-  const reserveRowKeys = new Set(
-    options.expectedScope === 'PRO'
-      ? allocationRows.filter(isProReserveEligibleRow).map((row) => row.row_key)
-      : [],
-  )
-  const riskyRows = allocationRows.filter((row) => !reserveRowKeys.has(row.row_key))
-  const reserveRows = allocationRows.filter((row) => reserveRowKeys.has(row.row_key))
-  const reserveValueComplete = reserveRows.length > 0 && reserveRows.every((row) => row.current_value_eur !== null)
+  const reservePartition = splitProReserveFloor(allocationRows, reserveFloor, options.expectedScope)
+  const assessmentRows = reservePartition.rows
+  const reserveRowKeys = reservePartition.reserveRowKeys
+  const excessRowKeys = reservePartition.excessRowKeys
+  const targetedRiskyRows = assessmentRows.filter((row) => (
+    !reserveRowKeys.has(row.row_key) && !excessRowKeys.has(row.row_key)
+  ))
+  const reserveValueComplete = reservePartition.eligibleRows.length > 0
+    && reservePartition.eligibleRows.every((row) => row.current_value_eur !== null)
   const reserveCurrentValue = reserveValueComplete
-    ? reserveRows.reduce((sum, row) => sum + (row.current_value_eur ?? 0), 0)
+    ? reservePartition.eligibleRows.reduce((sum, row) => sum + (row.current_value_eur ?? 0), 0)
     : null
-  const reserveRowsReady = reserveRows.every((row) => (
+  const reserveRowsReady = reservePartition.eligibleRows.every((row) => (
     row.data_state === 'READY'
     && valuationStateAt(row, referenceDate) === 'READY'
     && (row.instrument_type === 'CASH' || row.reconciliation_state === 'MATCH')
@@ -549,9 +627,11 @@ export function assessFamilyOfficeAllocation(
         : null
       : grossValue
   const matchesByRow = new Map(
-    allocationRows.map((row) => [
+    assessmentRows.map((row) => [
       row.row_key,
-      reserveRowKeys.has(row.row_key) ? [] : targetLines.filter((line) => targetMatches(row, line)),
+      reserveRowKeys.has(row.row_key) || excessRowKeys.has(row.row_key)
+        ? []
+        : targetLines.filter((line) => targetMatches(row, line)),
     ]),
   )
   const targetWeightIsValid = (line: TargetEnvelopeLineRow): boolean => {
@@ -573,23 +653,24 @@ export function assessFamilyOfficeAllocation(
     && targetModel !== null
     && targetLines.every((line) => line.model_id === targetModel.id && line.portfolio_scope === options.expectedScope)
     && envelopeTargetsValid
-    && riskyRows.every((row) => {
+    && targetedRiskyRows.every((row) => {
       const matches = matchesByRow.get(row.row_key) ?? []
       return matches.length === 1 && targetWeightIsValid(matches[0])
     })
     && targetLines
       .filter((line) => (line.target_weight_pct ?? 0) > 0)
-      .every((line) => riskyRows.filter((row) => targetMatches(row, line)).length === 1)
+      .every((line) => targetedRiskyRows.filter((row) => targetMatches(row, line)).length === 1)
 
-  const rows = allocationRows.map((row): FamilyOfficeAllocationAssessmentRow => {
+  const rows = assessmentRows.map((row): FamilyOfficeAllocationAssessmentRow => {
     const isReserveRow = reserveRowKeys.has(row.row_key)
+    const isExcessRow = excessRowKeys.has(row.row_key)
     const matches = matchesByRow.get(row.row_key) ?? []
     const targetLine = matches.length === 1 ? matches[0] : null
     const targetWeight = targetLine?.target_weight_pct ?? null
     const targetEnvelopeKey = targetLine ? normalize(targetLine.envelope) : null
     const envelopeRows = targetEnvelopeKey === null
       ? []
-      : riskyRows.filter((candidate) => {
+      : targetedRiskyRows.filter((candidate) => {
         const candidateMatches = matchesByRow.get(candidate.row_key) ?? []
         return candidateMatches.length === 1 && normalize(candidateMatches[0].envelope) === targetEnvelopeKey
       })
@@ -623,6 +704,31 @@ export function assessFamilyOfficeAllocation(
         action: targetModelReady && proReserveReady ? 'HOLD' : 'UNAVAILABLE',
         confidence: targetModelReady && proReserveReady ? 100 : 0,
         reason_codes: reserveReasons,
+        target_line_id: null,
+      }
+    }
+    if (isExcessRow) {
+      const excessReady = targetModelReady
+        && proReserveReady
+        && portfolioValueComplete
+        && totalValue !== null
+        && totalValue > 0
+        && row.current_value_eur !== null
+        && row.data_state === 'READY'
+        && effectiveValuationState === 'READY'
+        && (row.instrument_type === 'CASH' || row.reconciliation_state === 'MATCH')
+      const excessValue = row.current_value_eur ?? 0
+      const excessWeight = totalValue !== null && totalValue > 0 ? excessValue / totalValue * 100 : null
+      return {
+        ...row,
+        valuation_state: effectiveValuationState,
+        target_weight_pct: 0,
+        current_weight_pct: excessWeight,
+        drift_pct: excessWeight,
+        rebalance_amount_eur: row.current_value_eur === null ? null : -row.current_value_eur,
+        action: excessReady && excessValue >= 100 ? 'EXIT' : excessReady ? 'HOLD' : 'UNAVAILABLE',
+        confidence: excessReady ? 100 : 0,
+        reason_codes: ['PRO_RESERVE_EXCESS'],
         target_line_id: null,
       }
     }

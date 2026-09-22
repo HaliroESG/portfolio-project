@@ -84,6 +84,8 @@ declare
   v_misaligned_bucket_count integer;
   v_invalid_child_count integer;
   v_invalid_bucket_count integer;
+  v_invalid_envelope_count integer;
+  v_invalid_envelope_total_count integer;
 begin
   if jsonb_typeof(p_model) is distinct from 'object'
     or jsonb_typeof(p_buckets) is distinct from 'array'
@@ -164,6 +166,34 @@ begin
     or target_weight_pct > upper_band_pct;
   if v_invalid_bucket_count > 0 then
     raise exception 'allocation contract target bucket weights or bands are invalid';
+  end if;
+  select count(*)
+  into v_invalid_envelope_count
+  from jsonb_to_recordset(p_envelope_lines) as x(
+    envelope text,
+    target_weight_pct numeric
+  )
+  where coalesce(trim(envelope), '') = ''
+    or target_weight_pct is null
+    or target_weight_pct::text in ('NaN', 'Infinity', '-Infinity')
+    or target_weight_pct < 0
+    or target_weight_pct > 100;
+  if jsonb_array_length(p_envelope_lines) = 0 or v_invalid_envelope_count > 0 then
+    raise exception 'allocation contract envelope target weights are invalid';
+  end if;
+  select count(*)
+  into v_invalid_envelope_total_count
+  from (
+    select envelope, sum(target_weight_pct) as target_total_pct
+    from jsonb_to_recordset(p_envelope_lines) as x(
+      envelope text,
+      target_weight_pct numeric
+    )
+    group by envelope
+  ) envelope_totals
+  where abs(target_total_pct - 100) > 0.05;
+  if v_invalid_envelope_total_count > 0 then
+    raise exception 'allocation contract target lines must total 100 percent per envelope';
   end if;
   if abs(v_bucket_total - 100) > 0.05
     or abs(coalesce((p_model ->> 'target_total_pct')::numeric, 0) - 100) > 0.05
@@ -535,7 +565,10 @@ canonical_holdings as (
     p.name,
     p.instrument_type,
     p.currency,
-    p.snapshot_date as actual_as_of_date,
+    case
+      when p.price_as_of is null or p.fx_as_of is null then null
+      else least(p.snapshot_date, p.price_as_of, p.fx_as_of)
+    end as actual_as_of_date,
     p.data_state,
     p.market_value_eur as current_value_eur
   from public.fo_positions_latest p
@@ -1022,6 +1055,7 @@ select
     when allocatable_total_eur is null or allocatable_total_eur <= 0 then 'UNAVAILABLE'
     when target_weight_pct = 0 and current_value_eur >= 100 then 'REDUCE'
     when target_weight_pct = 0 then 'HOLD'
+    when abs((target_weight_pct / 100) * allocatable_total_eur - current_value_eur) < 100 then 'HOLD'
     when (current_value_eur / allocatable_total_eur) * 100 < effective_lower_band_pct then 'BUY'
     when (current_value_eur / allocatable_total_eur) * 100 > effective_upper_band_pct then 'REDUCE'
     else 'HOLD'
@@ -1065,6 +1099,7 @@ select
     when target_weight_pct is null then 'MONITOR'
     when target_weight_pct = 0 and current_value_eur >= 100 then 'INTERNAL_ARBITRAGE'
     when target_weight_pct = 0 then 'MONITOR'
+    when abs((target_weight_pct / 100) * allocatable_total_eur - current_value_eur) < 100 then 'MONITOR'
     when (current_value_eur / allocatable_total_eur) * 100 < effective_lower_band_pct then 'NEW_CASH_FIRST'
     when (current_value_eur / allocatable_total_eur) * 100 > effective_upper_band_pct then 'INTERNAL_ARBITRAGE'
     else 'MONITOR'
