@@ -203,6 +203,14 @@ function parseTargetBucket(raw: RawRow): TargetBucketRow | null {
   }
 }
 
+function parseTargetBuckets(rawRows: RawRow[]): TargetBucketRow[] {
+  return rawRows.map((raw) => {
+    const row = parseTargetBucket(raw)
+    if (row === null) throw new Error('Target bucket contract contains an invalid row')
+    return row
+  })
+}
+
 function parseTargetEnvelopeLine(raw: RawRow): TargetEnvelopeLineRow | null {
   const id = readNumber(raw.id as number | string | null)
   const modelId = readString(raw.model_id)
@@ -324,9 +332,7 @@ export default function TargetsPage() {
         .eq('model_id', selectedTargetModel!.id)
         .order('source_row', { ascending: true })
       if (error) throw error
-      return ((data ?? []) as unknown as RawRow[])
-        .map(parseTargetBucket)
-        .filter((row): row is TargetBucketRow => row !== null)
+      return parseTargetBuckets((data ?? []) as unknown as RawRow[])
     }
   )
 
@@ -353,8 +359,15 @@ export default function TargetsPage() {
   const targetEnvelopeLinesReady = !selectedTargetModel
     || (!targetEnvelopeLinesLoading && !targetEnvelopeLinesError && targetEnvelopeLinesData !== undefined)
 
+  const sourceLoading = allocationLoading
+    || targetModelLoading
+    || Boolean(selectedTargetModel && targetBucketsLoading)
+    || Boolean(selectedTargetModel && targetEnvelopeLinesLoading)
+    || Boolean(selectedTargetModel?.portfolio_scope === 'PRO' && targetSleevesLoading)
+  const sourceError = allocationError ?? targetModelError ?? targetBucketsError ?? targetEnvelopeLinesError ?? targetSleevesError
+
   const assessment = useMemo(
-    () => targetEnvelopeLinesReady && selectedScope
+    () => !sourceLoading && !sourceError && targetEnvelopeLinesReady && selectedScope
       ? assessFamilyOfficeAllocation(allocationRows, selectedTargetModel, targetEnvelopeLines, {
         expectedScope: selectedScope,
         targetBuckets,
@@ -366,7 +379,7 @@ export default function TargetsPage() {
         target_total_pct: selectedTargetModel?.target_total_pct ?? null,
         target_model_ready: false,
       },
-    [allocationRows, selectedScope, selectedTargetModel, targetBuckets, targetEnvelopeLines, targetEnvelopeLinesReady, targetSleeves],
+    [allocationRows, selectedScope, selectedTargetModel, sourceError, sourceLoading, targetBuckets, targetEnvelopeLines, targetEnvelopeLinesReady, targetSleeves],
   )
 
   const positionViews = useMemo(() => assessment.rows.map((row): PositionView => ({
@@ -431,19 +444,12 @@ export default function TargetsPage() {
         .sort((a, b) => new Date(b).getTime() - new Date(a).getTime())[0] ?? null
     const latestFreshness = resolveFreshnessDate(latestAsOf)
     return {
-      error: allocationError?.message ?? targetEnvelopeLinesError?.message ?? null,
+      error: sourceError?.message ?? null,
       sourceCount: sourceKeys.size,
       latestAsOf,
       latestFreshness,
     }
-  }, [allocationError, positionViews, targetEnvelopeLinesError])
-
-  const sourceLoading = allocationLoading
-    || targetModelLoading
-    || Boolean(selectedTargetModel && targetBucketsLoading)
-    || Boolean(selectedTargetModel && targetEnvelopeLinesLoading)
-    || Boolean(selectedTargetModel?.portfolio_scope === 'PRO' && targetSleevesLoading)
-  const sourceError = allocationError ?? targetModelError ?? targetBucketsError ?? targetEnvelopeLinesError ?? targetSleevesError
+  }, [positionViews, sourceError])
 
   const { lastSync, lastSyncIso } = useMemo(() => {
     if (positionViews.length === 0) return { lastSync: '', lastSyncIso: null as string | null }

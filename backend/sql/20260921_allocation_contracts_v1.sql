@@ -576,7 +576,10 @@ canonical_holdings as (
       else least(p.snapshot_date, p.price_as_of, p.fx_as_of)
     end as actual_as_of_date,
     p.data_state,
-    p.market_value_eur as current_value_eur
+    case
+      when p.market_value_eur::text in ('NaN', 'Infinity', '-Infinity') then null
+      else p.market_value_eur
+    end as current_value_eur
   from public.fo_positions_latest p
   join public.fo_portfolios po on po.id = p.portfolio_id
 
@@ -595,7 +598,10 @@ canonical_holdings as (
     c.currency,
     c.balance_date as actual_as_of_date,
     c.data_state,
-    c.balance_eur as current_value_eur
+    case
+      when c.balance_eur::text in ('NaN', 'Infinity', '-Infinity') then null
+      else c.balance_eur
+    end as current_value_eur
   from public.fo_cash_balances_latest c
   join public.fo_portfolios po on po.id = c.portfolio_id
 ),

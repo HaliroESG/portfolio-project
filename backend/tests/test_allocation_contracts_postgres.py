@@ -717,6 +717,52 @@ def test_canonical_market_value_is_required_and_average_cost_is_never_a_fallback
     assert rows == ["|UNKNOWN|UNAVAILABLE|current_value_unknown,position_value_unavailable,flows_first"]
 
 
+@pytest.mark.parametrize("value", ["NaN", "Infinity", "-Infinity"])
+@pytest.mark.parametrize("source", ["position", "cash"])
+@pytest.mark.parametrize("scope", ["PERSO", "PRO", "UNMATCHED"])
+def test_nonfinite_canonical_values_block_advice(pg_sql, value, source, scope):
+    _reset(pg_sql)
+    if scope == "PRO":
+        _insert_valid_pro_contract(pg_sql)
+        portfolio_type = "PROFESSIONAL"
+        _insert_cash(pg_sql, portfolio_id="p1", portfolio_type=portfolio_type, balance_eur="120000")
+    else:
+        _insert_valid_perso_contract(pg_sql)
+        portfolio_type = "PERSONAL"
+    _insert_position(
+        pg_sql, portfolio_id="p1", portfolio_type=portfolio_type, ticker="SP500",
+        name="S&P 500", instrument_type="ETF", market_value_eur="10000",
+    )
+    bad_portfolio = "unclassified" if scope == "UNMATCHED" else "p1"
+    bad_type = "OTHER" if scope == "UNMATCHED" else portfolio_type
+    numeric = _literal(value) + "::numeric"
+    if source == "position":
+        _insert_position(
+            pg_sql, portfolio_id=bad_portfolio, portfolio_type=bad_type, ticker="EUBILL",
+            name="EU Treasury Bill", instrument_type="BOND", market_value_eur=numeric,
+        )
+    else:
+        _insert_cash(pg_sql, portfolio_id=bad_portfolio, portfolio_type=bad_type, balance_eur=numeric)
+
+    assert pg_sql("select count(*) > 0 from public.allocation_advice_items_latest;") == ["t"]
+    assert pg_sql("select distinct action from public.allocation_advice_items_latest;") == ["UNAVAILABLE"]
+    assert pg_sql("select count(*) from public.allocation_advice_items_latest where data_state = 'READY';") == ["0"]
+    assert pg_sql("""
+        select count(*) from public.allocation_advice_items_latest
+        where current_value_eur::text in ('NaN', 'Infinity', '-Infinity')
+          or total_value_eur::text in ('NaN', 'Infinity', '-Infinity')
+          or allocatable_total_eur::text in ('NaN', 'Infinity', '-Infinity')
+          or reserve_current_eur::text in ('NaN', 'Infinity', '-Infinity');
+    """) == ["0"]
+    if scope == "UNMATCHED":
+        assert pg_sql("select bucket_unavailable_positions from public.allocation_advice_items_latest where bucket_key = 'unmatched_scope';") == ["1"]
+    else:
+        assert pg_sql("select distinct unavailable_positions from public.allocation_advice_items_latest;") == ["1"]
+    if scope == "PRO":
+        # Even a finite EUR 120000 sibling cannot hide an invalid reserve row.
+        assert pg_sql("select reserve_state from public.allocation_advice_items_latest where bucket_key = 'pro_reserve';") == ["PARTIAL"]
+
+
 def test_pro_non_target_bond_is_explicit_and_eu_bill_is_not_unmatched(pg_sql):
     _reset(pg_sql)
     _insert_valid_pro_contract(pg_sql)

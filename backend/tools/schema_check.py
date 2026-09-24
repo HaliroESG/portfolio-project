@@ -372,17 +372,46 @@ def check_column_exists(base_url: str, api_key: str, table: str, column: str) ->
     return False, f"HTTP {status}: {msg}"
 
 
-def _openapi_property_names(value: Any) -> set[str]:
-    names: set[str] = set()
-    if isinstance(value, dict):
-        properties = value.get("properties")
-        if isinstance(properties, dict):
-            names.update(str(name) for name in properties)
-        for child in value.values():
-            names.update(_openapi_property_names(child))
-    elif isinstance(value, list):
-        for child in value:
-            names.update(_openapi_property_names(child))
+def _openapi_request_object(
+    value: Any, document: dict[str, Any], refs: tuple[str, ...] = (),
+) -> tuple[dict[str, Any], tuple[str, ...]]:
+    """Resolve only local JSON references; never fetch a referenced resource."""
+    if not isinstance(value, dict):
+        raise ValueError("invalid request object")
+    while "$ref" in value:
+        ref = value["$ref"]
+        if not isinstance(ref, str) or not ref.startswith("#/"):
+            raise ValueError("external or invalid request reference")
+        if ref in refs or len(refs) >= 64:
+            raise ValueError("cyclic or excessively deep request reference")
+        refs = (*refs, ref)
+        target: Any = document
+        for part in ref[2:].split("/"):
+            key = part.replace("~1", "/").replace("~0", "~")
+            if not isinstance(target, dict) or key not in target:
+                raise ValueError("missing request reference")
+            target = target[key]
+        if not isinstance(target, dict):
+            raise ValueError("invalid request reference target")
+        value = target
+    return value, refs
+
+
+def _openapi_property_names(
+    value: Any, document: dict[str, Any], refs: tuple[str, ...] = (), depth: int = 0,
+) -> set[str]:
+    if depth >= 64:
+        raise ValueError("excessively deep request schema")
+    schema, refs = _openapi_request_object(value, document, refs)
+    properties = schema.get("properties", {})
+    if not isinstance(properties, dict):
+        raise ValueError("invalid request properties")
+    names = set(properties)
+    parts = schema.get("allOf", [])
+    if not isinstance(parts, list):
+        raise ValueError("invalid request schema composition")
+    for part in parts:
+        names.update(_openapi_property_names(part, document, refs, depth + 1))
     return names
 
 
@@ -399,7 +428,25 @@ def check_rpc_exists(
     paths = payload.get("paths") if isinstance(payload, dict) else None
     if not isinstance(paths, dict) or f"/rpc/{rpc_name}" not in paths:
         return False, f"RPC {rpc_name} is absent from the PostgREST OpenAPI contract"
-    observed_arguments = _openapi_property_names(paths[f"/rpc/{rpc_name}"])
+    try:
+        path, refs = _openapi_request_object(paths[f"/rpc/{rpc_name}"], payload)
+        operation, operation_refs = _openapi_request_object(path.get("post"), payload, refs)
+        observed_arguments: set[str] = set()
+        for owner, owner_refs in ((path, refs), (operation, operation_refs)):
+            parameters = owner.get("parameters", [])
+            if not isinstance(parameters, list):
+                raise ValueError("invalid request parameters")
+            for raw_parameter in parameters:
+                parameter, parameter_refs = _openapi_request_object(raw_parameter, payload, owner_refs)
+                # Older inline contracts omit 'in'; keep their body-schema support.
+                if parameter.get("in") == "body" or ("in" not in parameter and "schema" in parameter):
+                    observed_arguments.update(_openapi_property_names(parameter.get("schema"), payload, parameter_refs))
+                elif parameter.get("in") in ("query", "formData"):
+                    name = parameter.get("name")
+                    if isinstance(name, str):
+                        observed_arguments.add(name)
+    except ValueError as exc:
+        return False, f"RPC {rpc_name} has an invalid request contract: {exc}"
     missing_arguments = sorted(set(required_arguments) - observed_arguments)
     if missing_arguments:
         return False, f"RPC {rpc_name} is missing arguments: {', '.join(missing_arguments)}"

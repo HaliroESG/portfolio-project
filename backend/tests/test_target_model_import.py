@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from copy import deepcopy
 
+import pytest
 from openpyxl import Workbook, load_workbook
 
 from scripts.import_target_model import parse_target_model, run_import
@@ -239,6 +240,29 @@ def test_personal_target_model_dry_run_rejects_each_invalid_bucket(tmp_path):
     reasons = [row["reason"] for row in report["rejected"]]
     assert any("actions_us" in reason and "within 0%-100%" in reason for reason in reasons)
     assert any("actions_europe" in reason and "within 0%-100%" in reason for reason in reasons)
+
+
+@pytest.mark.parametrize("placeholders_only", [False, True])
+def test_personal_target_model_rejects_empty_envelope_set_before_apply(tmp_path, placeholders_only):
+    source = tmp_path / "personal-empty-envelopes.xlsx"
+    _write_personal(source)
+    workbook = load_workbook(source)
+    sheet = workbook["Envelope_Targets"]
+    sheet.delete_rows(5, sheet.max_row)
+    if placeholders_only:
+        sheet.append(["Optional", None, None, None, None, "Optional"])
+    workbook.save(source)
+
+    dry = run_import(source, kind="perso", dry_run=True)
+    client = _Supabase()
+    applied = run_import(source, kind="perso", dry_run=False, supabase_client=client)
+
+    assert dry["ok"] is False
+    assert dry["envelope_line_count"] == 0
+    assert any("envelope set must not be empty" in row["reason"] for row in dry["rejected"])
+    assert applied["ok"] is False
+    assert client.rpc_calls == []
+    assert client.rows == {}
 
 
 def test_personal_target_model_dry_run_rejects_incomplete_envelope_line(tmp_path):

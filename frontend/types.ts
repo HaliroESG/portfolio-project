@@ -972,6 +972,7 @@ export interface AllocationAdviceRow {
   source_file: string
   bucket_key: string
   bucket_label: string
+  /** Finite EUR value, or null when unavailable (including non-finite source values). */
   current_value_eur: number | null
   current_weight_pct: number | null
   target_weight_pct: number | null

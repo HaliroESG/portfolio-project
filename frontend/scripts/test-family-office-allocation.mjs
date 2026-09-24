@@ -1,4 +1,5 @@
 import assert from 'node:assert/strict'
+import './test-target-buckets.mjs'
 
 const {
   assessFamilyOfficeAllocation: assessFamilyOfficeAllocationAtDate,

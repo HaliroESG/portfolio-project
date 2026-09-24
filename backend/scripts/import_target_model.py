@@ -539,6 +539,8 @@ def _build_report(
                     "and contain the target weight"
                 )
             })
+    if not envelope_lines:
+        rejected.append({"reason": "target envelope set must not be empty"})
     envelope_totals: dict[str, float] = {}
     invalid_envelopes: set[str] = set()
     for line in envelope_lines:
