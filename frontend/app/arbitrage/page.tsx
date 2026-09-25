@@ -2,6 +2,8 @@
 
 import React, { useMemo, useState } from 'react'
 import useSWR from 'swr'
+import { sourceReadiness, hasSelectedPortfolio } from '../../lib/sourceReadiness'
+import { SourceStateScreen } from '../../components/SourceStateScreen'
 import { AlertTriangle, ArrowDown, ArrowUp, ChevronsUpDown, LockKeyhole, Scale } from 'lucide-react'
 import { AppShell } from '../../components/AppShell'
 import { EmptyState } from '../../components/EmptyState'
@@ -405,27 +407,21 @@ export default function ArbitragePage() {
   const [currencyFilter, setCurrencyFilter] = useState('ALL')
   const [sort, setSort] = useState<SortConfig>(DEFAULT_SORT)
 
-  const { data: portfolios } = useSWR('fo-arbitrage-portfolios', async () => {
+  const portfoliosSource = useSWR('fo-arbitrage-portfolios', async () => {
     const { data, error } = await supabase.from('fo_portfolios').select('id,name').eq('status', 'ACTIVE').order('name')
     if (error) throw error
     return (data ?? []) as PortfolioRow[]
   })
+  const { data: portfolios } = portfoliosSource
   const selectedPortfolioId = selectedPortfolioIdOverride || portfolios?.[0]?.id || ''
 
-  const {
-    data: allocationRows = [],
-    error: allocationError,
-    isLoading: allocationLoading,
-  } = useSWR(
+  const allocationSource = useSWR(
     selectedPortfolioId ? ['fo-arbitrage-allocation', selectedPortfolioId] : null,
     async () => buildFamilyOfficeAllocationRows(await loadFamilyOfficeAllocationSource(supabase, selectedPortfolioId)),
   )
 
-  const {
-    data: targetModels = [],
-    error: targetModelError,
-    isLoading: targetModelLoading,
-  } = useSWR('fo-arbitrage-target-models', async () => {
+  const { data: allocationRows = [], error: allocationError, isLoading: allocationLoading } = allocationSource
+  const modelsSource = useSWR('fo-arbitrage-target-models', async () => {
     const { data, error } = await supabase
       .from('target_models')
       .select('id,portfolio_scope,model_name,source_file,source_kind,as_of_date,is_active,target_total_pct,status,report_json,imported_at,updated_at')
@@ -435,12 +431,9 @@ export default function ArbitragePage() {
     return (data ?? []) as unknown as TargetModelRow[]
   })
 
+  const { data: targetModels = [], error: targetModelError, isLoading: targetModelLoading } = modelsSource
   const selectedTargetModel = targetModels.find((model) => model.portfolio_scope === selectedScope) ?? null
-  const {
-    data: targetLines = [],
-    error: targetLinesError,
-    isLoading: targetLinesLoading,
-  } = useSWR(
+  const linesSource = useSWR(
     selectedTargetModel ? ['fo-arbitrage-target-lines', selectedTargetModel.id] : null,
     async () => {
       const { data, error } = await supabase
@@ -452,6 +445,7 @@ export default function ArbitragePage() {
     },
   )
 
+  const { data: targetLines = [], error: targetLinesError, isLoading: targetLinesLoading } = linesSource
   const assessment = useMemo(
     () => assessFamilyOfficeAllocation(allocationRows, selectedTargetModel, targetLines),
     [allocationRows, selectedTargetModel, targetLines],
@@ -460,7 +454,7 @@ export default function ArbitragePage() {
   const error = allocationError ?? targetModelError ?? targetLinesError
   const isLoading = allocationLoading || targetModelLoading || Boolean(selectedTargetModel && targetLinesLoading)
 
-  const { data: adviceRows = [], error: adviceError } = useSWR(
+  const adviceSource = useSWR(
     ['allocation-advice', selectedScope],
     async () => {
       const { data, error } = await supabase
@@ -475,16 +469,19 @@ export default function ArbitragePage() {
     }
   )
 
-  const { data: macroRows = [], error: macroError } = useSWR(
+  const { data: adviceRows = [], error: adviceError } = adviceSource
+  const macroSource = useSWR(
     selectedPortfolioId ? ['macro-allocation-advice', selectedPortfolioId] : null,
     () => loadMacroAllocationAdvice(supabase, selectedPortfolioId)
   )
 
-  const { data: executionRows = [], error: executionError } = useSWR(
+  const { data: macroRows = [], error: macroError } = macroSource
+  const executionSource = useSWR(
     'arbitrage-execution-universe',
     loadExecutionUniverse
   )
 
+  const { data: executionRows = [], error: executionError } = executionSource
   const filters = useMemo(() => {
     const issueCodes = new Set<string>()
     const assetClasses = new Set<string>()
@@ -556,6 +553,20 @@ export default function ArbitragePage() {
       return { key, direction: defaultDirection[key] }
     })
   }
+
+  // Every displayed source must settle, including advice, macro and execution panels.
+  const reads = sourceReadiness([
+    portfoliosSource, modelsSource, adviceSource, executionSource,
+    ...(selectedPortfolioId ? [allocationSource, macroSource] : []),
+    ...(selectedTargetModel ? [linesSource] : []),
+  ])
+  const state = reads === 'READY' && !hasSelectedPortfolio(portfolios, selectedPortfolioId) ? 'UNAVAILABLE' : reads
+  if (state !== 'READY') return (
+    <AppShell className="bg-slate-50">
+      <SourceStateScreen title="Arbitrage" state={state} portfolios={portfolios} portfolioId={selectedPortfolioId}
+        scope={selectedScope} onPortfolio={setSelectedPortfolioIdOverride} onScope={setSelectedScope} />
+    </AppShell>
+  )
 
   return (
     <AppShell lastSync={lastSync} lastSyncIso={lastSyncIso} className="bg-slate-50">
