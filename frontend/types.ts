@@ -899,9 +899,30 @@ export interface TargetModelRow {
   as_of_date: string | null
   is_active: boolean
   target_total_pct: number | null
+  allocation_contract_version: string | null
+  reserve_floor_eur: number | null
+  reserve_excluded_from_risky_allocation: boolean
   status: string
   report_json: Record<string, unknown>
   imported_at: string
+  updated_at: string
+}
+
+export type TargetSleeveKey = 'CORE' | 'SATELLITE'
+
+export interface TargetSleeveAllocationRow {
+  id: number
+  model_id: string
+  portfolio_scope: PortfolioScope
+  sleeve_key: TargetSleeveKey
+  component_label: string
+  bucket_key: string
+  bucket_label: string
+  target_weight_pct: number
+  instrument_policy: string | null
+  activation_status: string
+  source_sheet: string | null
+  source_row: number | null
   updated_at: string
 }
 
@@ -941,14 +962,17 @@ export interface TargetEnvelopeLineRow {
 
 export type AllocationAdviceAction = 'BUY' | 'REDUCE' | 'HOLD' | 'UNAVAILABLE'
 export type AllocationAdviceExecution = 'NEW_CASH_FIRST' | 'INTERNAL_ARBITRAGE' | 'MONITOR' | 'CURRENT_UNAVAILABLE'
+export type AllocationAdviceDataState = 'READY' | 'UNKNOWN' | 'PARTIAL' | 'STALE' | 'UNMATCHED'
 
 export interface AllocationAdviceRow {
   portfolio_scope: PortfolioScope
+  portfolio_id: string
   model_id: string
   model_name: string
   source_file: string
   bucket_key: string
   bucket_label: string
+  /** Finite EUR value, or null when unavailable (including non-finite source values). */
   current_value_eur: number | null
   current_weight_pct: number | null
   target_weight_pct: number | null
@@ -958,6 +982,21 @@ export interface AllocationAdviceRow {
   confidence: number
   reason_codes: string[]
   preferred_execution: AllocationAdviceExecution
+  data_state: AllocationAdviceDataState
+  model_contract_state: AllocationAdviceDataState
+  model_contract_reason: string | null
+  bucket_position_count: number
+  bucket_unavailable_positions: number
+  position_count: number
+  unavailable_positions: number
+  unmatched_positions: number
+  unmatched_scope_positions: number
+  total_value_eur: number | null
+  allocatable_total_eur: number | null
+  reserve_floor_eur: number | null
+  reserve_current_eur: number | null
+  reserve_eligible_positions: number
+  reserve_state: AllocationAdviceDataState
   updated_at: string | null
 }
 

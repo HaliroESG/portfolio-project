@@ -11,11 +11,13 @@ import {
   loadFamilyOfficeAllocationSource,
   toPortfolioDecisionRows,
 } from '../../lib/familyOfficeAllocation'
+import { parseTargetModels, parseTargetSleeves, parseTargetBuckets, parseTargetEnvelopeLines, parseTargetPortfolios } from '../../lib/targetModelReaders'
 import { supabase } from '../../lib/supabase'
 import { cn } from '../../lib/utils'
 import { loadMacroAllocationAdvice } from '../../lib/macroStrategyData'
 import type {
   AllocationAdviceAction,
+  AllocationAdviceDataState,
   AllocationAdviceExecution,
   AllocationAdviceRow,
   MacroAllocationAction,
@@ -25,8 +27,6 @@ import type {
   PortfolioScope,
   SupportIdentifierState,
   SupportSourceQuality,
-  TargetEnvelopeLineRow,
-  TargetModelRow,
 } from '../../types'
 
 type SortKey = 'priority' | 'ticker' | 'action' | 'amount' | 'drift' | 'confidence'
@@ -38,6 +38,7 @@ type OverlayFilter = 'ALL' | 'STANDARD' | 'MACRO'
 interface PortfolioRow {
   id: string
   name: string | null
+  portfolio_type: string | null
 }
 
 interface ExecutionUniverseRow {
@@ -63,6 +64,12 @@ const ACTION_RANK: Record<PortfolioDecisionAction, number> = {
 }
 
 const DEFAULT_SORT: SortConfig = { key: 'priority', direction: 'asc' }
+
+function scopeFromPortfolioType(value: unknown): PortfolioScope | null {
+  if (value === 'PERSONAL') return 'PERSO'
+  if (value === 'PROFESSIONAL') return 'PRO'
+  return null
+}
 
 function isMissingSchemaError(message: string | undefined): boolean {
   return /could not find the table/i.test(message || '')
@@ -101,6 +108,11 @@ function parsePortfolioScope(value: unknown): PortfolioScope {
 function parseExecution(value: unknown): AllocationAdviceExecution {
   if (value === 'NEW_CASH_FIRST' || value === 'INTERNAL_ARBITRAGE' || value === 'MONITOR' || value === 'CURRENT_UNAVAILABLE') return value
   return 'CURRENT_UNAVAILABLE'
+}
+
+function parseAdviceDataState(value: unknown): AllocationAdviceDataState {
+  if (value === 'READY' || value === 'UNKNOWN' || value === 'PARTIAL' || value === 'STALE' || value === 'UNMATCHED') return value
+  return 'UNKNOWN'
 }
 
 function parseSourceQuality(value: unknown, sourceKind?: string | null): SupportSourceQuality {
@@ -142,14 +154,16 @@ function resolveExecutionStatus(quality: SupportSourceQuality, identifierState: 
 }
 
 function parseAdviceRow(raw: RawRow): AllocationAdviceRow | null {
+  const portfolioId = readString(raw.portfolio_id)
   const modelId = readString(raw.model_id)
   const modelName = readString(raw.model_name)
   const sourceFile = readString(raw.source_file)
   const bucketKey = readString(raw.bucket_key)
   const bucketLabel = readString(raw.bucket_label)
-  if (!modelId || !modelName || !sourceFile || !bucketKey || !bucketLabel) return null
+  if (!portfolioId || !modelId || !modelName || !sourceFile || !bucketKey || !bucketLabel) return null
   return {
     portfolio_scope: parsePortfolioScope(raw.portfolio_scope),
+    portfolio_id: portfolioId,
     model_id: modelId,
     model_name: modelName,
     source_file: sourceFile,
@@ -164,6 +178,21 @@ function parseAdviceRow(raw: RawRow): AllocationAdviceRow | null {
     confidence: readNumber(raw.confidence) ?? 0,
     reason_codes: parseStringArray(raw.reason_codes),
     preferred_execution: parseExecution(raw.preferred_execution),
+    data_state: parseAdviceDataState(raw.data_state),
+    model_contract_state: parseAdviceDataState(raw.model_contract_state),
+    model_contract_reason: readString(raw.model_contract_reason),
+    bucket_position_count: readNumber(raw.bucket_position_count) ?? 0,
+    bucket_unavailable_positions: readNumber(raw.bucket_unavailable_positions) ?? 0,
+    position_count: readNumber(raw.position_count) ?? 0,
+    unavailable_positions: readNumber(raw.unavailable_positions) ?? 0,
+    unmatched_positions: readNumber(raw.unmatched_positions) ?? 0,
+    unmatched_scope_positions: readNumber(raw.unmatched_scope_positions) ?? 0,
+    total_value_eur: readNumber(raw.total_value_eur),
+    allocatable_total_eur: readNumber(raw.allocatable_total_eur),
+    reserve_floor_eur: readNumber(raw.reserve_floor_eur),
+    reserve_current_eur: readNumber(raw.reserve_current_eur),
+    reserve_eligible_positions: readNumber(raw.reserve_eligible_positions) ?? 0,
+    reserve_state: parseAdviceDataState(raw.reserve_state),
     updated_at: readString(raw.updated_at),
   }
 }
@@ -177,7 +206,7 @@ function formatPortfolioName(portfolio: PortfolioRow): string {
 }
 
 function formatEur(value: number | null): string {
-  if (value === null || Number.isNaN(value)) return '--'
+  if (typeof value !== 'number' || !Number.isFinite(value)) return '--'
   return new Intl.NumberFormat('fr-FR', {
     style: 'currency',
     currency: 'EUR',
@@ -186,17 +215,17 @@ function formatEur(value: number | null): string {
 }
 
 function formatSignedEur(value: number | null): string {
-  if (value === null || Number.isNaN(value)) return '--'
+  if (typeof value !== 'number' || !Number.isFinite(value)) return '--'
   return `${value >= 0 ? '+' : ''}${formatEur(value)}`
 }
 
 function formatPct(value: number | null, digits = 2): string {
-  if (value === null || Number.isNaN(value)) return '--'
+  if (typeof value !== 'number' || !Number.isFinite(value)) return '--'
   return `${value.toFixed(digits)}%`
 }
 
 function formatSignedPts(value: number | null): string {
-  if (value === null || Number.isNaN(value)) return '--'
+  if (typeof value !== 'number' || !Number.isFinite(value)) return '--'
   return `${value >= 0 ? '+' : ''}${value.toFixed(2)} pts`
 }
 
@@ -397,7 +426,6 @@ function SortHeader({
 
 export default function ArbitragePage() {
   const [selectedPortfolioIdOverride, setSelectedPortfolioIdOverride] = useState('')
-  const [selectedScope, setSelectedScope] = useState<PortfolioScope>('PERSO')
   const [overlayFilter, setOverlayFilter] = useState<OverlayFilter>('ALL')
   const [actionFilter, setActionFilter] = useState<'ALL' | PortfolioDecisionAction>('ALL')
   const [issueFilter, setIssueFilter] = useState('ALL')
@@ -405,39 +433,79 @@ export default function ArbitragePage() {
   const [currencyFilter, setCurrencyFilter] = useState('ALL')
   const [sort, setSort] = useState<SortConfig>(DEFAULT_SORT)
 
-  const { data: portfolios } = useSWR('fo-arbitrage-portfolios', async () => {
-    const { data, error } = await supabase.from('fo_portfolios').select('id,name').eq('status', 'ACTIVE').order('name')
+  const { data: portfolios, error: portfoliosError, isLoading: portfoliosLoading } = useSWR('fo-arbitrage-portfolios', async () => {
+    const { data, error } = await supabase.from('fo_portfolios').select('id,name,portfolio_type').eq('status', 'ACTIVE').order('name')
     if (error) throw error
-    return (data ?? []) as PortfolioRow[]
+    return parseTargetPortfolios(data ?? [])
   })
   const selectedPortfolioId = selectedPortfolioIdOverride || portfolios?.[0]?.id || ''
+  const selectedPortfolio = portfolios?.find((portfolio) => portfolio.id === selectedPortfolioId) ?? null
+  const selectedScope = scopeFromPortfolioType(selectedPortfolio?.portfolio_type)
 
   const {
-    data: allocationRows = [],
+    data: allocationRowsData,
     error: allocationError,
     isLoading: allocationLoading,
   } = useSWR(
     selectedPortfolioId ? ['fo-arbitrage-allocation', selectedPortfolioId] : null,
     async () => buildFamilyOfficeAllocationRows(await loadFamilyOfficeAllocationSource(supabase, selectedPortfolioId)),
   )
+  const allocationRows = useMemo(() => allocationRowsData ?? [], [allocationRowsData])
 
   const {
-    data: targetModels = [],
+    data: targetModelsData,
     error: targetModelError,
     isLoading: targetModelLoading,
   } = useSWR('fo-arbitrage-target-models', async () => {
     const { data, error } = await supabase
       .from('target_models')
-      .select('id,portfolio_scope,model_name,source_file,source_kind,as_of_date,is_active,target_total_pct,status,report_json,imported_at,updated_at')
+      .select('id,portfolio_scope,model_name,source_file,source_kind,as_of_date,is_active,target_total_pct,allocation_contract_version,reserve_floor_eur,reserve_excluded_from_risky_allocation,status,report_json,imported_at,updated_at')
       .eq('is_active', true)
       .order('updated_at', { ascending: false })
     if (error) throw error
-    return (data ?? []) as unknown as TargetModelRow[]
+    return parseTargetModels(data ?? [])
   })
+  const targetModels = useMemo(() => targetModelsData ?? [], [targetModelsData])
 
-  const selectedTargetModel = targetModels.find((model) => model.portfolio_scope === selectedScope) ?? null
+  const selectedTargetModel = selectedScope
+    ? targetModels.find((model) => model.portfolio_scope === selectedScope) ?? null
+    : null
   const {
-    data: targetLines = [],
+    data: targetBucketsData,
+    error: targetBucketsError,
+    isLoading: targetBucketsLoading,
+  } = useSWR(
+    selectedTargetModel ? ['fo-arbitrage-target-buckets', selectedTargetModel.id] : null,
+    async () => {
+      const { data, error } = await supabase
+        .from('target_buckets')
+        .select('id,model_id,portfolio_scope,bucket_key,bucket_label,parent_bucket_key,target_weight_pct,lower_band_pct,upper_band_pct,source_sheet,source_row,updated_at')
+        .eq('model_id', selectedTargetModel!.id)
+        .order('source_row', { ascending: true })
+      if (error) throw error
+      return parseTargetBuckets(data ?? [])
+    },
+  )
+  const targetBuckets = useMemo(() => targetBucketsData ?? [], [targetBucketsData])
+  const {
+    data: targetSleevesData,
+    error: targetSleevesError,
+    isLoading: targetSleevesLoading,
+  } = useSWR(
+    selectedTargetModel?.portfolio_scope === 'PRO' ? ['fo-arbitrage-target-sleeves', selectedTargetModel.id] : null,
+    async () => {
+      const { data, error } = await supabase
+        .from('target_sleeve_allocations')
+        .select('id,model_id,portfolio_scope,sleeve_key,component_label,bucket_key,bucket_label,target_weight_pct,instrument_policy,activation_status,source_sheet,source_row,updated_at')
+        .eq('model_id', selectedTargetModel!.id)
+        .order('source_row', { ascending: true })
+      if (error) throw error
+      return parseTargetSleeves(data ?? [])
+    },
+  )
+  const targetSleeves = useMemo(() => targetSleevesData ?? [], [targetSleevesData])
+  const {
+    data: targetLinesData,
     error: targetLinesError,
     isLoading: targetLinesLoading,
   } = useSWR(
@@ -448,25 +516,41 @@ export default function ArbitragePage() {
         .select('id,model_id,portfolio_scope,envelope,ticker,isin,instrument,asset_class,region,currency,target_weight_pct,target_value_eur,notes,source_sheet,source_row,updated_at')
         .eq('model_id', selectedTargetModel!.id)
       if (error) throw error
-      return (data ?? []) as unknown as TargetEnvelopeLineRow[]
+      return parseTargetEnvelopeLines(data ?? [])
     },
   )
+  const targetLines = useMemo(() => targetLinesData ?? [], [targetLinesData])
+
+  const error = portfoliosError ?? allocationError ?? targetModelError ?? targetBucketsError ?? targetSleevesError ?? targetLinesError
+  const isLoading = portfoliosLoading || portfolios === undefined
+    || Boolean(selectedPortfolioId && allocationRowsData === undefined)
+    || targetModelsData === undefined
+    || Boolean(selectedTargetModel && (targetBucketsData === undefined || targetLinesData === undefined))
+    || Boolean(selectedTargetModel?.portfolio_scope === 'PRO' && targetSleevesData === undefined)
+    || allocationLoading || targetModelLoading
+    || Boolean(selectedTargetModel && (targetBucketsLoading || targetLinesLoading))
+    || Boolean(selectedTargetModel?.portfolio_scope === 'PRO' && targetSleevesLoading)
 
   const assessment = useMemo(
-    () => assessFamilyOfficeAllocation(allocationRows, selectedTargetModel, targetLines),
-    [allocationRows, selectedTargetModel, targetLines],
+    () => !isLoading && !error && selectedScope
+      ? assessFamilyOfficeAllocation(allocationRows, selectedTargetModel, targetLines, {
+        expectedScope: selectedScope,
+        targetBuckets,
+        targetSleeves,
+      })
+      : { rows: [], total_value_eur: null, target_total_pct: null, target_model_ready: false },
+    [allocationRows, error, isLoading, selectedScope, selectedTargetModel, targetBuckets, targetLines, targetSleeves],
   )
   const rows = useMemo(() => toPortfolioDecisionRows(assessment), [assessment])
-  const error = allocationError ?? targetModelError ?? targetLinesError
-  const isLoading = allocationLoading || targetModelLoading || Boolean(selectedTargetModel && targetLinesLoading)
 
-  const { data: adviceRows = [], error: adviceError } = useSWR(
-    ['allocation-advice', selectedScope],
+  const { data: adviceData, error: adviceError, isLoading: adviceLoading } = useSWR(
+    selectedScope && selectedPortfolioId ? ['allocation-advice', selectedPortfolioId] : null,
     async () => {
       const { data, error } = await supabase
         .from('allocation_advice_items_latest')
-        .select('portfolio_scope,model_id,model_name,source_file,bucket_key,bucket_label,current_value_eur,current_weight_pct,target_weight_pct,drift_pct,rebalance_amount_eur,action,confidence,reason_codes,preferred_execution,updated_at')
+        .select('portfolio_scope,portfolio_id,model_id,model_name,source_file,bucket_key,bucket_label,current_value_eur,current_weight_pct,target_weight_pct,drift_pct,rebalance_amount_eur,action,confidence,reason_codes,preferred_execution,data_state,model_contract_state,model_contract_reason,bucket_position_count,bucket_unavailable_positions,position_count,unavailable_positions,unmatched_positions,unmatched_scope_positions,total_value_eur,allocatable_total_eur,reserve_floor_eur,reserve_current_eur,reserve_eligible_positions,reserve_state,updated_at')
         .eq('portfolio_scope', selectedScope)
+        .eq('portfolio_id', selectedPortfolioId)
         .order('action', { ascending: true })
       if (error) throw error
       return ((data ?? []) as unknown as RawRow[])
@@ -475,10 +559,15 @@ export default function ArbitragePage() {
     }
   )
 
-  const { data: macroRows = [], error: macroError } = useSWR(
-    selectedPortfolioId ? ['macro-allocation-advice', selectedPortfolioId] : null,
+  const adviceRows = useMemo(() => selectedScope && !error && !isLoading && !adviceError && !adviceLoading
+    ? adviceData ?? [] : [], [adviceData, adviceError, adviceLoading, error, isLoading, selectedScope])
+
+  const { data: macroData, error: macroError, isLoading: macroLoading } = useSWR(
+    selectedScope && selectedPortfolioId ? ['macro-allocation-advice', selectedPortfolioId] : null,
     () => loadMacroAllocationAdvice(supabase, selectedPortfolioId)
   )
+  const macroRows = useMemo(() => selectedScope && !error && !isLoading && !macroError && !macroLoading
+    ? macroData ?? [] : [], [error, isLoading, macroData, macroError, macroLoading, selectedScope])
 
   const { data: executionRows = [], error: executionError } = useSWR(
     'arbitrage-execution-universe',
@@ -599,7 +688,7 @@ export default function ArbitragePage() {
           <div className="grid grid-cols-2 gap-3 md:grid-cols-5">
             {[
               ['Liquid allocation', formatEur(stats.totalValue || null)],
-              ['Actions', stats.actionable.toString()],
+              ['Actions', isLoading || error ? '--' : stats.actionable.toString()],
               ['Unavailable', stats.unavailable.toString()],
               ['Gross trade', formatEur(stats.grossTrade || null)],
               ['Confidence', stats.avgConfidence === null ? '--' : `${stats.avgConfidence.toFixed(0)}%`],
@@ -614,14 +703,9 @@ export default function ArbitragePage() {
           <section className="flex flex-wrap items-center gap-2 rounded-lg border border-slate-200 bg-white px-3 py-3 dark:border-white/10 dark:bg-[#0D1117]">
             <label className="flex min-w-[150px] flex-1 items-center gap-2 rounded-md border border-slate-200 bg-slate-50 px-2 py-2 dark:border-white/10 dark:bg-black/20 sm:flex-none">
               <span className="text-[9px] font-black uppercase tracking-wider text-slate-500 dark:text-gray-400">Scope</span>
-              <select
-                value={selectedScope}
-                onChange={(event) => setSelectedScope(event.target.value as PortfolioScope)}
-                className="min-w-0 flex-1 bg-transparent text-[10px] font-black uppercase text-slate-900 outline-none dark:text-white"
-              >
-                <option value="PERSO">PERSO</option>
-                <option value="PRO">PRO</option>
-              </select>
+              <span className="min-w-0 flex-1 text-[10px] font-black uppercase text-slate-900 dark:text-white">
+                {selectedScope ?? 'UNKNOWN'} · portfolio bound
+              </span>
             </label>
             <FilterSelect label="Action" value={actionFilter} options={['BUY', 'REDUCE', 'EXIT', 'HOLD', 'UNAVAILABLE']} onChange={(value) => setActionFilter(value as 'ALL' | PortfolioDecisionAction)} />
             <FilterSelect label="Overlay" value={overlayFilter} options={['STANDARD', 'MACRO']} onChange={(value) => setOverlayFilter(value as OverlayFilter)} />
@@ -651,7 +735,7 @@ export default function ArbitragePage() {
                   </span>
                 </div>
               </div>
-              {macroError ? (
+              {error || macroError ? (
                 <div className="p-4">
                   <EmptyState
                     tone="error"
@@ -659,6 +743,8 @@ export default function ArbitragePage() {
                     message="Apply the macro strategy migration and run macro_regime_sync."
                   />
                 </div>
+              ) : isLoading || macroLoading ? (
+                <div className="p-4"><EmptyState title="Loading macro overlay" message="Waiting for portfolio inputs and macro advice." /></div>
               ) : macroRows.length === 0 ? (
                 <div className="p-4">
                   <EmptyState title="No macro overlay" message="No macro allocation advice is available for this portfolio yet." />
@@ -749,14 +835,14 @@ export default function ArbitragePage() {
               <div>
                 <h2 className="text-sm font-black uppercase tracking-tight text-slate-950 dark:text-white">Allocation advice</h2>
                 <div className="mt-1 text-[10px] font-mono text-slate-500 dark:text-gray-400">
-                  {"Flux d'abord by strategic bucket"} - {selectedScope}
+                  {"Flux d'abord by strategic bucket"} - {selectedScope ?? 'UNKNOWN'}
                 </div>
               </div>
               <span className="rounded border border-slate-300 bg-slate-50 px-2 py-1 text-[10px] font-black uppercase tracking-wider text-slate-600 dark:border-white/10 dark:bg-white/5 dark:text-gray-300">
                 Informative
               </span>
             </div>
-            {adviceError ? (
+            {error || adviceError ? (
               <div className="p-4">
                 <EmptyState
                   tone="error"
@@ -764,9 +850,16 @@ export default function ArbitragePage() {
                   message="Apply the supports/targets/advice migration, then import PERSO and PRO target models."
                 />
               </div>
+            ) : isLoading || adviceLoading ? (
+              <div className="p-4"><EmptyState title="Loading allocation advice" message="Waiting for portfolio inputs and allocation advice." /></div>
             ) : adviceRows.length === 0 ? (
               <div className="p-4">
-                <EmptyState title="No allocation advice" message={`No active ${selectedScope} target model is available yet.`} />
+                <EmptyState
+                  title="No allocation advice"
+                  message={selectedScope
+                    ? `No active ${selectedScope} target model is available yet.`
+                    : 'Portfolio scope is unavailable, so allocation advice remains blocked.'}
+                />
               </div>
             ) : (
               <>
@@ -779,7 +872,7 @@ export default function ArbitragePage() {
                   <table className="min-w-[940px] w-full">
                     <thead className="bg-slate-50 text-slate-600 dark:bg-[#080A0F] dark:text-gray-500">
                       <tr>
-                        {['Bucket', 'Action', 'Execution', 'Amount', 'Current / Target', 'Drift', 'Confidence', 'Reasons'].map((header) => (
+                        {['Bucket', 'State', 'Action', 'Execution', 'Amount', 'Current / Target', 'Drift', 'Confidence', 'Reasons'].map((header) => (
                           <th key={header} className={cn('px-3 py-3 text-[10px] font-black uppercase tracking-widest', ['Amount', 'Current / Target', 'Drift', 'Confidence'].includes(header) ? 'text-right' : 'text-left')}>
                             {header}
                           </th>
@@ -792,6 +885,10 @@ export default function ArbitragePage() {
                           <td className="p-3 text-sm font-black text-slate-950 dark:text-white">
                             {row.bucket_label}
                             <div className="mt-0.5 text-[10px] font-mono font-normal text-slate-500">{row.source_file}</div>
+                          </td>
+                          <td className="p-3 text-[10px] font-mono font-black text-slate-600 dark:text-gray-300">
+                            {row.data_state}
+                            <div className="mt-0.5 font-normal text-slate-500">contract {row.model_contract_state}</div>
                           </td>
                           <td className="p-3"><AdviceActionBadge action={row.action} /></td>
                           <td className="p-3 text-[10px] font-mono font-bold text-slate-600 dark:text-gray-300">{executionLabel(row.preferred_execution)}</td>
@@ -1036,6 +1133,13 @@ function AdviceCard({ row }: { row: AllocationAdviceRow }) {
       </div>
       <div className="mt-3 rounded-lg border border-slate-200 bg-slate-50 px-3 py-2 text-[10px] font-mono text-slate-600 dark:border-white/10 dark:bg-black/20 dark:text-gray-300">
         <div className="font-black uppercase">Confidence {row.confidence}%</div>
+        <div className="mt-1 font-black uppercase">State {row.data_state}</div>
+        <div className="mt-1">Contract {row.model_contract_state}{row.model_contract_reason ? ` · ${row.model_contract_reason}` : ''}</div>
+        {row.portfolio_scope === 'PRO' && (
+          <div className="mt-1">
+            Reserve {formatEur(row.reserve_current_eur)} / {formatEur(row.reserve_floor_eur)} · {row.reserve_state}
+          </div>
+        )}
         <div className="mt-2"><ReasonCodes codes={row.reason_codes} /></div>
       </div>
     </article>
