@@ -397,22 +397,51 @@ def _openapi_request_object(
     return value, refs
 
 
-def _openapi_property_names(
+def _openapi_read_only(
+    value: Any, document: dict[str, Any], refs: tuple[str, ...], depth: int,
+) -> bool:
+    if depth >= 64:
+        raise ValueError("excessively deep request property")
+    schema, refs = _openapi_request_object(value, document, refs)
+    read_only = schema.get("readOnly", False)
+    if not isinstance(read_only, bool):
+        raise ValueError("invalid request property readOnly")
+    parts = schema.get("allOf", [])
+    if not isinstance(parts, list):
+        raise ValueError("invalid request property composition")
+    for part in parts:
+        read_only = _openapi_read_only(part, document, refs, depth + 1) or read_only
+    return read_only
+
+
+def _openapi_property_access(
     value: Any, document: dict[str, Any], refs: tuple[str, ...] = (), depth: int = 0,
-) -> set[str]:
+) -> dict[str, bool]:
     if depth >= 64:
         raise ValueError("excessively deep request schema")
     schema, refs = _openapi_request_object(value, document, refs)
     properties = schema.get("properties", {})
     if not isinstance(properties, dict):
         raise ValueError("invalid request properties")
-    names = set(properties)
+    # Retain exclusions across allOf: another declaration of a response-only
+    # property must not reintroduce it as a writable RPC argument.
+    access = {
+        name: _openapi_read_only(prop, document, refs, depth + 1)
+        for name, prop in properties.items()
+    }
     parts = schema.get("allOf", [])
     if not isinstance(parts, list):
         raise ValueError("invalid request schema composition")
     for part in parts:
-        names.update(_openapi_property_names(part, document, refs, depth + 1))
-    return names
+        for name, read_only in _openapi_property_access(part, document, refs, depth + 1).items():
+            access[name] = access.get(name, False) or read_only
+    return access
+
+
+def _openapi_property_names(
+    value: Any, document: dict[str, Any], refs: tuple[str, ...] = (),
+) -> set[str]:
+    return {name for name, read_only in _openapi_property_access(value, document, refs).items() if not read_only}
 
 
 def check_rpc_exists(

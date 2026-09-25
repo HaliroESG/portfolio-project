@@ -394,6 +394,7 @@ function targetModelContractReady(
     || targetModel.allocation_contract_version !== ALLOCATION_CONTRACT_VERSION
     || targetModel.portfolio_scope !== expectedScope
     || targetModel.target_total_pct === null
+    || !Number.isFinite(targetModel.target_total_pct)
     || Math.abs(targetModel.target_total_pct - 100) > 0.05
   ) return false
 
@@ -436,6 +437,7 @@ function targetModelContractReady(
   }
   if (targetModel.reserve_excluded_from_risky_allocation !== true
     || targetModel.reserve_floor_eur === null
+    || !Number.isFinite(targetModel.reserve_floor_eur)
     || Math.abs(targetModel.reserve_floor_eur - 120000) > 0.01
     || bucketWeights.size !== 6
     || targetSleeves.length !== PRO_SLEEVE_WEIGHTS.size
@@ -443,7 +445,7 @@ function targetModelContractReady(
 
   const observed = new Map<string, number>()
   for (const row of targetSleeves) {
-    if (row.model_id !== targetModel.id || row.portfolio_scope !== 'PRO') return false
+    if (row.model_id !== targetModel.id || row.portfolio_scope !== 'PRO' || !Number.isFinite(row.target_weight_pct)) return false
     const key = `${row.sleeve_key}:${row.bucket_key}`
     if (observed.has(key) || !PRO_SLEEVE_WEIGHTS.has(key)) return false
     observed.set(key, row.target_weight_pct)
@@ -619,8 +621,8 @@ export function assessFamilyOfficeAllocation(
   const targetBuckets = options.targetBuckets ?? []
   const targetSleeves = options.targetSleeves ?? []
   const referenceDate = options.referenceDate ?? new Date().toISOString().slice(0, 10)
-  const targetTotal = targetModel?.target_total_pct ?? null
-  const reserveFloor = targetModel?.reserve_floor_eur ?? null
+  const targetTotal = Number.isFinite(targetModel?.target_total_pct) ? targetModel!.target_total_pct : null
+  const reserveFloor = Number.isFinite(targetModel?.reserve_floor_eur) ? targetModel!.reserve_floor_eur : null
   const targetModelReady = targetModelContractReady(targetModel, targetBuckets, targetSleeves, options.expectedScope)
   const reservePartition = splitProReserveFloor(allocationRows, reserveFloor, options.expectedScope)
   const assessmentRows = reservePartition.rows

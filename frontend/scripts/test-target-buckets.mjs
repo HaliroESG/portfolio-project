@@ -3,123 +3,169 @@ import fs from 'node:fs'
 import vm from 'node:vm'
 import { createRequire } from 'node:module'
 import ts from 'typescript'
+import { allocationFixture, fixtureCache, pageKeys } from './fixtures/allocation-readers.mjs'
+import * as readers from '../lib/targetModelReaders.ts'
+import * as family from '../lib/familyOfficeAllocation.ts'
 
-// Execute the actual page functions without loading Next, credentials or Supabase.
-const source = ts.createSourceFile('targets.tsx', fs.readFileSync(new URL('../app/targets/page.tsx', import.meta.url), 'utf8'), ts.ScriptTarget.Latest, true, ts.ScriptKind.TSX)
-const names = ['readNumber', 'readString', 'parseScope', 'parseTargetBucket', 'parseTargetBuckets']
-const functions = source.statements.filter((node) => ts.isFunctionDeclaration(node) && names.includes(node.name?.text))
-assert.equal(functions.length, names.length)
-const context = vm.createContext({})
-vm.runInContext(ts.transpileModule(functions.map((node) => node.getText(source)).join('\n'), {
-  compilerOptions: { target: ts.ScriptTarget.ES2022 },
-}).outputText, context)
-const bucket = (overrides = {}) => ({ id: 1, model_id: 'perso', portfolio_scope: 'PERSO', bucket_key: 'actions_us', bucket_label: 'US', target_weight_pct: 98, lower_band_pct: null, upper_band_pct: null, ...overrides })
-const valid = [bucket(), bucket({ id: 2, bucket_key: 'crypto', bucket_label: 'Crypto', target_weight_pct: 2, lower_band_pct: 0, upper_band_pct: 4 })]
-assert.equal(context.parseTargetBuckets(valid).length, 2)
-for (const invalid of ['NaN', 'Infinity', '-Infinity', 'invalid']) {
-  const rows = [...valid, bucket({ id: 3, bucket_key: 'gold', target_weight_pct: 0, lower_band_pct: invalid, upper_band_pct: 4 })]
-  assert.throws(() => context.parseTargetBuckets(rows), /invalid row/)
-}
-
-// SWR can return cached, valid data together with a refresh error. Exercise the
-// page's real assessment callback with that combination and with pending reads.
-let callback
-function visit(node) {
-  if (ts.isVariableDeclaration(node) && node.name.getText(source) === 'assessment') {
-    callback = node.initializer.arguments[0].getText(source)
-  }
-  ts.forEachChild(node, visit)
-}
-visit(source)
-assert.ok(callback)
-let calls = 0
-Object.assign(context, {
-  allocationRows: [], selectedScope: 'PERSO', selectedTargetModel: { target_total_pct: 100 },
-  targetBuckets: valid, targetSleeves: [], targetEnvelopeLines: [{}], targetEnvelopeLinesReady: true,
-  sourceLoading: false, sourceError: undefined,
-  assessFamilyOfficeAllocation: () => { calls++; return { rows: ['cached-decision'], target_model_ready: true } },
-})
-vm.runInContext(`var assessPage = ${callback}`, context)
-assert.equal(context.assessPage().target_model_ready, true)
-assert.equal(calls, 1)
-for (const state of [{ sourceError: new Error('invalid row'), sourceLoading: false }, { sourceError: undefined, sourceLoading: true }]) {
-  Object.assign(context, state)
-  const result = context.assessPage()
-  assert.equal(result.target_model_ready, false)
-  assert.equal(result.rows.length, 0)
-  assert.equal(calls, 1)
-}
-console.log('target buckets and cached-error gate: PASS')
-
-// Render the actual React page using synthetic SWR responses, including the
-// last good cached buckets plus a failed refresh. No auth or network is loaded.
 const require = createRequire(import.meta.url)
 const React = require('react')
 const { renderToStaticMarkup } = require('react-dom/server')
-const family = await import('../lib/familyOfficeAllocation.ts')
-const today = new Date().toISOString().slice(0, 10)
-const model = { id: 'perso', portfolio_scope: 'PERSO', model_name: 'Synthetic model', source_file: 'synthetic.xlsx', status: 'READY', is_active: true, allocation_contract_version: 'allocation_contracts_v1', target_total_pct: 100, updated_at: `${today}T00:00:00Z` }
-const allocationRows = family.buildFamilyOfficeAllocationRows({
-  accounts: [{ id: 'a1', external_account_id: 'SYNTHETIC', name: 'Synthetic', envelope: 'CTO' }],
-  cash: [],
-  positions: [{ id: 'p1', portfolio_id: 'portfolio', account_id: 'a1', instrument_id: 'i1', instrument_key: 'ticker:ETF1', isin: null, ticker: 'ETF1', name: 'Synthetic current holding', instrument_type: 'ETF', currency: 'EUR', snapshot_date: today, quantity: 1, average_cost: 100, cost_basis_eur: 100, price_local: 100, fx_rate_to_eur: 1, market_value_eur: 100, unrealized_pnl_eur: 0, data_state: 'READY', price_as_of: today, fx_as_of: today, reconciliation_state: 'MATCH', calculated_at: `${today}T00:00:00Z` }],
-})
-const cache = new Map([
-  ['fo-target-portfolios', { data: [{ id: 'portfolio', name: 'Synthetic portfolio', portfolio_type: 'PERSONAL' }] }],
-  ['target-models', { data: [model] }],
-  ['fo-allocation-source', { data: allocationRows }],
-  ['target-buckets', { data: valid }],
-  ['target-envelope-lines', { data: [{ id: 1, model_id: 'perso', portfolio_scope: 'PERSO', envelope: 'SYNTHETIC', ticker: 'ETF1', isin: null, instrument: 'Synthetic target', target_weight_pct: 100 }] }],
-])
-const fetchers = new Map()
-let rawBuckets = valid
-let latestAssessment
-let assessmentCalls = 0
-const pageModule = { exports: {} }
-const dependencies = {
-  react: React,
-  'react/jsx-runtime': require('react/jsx-runtime'),
-  swr: (key, fetcher) => {
-    const name = Array.isArray(key) ? key[0] : key
-    fetchers.set(name, fetcher)
-    return cache.get(name) ?? {}
-  },
-  'lucide-react': { Database: () => null, FileSpreadsheet: () => null, LockKeyhole: () => null, Target: () => null },
-  '../../components/AppShell': { AppShell: ({ children }) => React.createElement('div', null, children) },
-  '../../components/EmptyState': { EmptyState: ({ title, message }) => React.createElement('section', null, title, message) },
-  '../../lib/utils': { cn: (...values) => values.filter(Boolean).join(' ') },
-  '../../lib/supabase': { supabase: { from: (table) => {
-    assert.equal(table, 'target_buckets')
-    return { select: () => ({ eq: () => ({ order: async () => ({ data: rawBuckets, error: null }) }) }) }
-  } } },
-  '../../lib/familyOfficeAllocation': { ...family, assessFamilyOfficeAllocation: (...args) => {
-    assessmentCalls++
-    latestAssessment = family.assessFamilyOfficeAllocation(...args)
-    return latestAssessment
-  } },
+const parsers = {
+  target_models: readers.parseTargetModels,
+  target_buckets: readers.parseTargetBuckets,
+  target_sleeve_allocations: readers.parseTargetSleeves,
+  target_envelope_lines: readers.parseTargetEnvelopeLines,
+  fo_portfolios: readers.parseTargetPortfolios,
 }
-vm.runInNewContext(ts.transpileModule(source.getFullText(), {
-  compilerOptions: { target: ts.ScriptTarget.ES2022, module: ts.ModuleKind.CommonJS, jsx: ts.JsxEmit.ReactJSX, esModuleInterop: true },
-}).outputText, { module: pageModule, exports: pageModule.exports, require: (name) => {
-  assert.ok(name in dependencies, `Unexpected page dependency: ${name}`)
-  return dependencies[name]
-} })
-const render = () => renderToStaticMarkup(React.createElement(pageModule.exports.default))
-assert.match(render(), /Synthetic current holding/)
-assert.equal(latestAssessment.target_model_ready, true)
-assert.equal((await fetchers.get('target-buckets')()).length, 2)
-const goodCalls = assessmentCalls
-rawBuckets = [...valid, bucket({ id: 3, bucket_key: 'gold', target_weight_pct: 0, lower_band_pct: 'NaN', upper_band_pct: 4 })]
-await assert.rejects(fetchers.get('target-buckets'), /invalid row/)
-cache.set('target-buckets', { data: valid, error: new Error('invalid row') })
-const unavailable = render()
-assert.match(unavailable, /Allocation inputs unavailable/)
-assert.doesNotMatch(unavailable, /Synthetic current holding/)
-assert.equal(assessmentCalls, goodCalls)
-cache.set('target-buckets', { data: valid, isLoading: true })
-assert.match(render(), /Loading allocation inputs/)
-assert.equal(assessmentCalls, goodCalls)
-cache.set('target-buckets', { data: valid })
-assert.match(render(), /Synthetic current holding/)
-assert.equal(latestAssessment.target_model_ready, true)
-console.log('targets React render: valid / failed refresh / loading / recovered: PASS')
+const malformed = {
+  target_models: { source_file: '' },
+  target_buckets: { lower_band_pct: 'NaN' },
+  target_sleeve_allocations: { component_label: '' },
+  target_envelope_lines: { envelope: '' },
+  fo_portfolios: { id: '' },
+}
+let scenarios = 0
+for (const scope of ['PERSO', 'PRO']) {
+  const fixture = allocationFixture(scope)
+  const tables = {
+    target_models: [fixture.model], target_buckets: fixture.buckets,
+    target_sleeve_allocations: fixture.sleeves, target_envelope_lines: fixture.lines,
+    fo_portfolios: fixture.portfolios,
+  }
+  // Reject the entire collection, not just the malformed row.
+  for (const [table, parse] of Object.entries(parsers)) {
+    assert.equal(parse(tables[table]).length, tables[table].length)
+    for (const raw of [null, {}, [null], [...tables[table], { ...tables[table][0], ...malformed[table] }]]) {
+      assert.throws(() => parse(raw), /invalid row/)
+    }
+  }
+  for (const value of ['NaN', 'Infinity', '-Infinity', '100garbage', '', {}, NaN, Infinity, -Infinity]) {
+    assert.throws(() => readers.parseTargetModels([{ ...fixture.model, target_total_pct: value }]), /invalid row/)
+    assert.throws(() => readers.parseTargetModels([{ ...fixture.model, reserve_floor_eur: value }]), /invalid row/)
+    const assessment = family.assessFamilyOfficeAllocation(fixture.allocation, { ...fixture.model, target_total_pct: value }, fixture.lines, {
+      expectedScope: scope, targetBuckets: fixture.buckets, targetSleeves: fixture.sleeves,
+    })
+    assert.equal(assessment.target_model_ready, false)
+    assert.ok(assessment.rows.every(row => row.action === 'UNAVAILABLE'))
+    assert.equal(assessment.target_total_pct, null)
+    if (scope === 'PRO') {
+      const reserve = family.assessFamilyOfficeAllocation(fixture.allocation, { ...fixture.model, reserve_floor_eur: value }, fixture.lines, {
+        expectedScope: scope, targetBuckets: fixture.buckets, targetSleeves: fixture.sleeves,
+      })
+      assert.equal(reserve.target_model_ready, false)
+      assert.ok(reserve.rows.every(row => row.action === 'UNAVAILABLE'))
+    }
+  }
+  assert.equal(readers.parseTargetModels([{ ...fixture.model, target_total_pct: '100.00' }])[0].target_total_pct, 100)
+  assert.equal(readers.parseTargetModels([{ ...fixture.model, target_total_pct: null }])[0].target_total_pct, null)
+
+  for (const page of ['targets', 'arbitrage']) {
+    const cache = fixtureCache(page, fixture)
+    const fetchers = new Map()
+    const source = fs.readFileSync(new URL('../app/' + page + '/page.tsx', import.meta.url), 'utf8')
+    let calls = 0
+    let latestAssessment
+    let rawTables = { ...tables }
+    const pageModule = { exports: {} }
+    const dependencies = {
+      react: React,
+      'react/jsx-runtime': require('react/jsx-runtime'),
+      swr: (key, fetcher) => {
+        if (!key) return {}
+        const name = Array.isArray(key) ? key[0] : key
+        fetchers.set(name, fetcher)
+        return cache.get(name) ?? {}
+      },
+      'lucide-react': new Proxy({}, { get: () => () => null }),
+      '../../components/AppShell': { AppShell: ({ children }) => React.createElement('div', null, children) },
+      '../../components/EmptyState': { EmptyState: ({ title, message }) => React.createElement('section', null, title, message) },
+      '../../lib/utils': { cn: (...values) => values.filter(Boolean).join(' ') },
+      '../../lib/targetModelReaders': readers,
+      '../../lib/macroStrategyData': { loadMacroAllocationAdvice: () => { throw new Error('Unexpected live read') } },
+      '../../lib/supabase': { supabase: { from: table => {
+        assert.ok(table in rawTables, 'Unexpected table ' + table)
+        const query = {
+          select: () => query, eq: () => query, order: () => query,
+          then: (resolve, reject) => Promise.resolve({ data: rawTables[table], error: null }).then(resolve, reject),
+        }
+        return query
+      } } },
+      '../../lib/familyOfficeAllocation': { ...family, assessFamilyOfficeAllocation: (...args) => {
+        calls++
+        latestAssessment = family.assessFamilyOfficeAllocation(...args)
+        return latestAssessment
+      } },
+    }
+    vm.runInNewContext(ts.transpileModule(source, {
+      compilerOptions: { target: ts.ScriptTarget.ES2022, module: ts.ModuleKind.CommonJS, jsx: ts.JsxEmit.ReactJSX, esModuleInterop: true },
+    }).outputText, { module: pageModule, exports: pageModule.exports, require: name => {
+      assert.ok(name in dependencies, 'Unexpected dependency ' + name)
+      return dependencies[name]
+    } })
+    const render = () => renderToStaticMarkup(React.createElement(pageModule.exports.default))
+    assert.match(render(), /Synthetic holding 1/)
+    assert.equal(latestAssessment.target_model_ready, true, page + ':' + scope)
+    assert.ok(latestAssessment.rows.some(row => row.action === 'BUY' || row.action === 'REDUCE'))
+    // Run actual page fetchers: both readers must reject an extra malformed row.
+    for (const [name, table] of [['models', 'target_models'], ['buckets', 'target_buckets'], ['lines', 'target_envelope_lines'], ['portfolios', 'fo_portfolios'], ...(scope === 'PRO' ? [['sleeves', 'target_sleeve_allocations']] : [])]) {
+      const fetcher = fetchers.get(pageKeys[page][name])
+      assert.equal((await fetcher()).length, tables[table].length)
+      rawTables[table] = [...tables[table], { ...tables[table][0], ...malformed[table] }]
+      await assert.rejects(fetcher, /invalid row/)
+      rawTables = { ...tables }
+    }
+    const required = Object.entries(pageKeys[page]).filter(([name]) => scope === 'PRO' || name !== 'sleeves')
+    for (const [name, key] of required) {
+      const saved = cache.get(key)
+      const goodCalls = calls
+      for (const state of [
+        { ...saved, error: new Error('Synthetic refresh error') },
+        { ...saved, isLoading: true },
+        { data: undefined, isLoading: false },
+      ]) {
+        cache.set(key, state)
+        const html = render()
+        assert.equal(calls, goodCalls, page + ':' + scope + ':' + name)
+        assert.doesNotMatch(html, /Synthetic holding 1/)
+        if (page === 'arbitrage') {
+          assert.doesNotMatch(html, /Synthetic cached (macro|allocation) advice/)
+          assert.match(html, /Actions<\/div><div[^>]*>--<\/div>/)
+          assert.match(html, /Gross trade<\/div><div[^>]*>--<\/div>/)
+        }
+        scenarios++
+      }
+      cache.set(key, saved)
+      assert.match(render(), /Synthetic holding 1/)
+      assert.equal(latestAssessment.target_model_ready, true)
+    }
+    if (page === 'arbitrage') {
+      for (const [key, label] of [['allocation-advice', 'allocation'], ['macro-allocation-advice', 'macro']]) {
+        const saved = cache.get(key)
+        assert.ok(render().includes('Synthetic cached ' + label + ' advice'))
+        for (const state of [{ ...saved, error: new Error('refresh failed') }, { ...saved, isLoading: true }]) {
+          cache.set(key, state)
+          assert.equal(render().includes('Synthetic cached ' + label + ' advice'), false)
+        }
+        cache.set(key, saved)
+        assert.ok(render().includes('Synthetic cached ' + label + ' advice'))
+      }
+      const key = pageKeys[page].portfolios
+      const saved = cache.get(key)
+      cache.set(key, { data: [{ ...fixture.portfolios[0], portfolio_type: 'UNKNOWN' }] })
+      assert.doesNotMatch(render(), /Synthetic cached (macro|allocation) advice/)
+      cache.set(key, saved)
+    }
+    // A cached numeric NaN must also fail closed if the parser is bypassed.
+    const modelsKey = pageKeys[page].models
+    for (const bad of [NaN, 'NaN', Infinity, '100']) {
+      cache.set(modelsKey, { data: [{ ...fixture.model, target_total_pct: bad }] })
+      render()
+      assert.equal(latestAssessment.target_model_ready, false)
+      assert.ok(latestAssessment.rows.every(row => row.action === 'UNAVAILABLE'))
+    }
+    cache.set(modelsKey, { data: [fixture.model] })
+    assert.match(render(), /Synthetic holding 1/)
+    console.log(page + ' ' + scope + ': shared fetchers, cached errors, missing reads and recovery PASS')
+  }
+}
+console.log('Allocation reader render scenarios: ' + scenarios + ' PASS')

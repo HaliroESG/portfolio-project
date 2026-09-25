@@ -146,3 +146,42 @@ def test_rpc_argument_check_fails_closed(monkeypatch, case):
     ok, error = _check_document(monkeypatch, document)
     assert ok is False
     assert error
+
+
+@pytest.mark.parametrize("shape", ["inline", "schema_ref", "property_ref", "property_allOf", "allOf_duplicate"])
+@pytest.mark.parametrize("read_only", [True, False])
+def test_rpc_response_only_properties_are_not_request_arguments(monkeypatch, shape, read_only):
+    properties = {name: {} for name in schema_check.CRITICAL_RPCS["apply_target_model_v1"]}
+    prop = {"type": "object", "readOnly": read_only}
+    properties["p_model"] = prop
+    schema = {"properties": properties}
+    document = _rpc_document(schema)
+    document["definitions"] = {"args": schema, "model": prop}
+    if shape == "schema_ref":
+        document["paths"]["/rpc/apply_target_model_v1"]["post"]["parameters"][0]["schema"] = {"$ref": "#/definitions/args"}
+    elif shape == "property_ref":
+        properties["p_model"] = {"$ref": "#/definitions/model"}
+    elif shape == "property_allOf":
+        properties["p_model"] = {"allOf": [{"$ref": "#/definitions/model"}]}
+    elif shape == "allOf_duplicate":
+        schema["allOf"] = [{"properties": {"p_model": {"readOnly": False}}}]
+    ok, error = _check_document(monkeypatch, document)
+    assert ok is (not read_only)
+    if read_only:
+        assert "p_model" in error
+
+
+@pytest.mark.parametrize("prop", [
+    {"readOnly": "true"},
+    {"$ref": "https://invalid.example/property"},
+    {"$ref": "#/definitions/model"},
+    {"allOf": [{"$ref": "#/definitions/model"}]},
+])
+def test_rpc_invalid_property_contract_fails_closed(monkeypatch, prop):
+    properties = {name: {} for name in schema_check.CRITICAL_RPCS["apply_target_model_v1"]}
+    properties["p_model"] = prop
+    document = _rpc_document({"properties": properties})
+    document["definitions"] = {"model": prop}
+    ok, error = _check_document(monkeypatch, document)
+    assert ok is False
+    assert error

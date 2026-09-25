@@ -10,6 +10,7 @@ import {
   buildFamilyOfficeAllocationRows,
   loadFamilyOfficeAllocationSource,
 } from '../../lib/familyOfficeAllocation'
+import { parseTargetModels, parseTargetSleeves, parseTargetBuckets, parseTargetEnvelopeLines, parseTargetPortfolios } from '../../lib/targetModelReaders'
 import { supabase } from '../../lib/supabase'
 import { cn } from '../../lib/utils'
 import type {
@@ -17,10 +18,6 @@ import type {
 } from '../../lib/familyOfficeAllocation'
 import type {
   PortfolioScope,
-  TargetBucketRow,
-  TargetEnvelopeLineRow,
-  TargetModelRow,
-  TargetSleeveAllocationRow,
   TargetSleeveKey,
 } from '../../types'
 
@@ -30,7 +27,6 @@ interface PortfolioRow {
   portfolio_type: string | null
 }
 
-type RawRow = Record<string, unknown>
 
 type DriftPriority = 'ACTION' | 'WATCH' | 'OK' | 'UNAVAILABLE'
 type FreshnessState = 'FRESH' | 'STALE' | 'MISSING'
@@ -49,32 +45,23 @@ interface PositionView extends FamilyOfficeAllocationAssessmentRow {
   actualFreshness: FreshnessState
 }
 
-function readNumber(value: number | string | null | undefined): number | null {
-  if (typeof value === 'number' && Number.isFinite(value)) return value
-  if (typeof value === 'string' && value.trim().length > 0) {
-    const parsed = Number.parseFloat(value.replace(',', '.'))
-    if (Number.isFinite(parsed)) return parsed
-  }
-  return null
-}
-
 function formatPortfolioName(portfolio: PortfolioRow): string {
   if (portfolio.name && portfolio.name.trim()) return portfolio.name
   return `Portfolio ${portfolio.id.slice(0, 6)}`
 }
 
 function formatPercent(value: number | null, digits = 2): string {
-  if (value === null || Number.isNaN(value)) return '--'
+  if (typeof value !== 'number' || !Number.isFinite(value)) return '--'
   return `${value.toFixed(digits)}%`
 }
 
 function formatSignedPercent(value: number | null): string {
-  if (value === null || Number.isNaN(value)) return '--'
+  if (typeof value !== 'number' || !Number.isFinite(value)) return '--'
   return `${value >= 0 ? '+' : ''}${value.toFixed(2)} pts`
 }
 
 function formatEur(value: number | null): string {
-  if (value === null || Number.isNaN(value)) return '--'
+  if (typeof value !== 'number' || !Number.isFinite(value)) return '--'
   return new Intl.NumberFormat('fr-FR', {
     style: 'currency',
     currency: 'EUR',
@@ -83,7 +70,7 @@ function formatEur(value: number | null): string {
 }
 
 function formatSignedEur(value: number | null): string {
-  if (value === null || Number.isNaN(value)) return '--'
+  if (typeof value !== 'number' || !Number.isFinite(value)) return '--'
   return `${value >= 0 ? '+' : ''}${formatEur(value)}`
 }
 
@@ -94,147 +81,10 @@ function formatDate(value: string | null | undefined): string {
   return date.toLocaleDateString('fr-FR', { day: '2-digit', month: '2-digit', year: '2-digit' })
 }
 
-function readString(value: unknown): string | null {
-  return typeof value === 'string' && value.trim() ? value.trim() : null
-}
-
-function parseScope(value: unknown): PortfolioScope | null {
-  if (value === 'PERSO' || value === 'PRO') return value
-  return null
-}
-
 function scopeFromPortfolioType(value: unknown): PortfolioScope | null {
   if (value === 'PERSONAL') return 'PERSO'
   if (value === 'PROFESSIONAL') return 'PRO'
   return null
-}
-
-function parseTargetModel(raw: RawRow): TargetModelRow | null {
-  const id = readString(raw.id)
-  const modelName = readString(raw.model_name)
-  const sourceFile = readString(raw.source_file)
-  const portfolioScope = parseScope(raw.portfolio_scope)
-  if (!id || !modelName || !sourceFile || !portfolioScope) return null
-  return {
-    id,
-    portfolio_scope: portfolioScope,
-    model_name: modelName,
-    source_file: sourceFile,
-    source_kind: readString(raw.source_kind) ?? 'unknown',
-    as_of_date: readString(raw.as_of_date),
-    is_active: raw.is_active === true,
-    target_total_pct: readNumber(raw.target_total_pct as number | string | null),
-    allocation_contract_version: readString(raw.allocation_contract_version),
-    reserve_floor_eur: readNumber(raw.reserve_floor_eur as number | string | null),
-    reserve_excluded_from_risky_allocation: raw.reserve_excluded_from_risky_allocation === true,
-    status: readString(raw.status) ?? 'UNKNOWN',
-    report_json: raw.report_json && typeof raw.report_json === 'object' && !Array.isArray(raw.report_json)
-      ? raw.report_json as Record<string, unknown>
-      : {},
-    imported_at: readString(raw.imported_at) ?? '',
-    updated_at: readString(raw.updated_at) ?? '',
-  }
-}
-
-function parseTargetSleeveKey(value: unknown): TargetSleeveKey | null {
-  return value === 'CORE' || value === 'SATELLITE' ? value : null
-}
-
-function parseTargetSleeveAllocation(raw: RawRow): TargetSleeveAllocationRow | null {
-  const id = readNumber(raw.id as number | string | null)
-  const modelId = readString(raw.model_id)
-  const sleeveKey = parseTargetSleeveKey(raw.sleeve_key)
-  const componentLabel = readString(raw.component_label)
-  const bucketKey = readString(raw.bucket_key)
-  const bucketLabel = readString(raw.bucket_label)
-  const targetWeight = readNumber(raw.target_weight_pct as number | string | null)
-  const portfolioScope = parseScope(raw.portfolio_scope)
-  if (id === null || !modelId || !portfolioScope || !sleeveKey || !componentLabel || !bucketKey || !bucketLabel || targetWeight === null) return null
-  return {
-    id,
-    model_id: modelId,
-    portfolio_scope: portfolioScope,
-    sleeve_key: sleeveKey,
-    component_label: componentLabel,
-    bucket_key: bucketKey,
-    bucket_label: bucketLabel,
-    target_weight_pct: targetWeight,
-    instrument_policy: readString(raw.instrument_policy),
-    activation_status: readString(raw.activation_status) ?? 'UNKNOWN',
-    source_sheet: readString(raw.source_sheet),
-    source_row: readNumber(raw.source_row as number | string | null),
-    updated_at: readString(raw.updated_at) ?? '',
-  }
-}
-
-function parseTargetBucket(raw: RawRow): TargetBucketRow | null {
-  const id = readNumber(raw.id as number | string | null)
-  const modelId = readString(raw.model_id)
-  const bucketKey = readString(raw.bucket_key)
-  const bucketLabel = readString(raw.bucket_label)
-  const targetWeight = readNumber(raw.target_weight_pct as number | string | null)
-  const lowerBand = readNumber(raw.lower_band_pct as number | string | null)
-  const upperBand = readNumber(raw.upper_band_pct as number | string | null)
-  const lowerBandProvided = raw.lower_band_pct !== null && raw.lower_band_pct !== undefined
-  const upperBandProvided = raw.upper_band_pct !== null && raw.upper_band_pct !== undefined
-  const portfolioScope = parseScope(raw.portfolio_scope)
-  if (id === null
-    || !modelId
-    || !portfolioScope
-    || !bucketKey
-    || !bucketLabel
-    || targetWeight === null
-    || (lowerBandProvided && lowerBand === null)
-    || (upperBandProvided && upperBand === null)
-  ) return null
-  return {
-    id,
-    model_id: modelId,
-    portfolio_scope: portfolioScope,
-    bucket_key: bucketKey,
-    bucket_label: bucketLabel,
-    parent_bucket_key: readString(raw.parent_bucket_key),
-    target_weight_pct: targetWeight,
-    lower_band_pct: lowerBand,
-    upper_band_pct: upperBand,
-    source_sheet: readString(raw.source_sheet),
-    source_row: readNumber(raw.source_row as number | string | null),
-    updated_at: readString(raw.updated_at) ?? '',
-  }
-}
-
-function parseTargetBuckets(rawRows: RawRow[]): TargetBucketRow[] {
-  return rawRows.map((raw) => {
-    const row = parseTargetBucket(raw)
-    if (row === null) throw new Error('Target bucket contract contains an invalid row')
-    return row
-  })
-}
-
-function parseTargetEnvelopeLine(raw: RawRow): TargetEnvelopeLineRow | null {
-  const id = readNumber(raw.id as number | string | null)
-  const modelId = readString(raw.model_id)
-  const envelope = readString(raw.envelope)
-  const portfolioScope = parseScope(raw.portfolio_scope)
-  if (id === null || !modelId || !portfolioScope || !envelope) return null
-  return {
-    id,
-    model_id: modelId,
-    portfolio_scope: portfolioScope,
-    envelope,
-    ticker: readString(raw.ticker),
-    isin: readString(raw.isin),
-    instrument: readString(raw.instrument),
-    asset_class: readString(raw.asset_class),
-    region: readString(raw.region),
-    currency: readString(raw.currency),
-    target_weight_pct: readNumber(raw.target_weight_pct as number | string | null),
-    target_value_eur: readNumber(raw.target_value_eur as number | string | null),
-    notes: readString(raw.notes),
-    source_sheet: readString(raw.source_sheet),
-    source_row: readNumber(raw.source_row as number | string | null),
-    updated_at: readString(raw.updated_at) ?? '',
-  }
 }
 
 function resolveFreshnessDate(value: string | null | undefined, staleAfterDays = 3): FreshnessState {
@@ -269,39 +119,39 @@ function priorityClass(priority: DriftPriority): string {
 export default function TargetsPage() {
   const [selectedPortfolioIdOverride, setSelectedPortfolioIdOverride] = useState<string>('')
 
-  const { data: portfolios } = useSWR('fo-target-portfolios', async () => {
+  const { data: portfolios, error: portfoliosError, isLoading: portfoliosLoading } = useSWR('fo-target-portfolios', async () => {
     const { data, error } = await supabase.from('fo_portfolios').select('id,name,portfolio_type').eq('status', 'ACTIVE').order('name')
     if (error) throw error
-    return (data ?? []) as PortfolioRow[]
+    return parseTargetPortfolios(data ?? [])
   })
 
   const selectedPortfolioId = selectedPortfolioIdOverride || portfolios?.[0]?.id || ''
   const selectedPortfolio = portfolios?.find((portfolio) => portfolio.id === selectedPortfolioId) ?? null
   const selectedScope = scopeFromPortfolioType(selectedPortfolio?.portfolio_type)
 
-  const { data: allocationRows = [], error: allocationError, isLoading: allocationLoading } = useSWR(
+  const { data: allocationRowsData, error: allocationError, isLoading: allocationLoading } = useSWR(
     selectedPortfolioId ? ['fo-allocation-source', selectedPortfolioId] : null,
     async () => buildFamilyOfficeAllocationRows(await loadFamilyOfficeAllocationSource(supabase, selectedPortfolioId)),
   )
+  const allocationRows = useMemo(() => allocationRowsData ?? [], [allocationRowsData])
 
-  const { data: targetModels = [], error: targetModelError, isLoading: targetModelLoading } = useSWR('target-models', async () => {
+  const { data: targetModelsData, error: targetModelError, isLoading: targetModelLoading } = useSWR('target-models', async () => {
     const { data, error } = await supabase
       .from('target_models')
       .select('id,portfolio_scope,model_name,source_file,source_kind,as_of_date,is_active,target_total_pct,allocation_contract_version,reserve_floor_eur,reserve_excluded_from_risky_allocation,status,report_json,imported_at,updated_at')
       .eq('is_active', true)
       .order('updated_at', { ascending: false })
     if (error) throw error
-    return ((data ?? []) as unknown as RawRow[])
-      .map(parseTargetModel)
-      .filter((row): row is TargetModelRow => row !== null)
+    return parseTargetModels(data ?? [])
   })
+  const targetModels = useMemo(() => targetModelsData ?? [], [targetModelsData])
 
   const selectedTargetModel = selectedScope
     ? targetModels.find((model) => model.portfolio_scope === selectedScope) ?? null
     : null
 
   const {
-    data: targetSleeves = [],
+    data: targetSleevesData,
     error: targetSleevesError,
     isLoading: targetSleevesLoading,
   } = useSWR(
@@ -313,14 +163,13 @@ export default function TargetsPage() {
         .eq('model_id', selectedTargetModel!.id)
         .order('source_row', { ascending: true })
       if (error) throw error
-      return ((data ?? []) as unknown as RawRow[])
-        .map(parseTargetSleeveAllocation)
-        .filter((row): row is TargetSleeveAllocationRow => row !== null)
+      return parseTargetSleeves(data ?? [])
     },
   )
+  const targetSleeves = useMemo(() => targetSleevesData ?? [], [targetSleevesData])
 
   const {
-    data: targetBuckets = [],
+    data: targetBucketsData,
     error: targetBucketsError,
     isLoading: targetBucketsLoading,
   } = useSWR(
@@ -332,9 +181,10 @@ export default function TargetsPage() {
         .eq('model_id', selectedTargetModel!.id)
         .order('source_row', { ascending: true })
       if (error) throw error
-      return parseTargetBuckets((data ?? []) as unknown as RawRow[])
+      return parseTargetBuckets(data ?? [])
     }
   )
+  const targetBuckets = useMemo(() => targetBucketsData ?? [], [targetBucketsData])
 
   const {
     data: targetEnvelopeLinesData,
@@ -350,21 +200,25 @@ export default function TargetsPage() {
         .order('envelope', { ascending: true })
         .order('source_row', { ascending: true })
       if (error) throw error
-      return ((data ?? []) as unknown as RawRow[])
-        .map(parseTargetEnvelopeLine)
-        .filter((row): row is TargetEnvelopeLineRow => row !== null)
+      return parseTargetEnvelopeLines(data ?? [])
     }
   )
   const targetEnvelopeLines = useMemo(() => targetEnvelopeLinesData ?? [], [targetEnvelopeLinesData])
   const targetEnvelopeLinesReady = !selectedTargetModel
     || (!targetEnvelopeLinesLoading && !targetEnvelopeLinesError && targetEnvelopeLinesData !== undefined)
 
-  const sourceLoading = allocationLoading
+  const sourceLoading = portfoliosLoading || portfolios === undefined
+    || Boolean(selectedPortfolioId && allocationRowsData === undefined)
+    || targetModelsData === undefined
+    || Boolean(selectedTargetModel && targetBucketsData === undefined)
+    || Boolean(selectedTargetModel && targetEnvelopeLinesData === undefined)
+    || Boolean(selectedTargetModel?.portfolio_scope === 'PRO' && targetSleevesData === undefined)
+    || allocationLoading
     || targetModelLoading
     || Boolean(selectedTargetModel && targetBucketsLoading)
     || Boolean(selectedTargetModel && targetEnvelopeLinesLoading)
     || Boolean(selectedTargetModel?.portfolio_scope === 'PRO' && targetSleevesLoading)
-  const sourceError = allocationError ?? targetModelError ?? targetBucketsError ?? targetEnvelopeLinesError ?? targetSleevesError
+  const sourceError = portfoliosError ?? allocationError ?? targetModelError ?? targetBucketsError ?? targetEnvelopeLinesError ?? targetSleevesError
 
   const assessment = useMemo(
     () => !sourceLoading && !sourceError && targetEnvelopeLinesReady && selectedScope
@@ -509,7 +363,7 @@ export default function TargetsPage() {
               ['Configured', targetStats.configured.toString()],
               ['Missing targets', targetStats.missing.toString()],
               ['Max drift', formatPercent(targetStats.maxDrift, 2)],
-              ['Actions', targetStats.actionCount.toString()],
+              ['Actions', sourceLoading || sourceError ? '--' : targetStats.actionCount.toString()],
               ['FO-fed', targetStats.brokerFed.toString()],
               ['Stale actuals', targetStats.staleActual.toString()],
             ].map(([label, value]) => (
@@ -537,13 +391,13 @@ export default function TargetsPage() {
               </div>
             </div>
 
-            {targetModelLoading ? (
+            {sourceError ? (
+              <div className="mt-4 rounded-lg border border-amber-300 bg-amber-50 px-4 py-3 text-xs font-mono text-amber-800 dark:border-amber-900/60 dark:bg-amber-950/20 dark:text-amber-300">
+                Target inputs unavailable. Cached target details and allocation actions remain blocked until all required reads recover.
+              </div>
+            ) : sourceLoading ? (
               <div className="mt-4 rounded-lg border border-slate-200 bg-slate-50 px-4 py-3 text-xs font-mono text-slate-600 dark:border-white/10 dark:bg-black/20 dark:text-gray-400">
                 Loading target model…
-              </div>
-            ) : targetModelError ? (
-              <div className="mt-4 rounded-lg border border-amber-300 bg-amber-50 px-4 py-3 text-xs font-mono text-amber-800 dark:border-amber-900/60 dark:bg-amber-950/20 dark:text-amber-300">
-                Target model schema unavailable. Apply the base target migration and `20260921_allocation_contracts_v1.sql`, then run `import_target_model.py`.
               </div>
             ) : selectedTargetModel ? (
               <div className="mt-4 space-y-4">
@@ -721,14 +575,14 @@ export default function TargetsPage() {
           </section>
 
           <div className="space-y-5">
-            {sourceLoading && (
+            {sourceLoading && !sourceError && (
               <EmptyState
                 title="Loading allocation inputs"
                 message="Canonical Family Office rows and target envelope lines are still loading. Coverage has not been assessed yet."
               />
             )}
 
-            {!sourceLoading && sourceError && (
+            {sourceError && (
               <EmptyState
                 title="Allocation inputs unavailable"
                 message="A canonical source request failed. Coverage and allocation actions remain blocked until the source is available."

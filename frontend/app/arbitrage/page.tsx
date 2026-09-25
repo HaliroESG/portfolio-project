@@ -11,6 +11,7 @@ import {
   loadFamilyOfficeAllocationSource,
   toPortfolioDecisionRows,
 } from '../../lib/familyOfficeAllocation'
+import { parseTargetModels, parseTargetSleeves, parseTargetBuckets, parseTargetEnvelopeLines, parseTargetPortfolios } from '../../lib/targetModelReaders'
 import { supabase } from '../../lib/supabase'
 import { cn } from '../../lib/utils'
 import { loadMacroAllocationAdvice } from '../../lib/macroStrategyData'
@@ -26,10 +27,6 @@ import type {
   PortfolioScope,
   SupportIdentifierState,
   SupportSourceQuality,
-  TargetBucketRow,
-  TargetEnvelopeLineRow,
-  TargetModelRow,
-  TargetSleeveAllocationRow,
 } from '../../types'
 
 type SortKey = 'priority' | 'ticker' | 'action' | 'amount' | 'drift' | 'confidence'
@@ -209,7 +206,7 @@ function formatPortfolioName(portfolio: PortfolioRow): string {
 }
 
 function formatEur(value: number | null): string {
-  if (value === null || Number.isNaN(value)) return '--'
+  if (typeof value !== 'number' || !Number.isFinite(value)) return '--'
   return new Intl.NumberFormat('fr-FR', {
     style: 'currency',
     currency: 'EUR',
@@ -218,17 +215,17 @@ function formatEur(value: number | null): string {
 }
 
 function formatSignedEur(value: number | null): string {
-  if (value === null || Number.isNaN(value)) return '--'
+  if (typeof value !== 'number' || !Number.isFinite(value)) return '--'
   return `${value >= 0 ? '+' : ''}${formatEur(value)}`
 }
 
 function formatPct(value: number | null, digits = 2): string {
-  if (value === null || Number.isNaN(value)) return '--'
+  if (typeof value !== 'number' || !Number.isFinite(value)) return '--'
   return `${value.toFixed(digits)}%`
 }
 
 function formatSignedPts(value: number | null): string {
-  if (value === null || Number.isNaN(value)) return '--'
+  if (typeof value !== 'number' || !Number.isFinite(value)) return '--'
   return `${value >= 0 ? '+' : ''}${value.toFixed(2)} pts`
 }
 
@@ -436,26 +433,27 @@ export default function ArbitragePage() {
   const [currencyFilter, setCurrencyFilter] = useState('ALL')
   const [sort, setSort] = useState<SortConfig>(DEFAULT_SORT)
 
-  const { data: portfolios } = useSWR('fo-arbitrage-portfolios', async () => {
+  const { data: portfolios, error: portfoliosError, isLoading: portfoliosLoading } = useSWR('fo-arbitrage-portfolios', async () => {
     const { data, error } = await supabase.from('fo_portfolios').select('id,name,portfolio_type').eq('status', 'ACTIVE').order('name')
     if (error) throw error
-    return (data ?? []) as PortfolioRow[]
+    return parseTargetPortfolios(data ?? [])
   })
   const selectedPortfolioId = selectedPortfolioIdOverride || portfolios?.[0]?.id || ''
   const selectedPortfolio = portfolios?.find((portfolio) => portfolio.id === selectedPortfolioId) ?? null
   const selectedScope = scopeFromPortfolioType(selectedPortfolio?.portfolio_type)
 
   const {
-    data: allocationRows = [],
+    data: allocationRowsData,
     error: allocationError,
     isLoading: allocationLoading,
   } = useSWR(
     selectedPortfolioId ? ['fo-arbitrage-allocation', selectedPortfolioId] : null,
     async () => buildFamilyOfficeAllocationRows(await loadFamilyOfficeAllocationSource(supabase, selectedPortfolioId)),
   )
+  const allocationRows = useMemo(() => allocationRowsData ?? [], [allocationRowsData])
 
   const {
-    data: targetModels = [],
+    data: targetModelsData,
     error: targetModelError,
     isLoading: targetModelLoading,
   } = useSWR('fo-arbitrage-target-models', async () => {
@@ -465,14 +463,15 @@ export default function ArbitragePage() {
       .eq('is_active', true)
       .order('updated_at', { ascending: false })
     if (error) throw error
-    return (data ?? []) as unknown as TargetModelRow[]
+    return parseTargetModels(data ?? [])
   })
+  const targetModels = useMemo(() => targetModelsData ?? [], [targetModelsData])
 
   const selectedTargetModel = selectedScope
     ? targetModels.find((model) => model.portfolio_scope === selectedScope) ?? null
     : null
   const {
-    data: targetBuckets = [],
+    data: targetBucketsData,
     error: targetBucketsError,
     isLoading: targetBucketsLoading,
   } = useSWR(
@@ -484,11 +483,12 @@ export default function ArbitragePage() {
         .eq('model_id', selectedTargetModel!.id)
         .order('source_row', { ascending: true })
       if (error) throw error
-      return (data ?? []) as unknown as TargetBucketRow[]
+      return parseTargetBuckets(data ?? [])
     },
   )
+  const targetBuckets = useMemo(() => targetBucketsData ?? [], [targetBucketsData])
   const {
-    data: targetSleeves = [],
+    data: targetSleevesData,
     error: targetSleevesError,
     isLoading: targetSleevesLoading,
   } = useSWR(
@@ -500,11 +500,12 @@ export default function ArbitragePage() {
         .eq('model_id', selectedTargetModel!.id)
         .order('source_row', { ascending: true })
       if (error) throw error
-      return (data ?? []) as unknown as TargetSleeveAllocationRow[]
+      return parseTargetSleeves(data ?? [])
     },
   )
+  const targetSleeves = useMemo(() => targetSleevesData ?? [], [targetSleevesData])
   const {
-    data: targetLines = [],
+    data: targetLinesData,
     error: targetLinesError,
     isLoading: targetLinesLoading,
   } = useSWR(
@@ -515,27 +516,34 @@ export default function ArbitragePage() {
         .select('id,model_id,portfolio_scope,envelope,ticker,isin,instrument,asset_class,region,currency,target_weight_pct,target_value_eur,notes,source_sheet,source_row,updated_at')
         .eq('model_id', selectedTargetModel!.id)
       if (error) throw error
-      return (data ?? []) as unknown as TargetEnvelopeLineRow[]
+      return parseTargetEnvelopeLines(data ?? [])
     },
   )
+  const targetLines = useMemo(() => targetLinesData ?? [], [targetLinesData])
+
+  const error = portfoliosError ?? allocationError ?? targetModelError ?? targetBucketsError ?? targetSleevesError ?? targetLinesError
+  const isLoading = portfoliosLoading || portfolios === undefined
+    || Boolean(selectedPortfolioId && allocationRowsData === undefined)
+    || targetModelsData === undefined
+    || Boolean(selectedTargetModel && (targetBucketsData === undefined || targetLinesData === undefined))
+    || Boolean(selectedTargetModel?.portfolio_scope === 'PRO' && targetSleevesData === undefined)
+    || allocationLoading || targetModelLoading
+    || Boolean(selectedTargetModel && (targetBucketsLoading || targetLinesLoading))
+    || Boolean(selectedTargetModel?.portfolio_scope === 'PRO' && targetSleevesLoading)
 
   const assessment = useMemo(
-    () => selectedScope
+    () => !isLoading && !error && selectedScope
       ? assessFamilyOfficeAllocation(allocationRows, selectedTargetModel, targetLines, {
         expectedScope: selectedScope,
         targetBuckets,
         targetSleeves,
       })
       : { rows: [], total_value_eur: null, target_total_pct: null, target_model_ready: false },
-    [allocationRows, selectedScope, selectedTargetModel, targetBuckets, targetLines, targetSleeves],
+    [allocationRows, error, isLoading, selectedScope, selectedTargetModel, targetBuckets, targetLines, targetSleeves],
   )
   const rows = useMemo(() => toPortfolioDecisionRows(assessment), [assessment])
-  const error = allocationError ?? targetModelError ?? targetBucketsError ?? targetSleevesError ?? targetLinesError
-  const isLoading = allocationLoading
-    || targetModelLoading
-    || Boolean(selectedTargetModel && (targetBucketsLoading || targetSleevesLoading || targetLinesLoading))
 
-  const { data: adviceRows = [], error: adviceError } = useSWR(
+  const { data: adviceData, error: adviceError, isLoading: adviceLoading } = useSWR(
     selectedScope && selectedPortfolioId ? ['allocation-advice', selectedPortfolioId] : null,
     async () => {
       const { data, error } = await supabase
@@ -551,10 +559,15 @@ export default function ArbitragePage() {
     }
   )
 
-  const { data: macroRows = [], error: macroError } = useSWR(
-    selectedPortfolioId ? ['macro-allocation-advice', selectedPortfolioId] : null,
+  const adviceRows = useMemo(() => selectedScope && !error && !isLoading && !adviceError && !adviceLoading
+    ? adviceData ?? [] : [], [adviceData, adviceError, adviceLoading, error, isLoading, selectedScope])
+
+  const { data: macroData, error: macroError, isLoading: macroLoading } = useSWR(
+    selectedScope && selectedPortfolioId ? ['macro-allocation-advice', selectedPortfolioId] : null,
     () => loadMacroAllocationAdvice(supabase, selectedPortfolioId)
   )
+  const macroRows = useMemo(() => selectedScope && !error && !isLoading && !macroError && !macroLoading
+    ? macroData ?? [] : [], [error, isLoading, macroData, macroError, macroLoading, selectedScope])
 
   const { data: executionRows = [], error: executionError } = useSWR(
     'arbitrage-execution-universe',
@@ -675,7 +688,7 @@ export default function ArbitragePage() {
           <div className="grid grid-cols-2 gap-3 md:grid-cols-5">
             {[
               ['Liquid allocation', formatEur(stats.totalValue || null)],
-              ['Actions', stats.actionable.toString()],
+              ['Actions', isLoading || error ? '--' : stats.actionable.toString()],
               ['Unavailable', stats.unavailable.toString()],
               ['Gross trade', formatEur(stats.grossTrade || null)],
               ['Confidence', stats.avgConfidence === null ? '--' : `${stats.avgConfidence.toFixed(0)}%`],
@@ -722,7 +735,7 @@ export default function ArbitragePage() {
                   </span>
                 </div>
               </div>
-              {macroError ? (
+              {error || macroError ? (
                 <div className="p-4">
                   <EmptyState
                     tone="error"
@@ -730,6 +743,8 @@ export default function ArbitragePage() {
                     message="Apply the macro strategy migration and run macro_regime_sync."
                   />
                 </div>
+              ) : isLoading || macroLoading ? (
+                <div className="p-4"><EmptyState title="Loading macro overlay" message="Waiting for portfolio inputs and macro advice." /></div>
               ) : macroRows.length === 0 ? (
                 <div className="p-4">
                   <EmptyState title="No macro overlay" message="No macro allocation advice is available for this portfolio yet." />
@@ -827,7 +842,7 @@ export default function ArbitragePage() {
                 Informative
               </span>
             </div>
-            {adviceError ? (
+            {error || adviceError ? (
               <div className="p-4">
                 <EmptyState
                   tone="error"
@@ -835,6 +850,8 @@ export default function ArbitragePage() {
                   message="Apply the supports/targets/advice migration, then import PERSO and PRO target models."
                 />
               </div>
+            ) : isLoading || adviceLoading ? (
+              <div className="p-4"><EmptyState title="Loading allocation advice" message="Waiting for portfolio inputs and allocation advice." /></div>
             ) : adviceRows.length === 0 ? (
               <div className="p-4">
                 <EmptyState
