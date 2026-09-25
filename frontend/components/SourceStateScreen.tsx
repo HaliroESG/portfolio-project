@@ -1,4 +1,4 @@
-import React from 'react'
+import React, { useState } from 'react'
 import { portfolioOptions, type SourceReadiness } from '../lib/sourceReadiness'
 import type { PortfolioScope } from '../types'
 
@@ -9,7 +9,7 @@ const messages: Record<Exclude<SourceReadiness, 'READY'>, string> = {
   UNAVAILABLE: 'Sources or portfolio identity unavailable. No recommendation is displayed.',
 }
 
-export function SourceStateScreen({ title, state, portfolios, portfolioId, scope, onPortfolio, onScope }: {
+export function SourceStateScreen({ title, state, portfolios, portfolioId, scope, onPortfolio, onScope, onRetry, overlay, onOverlay }: {
   title: string
   state: Exclude<SourceReadiness, 'READY'>
   portfolios: unknown
@@ -17,7 +17,11 @@ export function SourceStateScreen({ title, state, portfolios, portfolioId, scope
   scope: PortfolioScope
   onPortfolio: (id: string) => void
   onScope: (scope: PortfolioScope) => void
+  onRetry: () => Promise<unknown>
+  overlay?: 'ALL' | 'STANDARD' | 'MACRO'
+  onOverlay?: (overlay: 'ALL' | 'STANDARD' | 'MACRO') => void
 }) {
+  const [retrying, setRetrying] = useState(false)
   const options = portfolioOptions(portfolios)
   const selectionExists = options.some((row) => row.id === portfolioId)
   return (
@@ -37,9 +41,23 @@ export function SourceStateScreen({ title, state, portfolios, portfolioId, scope
             </select>
           </label>
         </div>
+        {overlay && onOverlay && (
+          <label className="text-sm text-slate-700 dark:text-gray-200">Overlay
+            <select aria-label="Overlay" value={overlay} onChange={(event) => onOverlay(event.target.value as 'ALL' | 'STANDARD' | 'MACRO')} className="ml-2 rounded border p-2 text-slate-950">
+              <option value="ALL">ALL</option><option value="STANDARD">STANDARD</option><option value="MACRO">MACRO</option>
+            </select>
+          </label>
+        )}
         <section role="status" data-source-state={state} className="rounded-lg border border-amber-300 bg-amber-50 p-4 text-amber-900">
           <h2 className="font-bold">{state}</h2>
           <p>{messages[state]}</p>
+          <button type="button" disabled={retrying || state === 'LOADING' || state === 'REVALIDATING'}
+            onClick={async () => {
+              setRetrying(true)
+              try { await onRetry() } finally { setRetrying(false) }
+            }} className="mt-3 rounded border border-amber-700 px-3 py-2 font-semibold disabled:opacity-50">
+            {retrying ? 'Retrying sources…' : 'Retry sources'}
+          </button>
         </section>
       </main>
   )

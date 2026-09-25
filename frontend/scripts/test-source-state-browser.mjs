@@ -93,7 +93,9 @@ try {
         await ready()
         await page.evaluate(source => window.qa.revalidate(source, 'error'), source)
         await hidden('ERROR'); scenarios++
-        await page.evaluate(source => window.qa.recover(source), source)
+        // Restore the simulated network, then recover via the real visible UI.
+        await page.evaluate(source => window.qa.setMode(source, null), source)
+        await page.getByRole('button', { name: 'Retry sources', exact: true }).click()
         await ready()
       }
     }
@@ -122,6 +124,85 @@ try {
     await hidden('LOADING'); scenarios++
     await page.evaluate(() => window.qa.recover('portfolios'))
     await ready()
+
+    // The implicit initial selection must survive reorder, disappearance and
+    // return; it must never follow a new first row without user input.
+    await page.goto(base + '/' + route)
+    await ready()
+    await page.evaluate(() => window.qa.replace('portfolios', [{ id: 'p2', name: 'Two' }, { id: 'p1', name: 'One' }]))
+    await ready()
+    assert.equal(await page.locator('select').first().inputValue(), 'p1')
+    assert.equal(await page.evaluate(() => window.qa.activeKey('allocation')[1]), 'p1'); scenarios++
+    await page.evaluate(() => window.qa.replace('portfolios', [{ id: 'p2', name: 'Two' }]))
+    await hidden('UNAVAILABLE')
+    assert.equal(await page.evaluate(() => window.qa.activeKey('allocation')[1]), 'p1'); scenarios++
+    await page.evaluate(() => window.qa.replace('portfolios', [{ id: 'p1', name: 'One' }, { id: 'p2', name: 'Two' }]))
+    await ready()
+    assert.equal(await page.locator('select').first().inputValue(), 'p1'); scenarios++
+    await page.evaluate(() => window.qa.replace('portfolios', [{ id: 'p2', name: 'Two' }]))
+    await hidden('UNAVAILABLE')
+    await page.evaluate(() => window.qa.setMode('allocation', 'hold'))
+    await page.getByRole('combobox', { name: 'Portfolio', exact: true }).selectOption('p2')
+    await hidden('LOADING')
+    await page.evaluate(() => window.qa.recover('allocation'))
+    await ready()
+    assert.equal(await page.evaluate(() => window.qa.activeKey('allocation')[1]), 'p2'); scenarios++
+
+    // Failed retry stays fail-closed; delayed retry is single-flight and can
+    // recover without a private cache mutation/revalidation call.
+    await page.goto(base + '/' + route); await ready()
+    await page.evaluate(() => window.qa.revalidate('portfolios', 'error'))
+    await hidden('ERROR')
+    await page.screenshot({ path: path.join(output, `${route}-${width}-retry-error.png`), fullPage: true })
+    const attempts = await page.evaluate(() => window.qa.fetchCounts().portfolios)
+    await page.getByRole('button', { name: 'Retry sources', exact: true }).click()
+    await page.waitForFunction(n => window.qa.fetchCounts().portfolios > n && !window.qa.observed().portfolios.isValidating, attempts)
+    await hidden('ERROR'); scenarios++
+    await page.evaluate(() => window.qa.setMode('portfolios', 'hold'))
+    await page.getByRole('button', { name: 'Retry sources', exact: true }).click()
+    await page.getByRole('button', { name: 'Retrying sources…', exact: true }).waitFor()
+    assert.equal(await page.getByRole('button', { name: 'Retrying sources…', exact: true }).isDisabled(), true)
+    await hidden('ERROR')
+    await page.evaluate(() => window.qa.recover('portfolios'))
+    await ready(); scenarios++
+
+    if (route === 'arbitrage') {
+      for (const overlay of ['STANDARD', 'MACRO']) {
+        const hiddenSources = overlay === 'STANDARD' ? ['macro'] : ['models', 'allocation', 'lines', 'advice', 'execution']
+        for (const source of hiddenSources) for (const mode of ['hold', 'error']) {
+          await page.goto(base + '/arbitrage'); await ready()
+          await page.getByRole('combobox', { name: 'Overlay', exact: true }).selectOption(overlay)
+          await page.evaluate(([source, mode]) => window.qa.revalidate(source, mode), [source, mode])
+          await page.waitForFunction(([source, mode]) => mode === 'hold' ? window.qa.observed()[source].isValidating : !window.qa.observed()[source].isValidating, [source, mode])
+          assert.equal(await page.locator('[data-source-state]').count(), 0)
+          const visibleTitle = overlay === 'MACRO' ? 'Macro overlay' : 'Execution universe'
+          await page.getByRole('heading', { name: visibleTitle, exact: true }).waitFor()
+          if (overlay === 'MACRO') {
+            assert.equal(await page.getByText('Liquid allocation', { exact: true }).count(), 0)
+            assert.equal(await page.getByText('Advice PERSO', { exact: true }).count(), 0)
+            assert.equal(await page.getByRole('combobox', { name: 'Data issue', exact: true }).count(), 0)
+          } else assert.equal(await page.getByRole('heading', { name: 'Macro overlay', exact: true }).count(), 0)
+          // Switching to the failing dependency blocks; recovery Overlay remains available.
+          await page.getByRole('combobox', { name: 'Overlay', exact: true }).selectOption('ALL')
+          await hidden(mode === 'hold' ? 'REVALIDATING' : 'ERROR')
+          await page.getByRole('combobox', { name: 'Overlay', exact: true }).selectOption(overlay)
+          await page.getByRole('heading', { name: visibleTitle, exact: true }).waitFor()
+          assert.equal(await page.locator('[data-source-state]').count(), 0)
+          scenarios++
+        }
+      }
+      // Cold start: a hidden source may still be unresolved, not just cached.
+      await page.goto(base + '/arbitrage?hold=models')
+      await hidden('LOADING')
+      await page.getByRole('combobox', { name: 'Overlay', exact: true }).selectOption('MACRO')
+      await page.getByRole('heading', { name: 'Macro overlay', exact: true }).waitFor()
+      assert.equal(await page.locator('[data-source-state]').count(), 0)
+      await page.screenshot({ path: path.join(output, `arbitrage-${width}-macro-recovered.png`), fullPage: true }); scenarios++
+      await page.goto(base + '/arbitrage?hold=macro')
+      await hidden('LOADING')
+      await page.getByRole('combobox', { name: 'Overlay', exact: true }).selectOption('STANDARD')
+      await ready(); scenarios++
+    }
   }
   assert.deepEqual(errors, [])
   assert.deepEqual(external, [])

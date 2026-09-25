@@ -40,6 +40,7 @@ const sourceNames = {
 const query = new URLSearchParams(location.search)
 const initialHold = query.get('hold')
 const keys = new Map(), modes = new Map(), pending = new Map(), observed = new Map()
+const fetchCounts = new Map()
 if (initialHold) modes.set(initialHold, 'hold')
 function fixture(key) {
   const name = sourceNames[Array.isArray(key) ? key[0] : key]
@@ -59,6 +60,7 @@ const middleware = (useSWRNext) => (key, _fetcher, config) => {
   const name = key && sourceNames[Array.isArray(key) ? key[0] : key]
   if (key) keys.set(name, key)
   const response = useSWRNext(key, async (key) => {
+    fetchCounts.set(name, (fetchCounts.get(name) ?? 0) + 1)
     if (modes.get(name) === 'error') throw new Error('Synthetic source failure')
     if (modes.get(name) === 'hold') return new Promise((resolve) => pending.set(name, () => resolve(fixture(key))))
     return fixture(key)
@@ -70,6 +72,8 @@ function Controls() {
   const { mutate, cache } = useSWRConfig()
   window.qa = {
     observed: () => Object.fromEntries(observed),
+    fetchCounts: () => Object.fromEntries(fetchCounts),
+    activeKey: (name) => keys.get(name),
     setMode(name, mode) { modes.set(name, mode) },
     revalidate(name, mode) { modes.set(name, mode); void mutate(keys.get(name)).catch(() => {}) },
     recover(name) { modes.delete(name); if (pending.has(name)) { pending.get(name)(); pending.delete(name) } else { void mutate(keys.get(name)).catch(() => {}) } },

@@ -4,6 +4,7 @@ import React, { useMemo, useState } from 'react'
 import useSWR from 'swr'
 import { sourceReadiness, hasSelectedPortfolio } from '../../lib/sourceReadiness'
 import { SourceStateScreen } from '../../components/SourceStateScreen'
+import { usePortfolioSelection } from '../../lib/usePortfolioSelection'
 import { AlertTriangle, ArrowDown, ArrowUp, ChevronsUpDown, LockKeyhole, Scale } from 'lucide-react'
 import { AppShell } from '../../components/AppShell'
 import { EmptyState } from '../../components/EmptyState'
@@ -398,7 +399,6 @@ function SortHeader({
 }
 
 export default function ArbitragePage() {
-  const [selectedPortfolioIdOverride, setSelectedPortfolioIdOverride] = useState('')
   const [selectedScope, setSelectedScope] = useState<PortfolioScope>('PERSO')
   const [overlayFilter, setOverlayFilter] = useState<OverlayFilter>('ALL')
   const [actionFilter, setActionFilter] = useState<'ALL' | PortfolioDecisionAction>('ALL')
@@ -413,7 +413,9 @@ export default function ArbitragePage() {
     return (data ?? []) as PortfolioRow[]
   })
   const { data: portfolios } = portfoliosSource
-  const selectedPortfolioId = selectedPortfolioIdOverride || portfolios?.[0]?.id || ''
+  const [selectedPortfolioId, setSelectedPortfolioIdOverride] = usePortfolioSelection(
+    portfolios, sourceReadiness([portfoliosSource]) === 'READY',
+  )
 
   const allocationSource = useSWR(
     selectedPortfolioId ? ['fo-arbitrage-allocation', selectedPortfolioId] : null,
@@ -529,12 +531,12 @@ export default function ArbitragePage() {
 
   const lastSyncIso = useMemo(() => {
     return [
-      ...rows.map((row) => row.updated_at),
-      ...macroRows.map((row) => row.updated_at),
+      ...(showStandardOverlay ? rows.map((row) => row.updated_at) : []),
+      ...(showMacroOverlay ? macroRows.map((row) => row.updated_at) : []),
     ]
       .filter((value): value is string => Boolean(value))
       .sort((a, b) => new Date(b).getTime() - new Date(a).getTime())[0] ?? null
-  }, [macroRows, rows])
+  }, [macroRows, rows, showMacroOverlay, showStandardOverlay])
   const lastSync = lastSyncIso ? new Date(lastSyncIso).toLocaleTimeString('fr-FR') : ''
 
   const handleSort = (key: SortKey) => {
@@ -554,17 +556,23 @@ export default function ArbitragePage() {
     })
   }
 
-  // Every displayed source must settle, including advice, macro and execution panels.
-  const reads = sourceReadiness([
-    portfoliosSource, modelsSource, adviceSource, executionSource,
-    ...(selectedPortfolioId ? [allocationSource, macroSource] : []),
-    ...(selectedTargetModel ? [linesSource] : []),
-  ])
+  // Dependencies match the visible overlay, including its summary/filter data.
+  const requiredSources = [
+    portfoliosSource,
+    ...(showStandardOverlay ? [modelsSource, adviceSource, executionSource,
+      ...(selectedPortfolioId ? [allocationSource] : []),
+      ...(selectedTargetModel ? [linesSource] : []),
+    ] : []),
+    ...(showMacroOverlay && selectedPortfolioId ? [macroSource] : []),
+  ]
+  const reads = sourceReadiness(requiredSources)
   const state = reads === 'READY' && !hasSelectedPortfolio(portfolios, selectedPortfolioId) ? 'UNAVAILABLE' : reads
   if (state !== 'READY') return (
     <AppShell className="bg-slate-50">
-      <SourceStateScreen title="Arbitrage" state={state} portfolios={portfolios} portfolioId={selectedPortfolioId}
-        scope={selectedScope} onPortfolio={setSelectedPortfolioIdOverride} onScope={setSelectedScope} />
+      <SourceStateScreen key={`${selectedPortfolioId}:${selectedScope}:${overlayFilter}`} title="Arbitrage" state={state} portfolios={portfolios} portfolioId={selectedPortfolioId}
+        scope={selectedScope} onPortfolio={setSelectedPortfolioIdOverride} onScope={setSelectedScope}
+        overlay={overlayFilter} onOverlay={setOverlayFilter}
+        onRetry={() => Promise.allSettled(requiredSources.map((source) => source.mutate()))} />
     </AppShell>
   )
 
@@ -608,13 +616,18 @@ export default function ArbitragePage() {
           </div>
 
           <div className="grid grid-cols-2 gap-3 md:grid-cols-5">
-            {[
+            {(showStandardOverlay ? [
               ['Liquid allocation', formatEur(stats.totalValue || null)],
               ['Actions', stats.actionable.toString()],
               ['Unavailable', stats.unavailable.toString()],
               ['Gross trade', formatEur(stats.grossTrade || null)],
               ['Confidence', stats.avgConfidence === null ? '--' : `${stats.avgConfidence.toFixed(0)}%`],
-            ].map(([label, value]) => (
+            ] : [
+              ['Macro actions', macroStats.actionable.toString()],
+              ['Macro unavailable', macroStats.unavailable.toString()],
+              ['Macro gross trade', formatEur(macroStats.grossTrade || null)],
+              ['Macro confidence', macroStats.avgConfidence === null ? '--' : `${macroStats.avgConfidence.toFixed(0)}%`],
+            ]).map(([label, value]) => (
               <div key={label} className="rounded-lg border border-slate-200 bg-white/80 px-3 py-3 dark:border-white/10 dark:bg-white/[0.03]">
                 <div className="text-[9px] font-black uppercase tracking-wider text-slate-500 dark:text-gray-500">{label}</div>
                 <div className="mt-1 text-sm font-mono font-black text-slate-950 dark:text-white">{value}</div>
@@ -634,11 +647,13 @@ export default function ArbitragePage() {
                 <option value="PRO">PRO</option>
               </select>
             </label>
-            <FilterSelect label="Action" value={actionFilter} options={['BUY', 'REDUCE', 'EXIT', 'HOLD', 'UNAVAILABLE']} onChange={(value) => setActionFilter(value as 'ALL' | PortfolioDecisionAction)} />
+            {showStandardOverlay && <FilterSelect label="Action" value={actionFilter} options={['BUY', 'REDUCE', 'EXIT', 'HOLD', 'UNAVAILABLE']} onChange={(value) => setActionFilter(value as 'ALL' | PortfolioDecisionAction)} />}
             <FilterSelect label="Overlay" value={overlayFilter} options={['STANDARD', 'MACRO']} onChange={(value) => setOverlayFilter(value as OverlayFilter)} />
-            <FilterSelect label="Data issue" value={issueFilter} options={filters.issueCodes} onChange={setIssueFilter} />
-            <FilterSelect label="Asset class" value={assetClassFilter} options={filters.assetClasses} onChange={setAssetClassFilter} />
-            <FilterSelect label="Currency" value={currencyFilter} options={filters.currencies} onChange={setCurrencyFilter} />
+            {showStandardOverlay && <>
+              <FilterSelect label="Data issue" value={issueFilter} options={filters.issueCodes} onChange={setIssueFilter} />
+              <FilterSelect label="Asset class" value={assetClassFilter} options={filters.assetClasses} onChange={setAssetClassFilter} />
+              <FilterSelect label="Currency" value={currencyFilter} options={filters.currencies} onChange={setCurrencyFilter} />
+            </>}
           </section>
 
           {showMacroOverlay && (

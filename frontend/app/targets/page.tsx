@@ -4,6 +4,7 @@ import React, { useMemo, useState } from 'react'
 import useSWR from 'swr'
 import { sourceReadiness, hasSelectedPortfolio } from '../../lib/sourceReadiness'
 import { SourceStateScreen } from '../../components/SourceStateScreen'
+import { usePortfolioSelection } from '../../lib/usePortfolioSelection'
 import { Database, FileSpreadsheet, LockKeyhole, Target } from 'lucide-react'
 import { AppShell } from '../../components/AppShell'
 import { EmptyState } from '../../components/EmptyState'
@@ -197,7 +198,6 @@ function priorityClass(priority: DriftPriority): string {
 }
 
 export default function TargetsPage() {
-  const [selectedPortfolioIdOverride, setSelectedPortfolioIdOverride] = useState<string>('')
   const [selectedScope, setSelectedScope] = useState<PortfolioScope>('PERSO')
 
   const portfoliosSource = useSWR('fo-target-portfolios', async () => {
@@ -207,7 +207,9 @@ export default function TargetsPage() {
   })
 
   const { data: portfolios } = portfoliosSource
-  const selectedPortfolioId = selectedPortfolioIdOverride || portfolios?.[0]?.id || ''
+  const [selectedPortfolioId, setSelectedPortfolioIdOverride] = usePortfolioSelection(
+    portfolios, sourceReadiness([portfoliosSource]) === 'READY',
+  )
 
   const allocationSource = useSWR(
     selectedPortfolioId ? ['fo-allocation-source', selectedPortfolioId] : null,
@@ -363,16 +365,18 @@ export default function TargetsPage() {
   }, [positionViews])
 
   // Gate the whole surface, including summary metrics outside the row-level states.
-  const reads = sourceReadiness([
+  const requiredSources = [
     portfoliosSource, modelsSource,
     ...(selectedPortfolioId ? [allocationSource] : []),
     ...(selectedTargetModel ? [bucketsSource, linesSource] : []),
-  ])
+  ]
+  const reads = sourceReadiness(requiredSources)
   const state = reads === 'READY' && !hasSelectedPortfolio(portfolios, selectedPortfolioId) ? 'UNAVAILABLE' : reads
   if (state !== 'READY') return (
     <AppShell className="bg-slate-50">
-      <SourceStateScreen title="Portfolio Drift" state={state} portfolios={portfolios} portfolioId={selectedPortfolioId}
-        scope={selectedScope} onPortfolio={setSelectedPortfolioIdOverride} onScope={setSelectedScope} />
+      <SourceStateScreen key={`${selectedPortfolioId}:${selectedScope}`} title="Portfolio Drift" state={state} portfolios={portfolios} portfolioId={selectedPortfolioId}
+        scope={selectedScope} onPortfolio={setSelectedPortfolioIdOverride} onScope={setSelectedScope}
+        onRetry={() => Promise.allSettled(requiredSources.map((source) => source.mutate()))} />
     </AppShell>
   )
 

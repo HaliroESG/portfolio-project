@@ -31,3 +31,11 @@ jobs:
       - name: Run contract check
         working-directory: ./frontend
         run: npm run contract-check
+
+      - name: Install Chromium for offline page regressions
+        working-directory: ./frontend
+        run: npx --no-install playwright install --with-deps chromium
+
+      - name: Run offline real-SWR page regressions
+        working-directory: ./frontend
+        run: npm run test:source-state:browser
