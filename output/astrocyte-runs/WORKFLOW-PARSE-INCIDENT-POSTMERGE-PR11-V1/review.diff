@@ -1,0 +1,60 @@
+diff --git a/.github/scripts/check_workflow_parity.py b/.github/scripts/check_workflow_parity.py
+index d013ace..4966ec6 100644
+--- a/.github/scripts/check_workflow_parity.py
++++ b/.github/scripts/check_workflow_parity.py
+@@ -271,10 +271,11 @@ def _check_required_actionlint(text: str) -> None:
+         )
+     validate_run = steps[validate_index].get("run")
+     if not isinstance(validate_run, str) or validate_run.strip() != (
+-        "actionlint .github/workflows/*.yml"
++        "actionlint -shellcheck= -pyflakes= .github/workflows/*.yml"
+     ):
+         raise AssertionError(
+-            "workflow-parity.yml: required Actionlint scan must cover every workflow"
++            "workflow-parity.yml: required Actionlint scan must cover every workflow "
++            "with optional ShellCheck and Pyflakes integrations disabled"
+         )
+ 
+ 
+diff --git a/.github/tests/test_workflow_contracts.py b/.github/tests/test_workflow_contracts.py
+index 5ed7d69..8cbf4e4 100644
+--- a/.github/tests/test_workflow_contracts.py
++++ b/.github/tests/test_workflow_contracts.py
+@@ -85,10 +85,22 @@ class WorkflowContractTests(unittest.TestCase):
+         validate_workflow_contract(contents)
+ 
+     def test_required_actionlint_scan_and_checksum_cannot_be_weakened(self) -> None:
++        required_scan = (
++            "actionlint -shellcheck= -pyflakes= .github/workflows/*.yml"
++        )
+         mutations = {
+             "missing_scan": (
+-                "actionlint .github/workflows/*.yml",
+-                "actionlint .github/workflows/workflow-parity.yml",
++                required_scan,
++                "actionlint -shellcheck= -pyflakes= "
++                ".github/workflows/workflow-parity.yml",
++            ),
++            "shellcheck_autodiscovery": (
++                required_scan,
++                "actionlint -pyflakes= .github/workflows/*.yml",
++            ),
++            "pyflakes_autodiscovery": (
++                required_scan,
++                "actionlint -shellcheck= .github/workflows/*.yml",
+             ),
+             "checksum_drift": (
+                 "023070a287cd8cccd71515fedc843f1985bf96c436b7effaecce67290e7e0757",
+diff --git a/.github/workflows/workflow-parity.yml b/.github/workflows/workflow-parity.yml
+index 415ad41..dc24cb2 100644
+--- a/.github/workflows/workflow-parity.yml
++++ b/.github/workflows/workflow-parity.yml
+@@ -41,7 +41,7 @@ jobs:
+           printf '%s\n' "$install_dir" >> "$GITHUB_PATH"
+ 
+       - name: Validate every workflow with Actionlint
+-        run: actionlint .github/workflows/*.yml
++        run: actionlint -shellcheck= -pyflakes= .github/workflows/*.yml
+ 
+       - name: Validate workflow inventory and fail-closed gates
+         run: python3 .github/scripts/check_workflow_parity.py

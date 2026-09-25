@@ -1,0 +1,22 @@
+{
+  "schema_version": "astrocyte_pr14_governance_local_validation_v1",
+  "generated_at": "2026-08-31T11:39:35Z",
+  "code_commit": "333e24a0f01deaf811031afc5a3318c1a8df382e",
+  "code_tree": "48e408b1544c445bfe0c7d1463063ad8deee00c4",
+  "results": [
+    {"name": "governance adversarial tests", "result": "17 passed", "status": "PASS"},
+    {"name": "all .github tests", "result": "55 passed", "status": "PASS"},
+    {"name": "workflow parity", "result": "12 workflows", "status": "PASS"},
+    {"name": "actionlint", "result": "v1.7.7 darwin/arm64; official checksum 2693315b9093aeacb4ebd91a993fea54fc215057bf0da2659056b4bc033873db", "status": "PASS"},
+    {"name": "Family Office hold under isolated Python", "result": "HTTP 503 refusal before manifest", "status": "PASS"},
+    {"name": "Family Office PostgreSQL preflight", "result": "PostgreSQL 15, PR12 pin available", "status": "PASS"},
+    {"name": "backend pytest", "result": "144 passed", "status": "PASS"},
+    {"name": "frontend lint", "status": "PASS"},
+    {"name": "frontend TypeScript", "status": "PASS"},
+    {"name": "frontend contract-check", "status": "PASS"},
+    {"name": "frontend Webpack production build with local placeholders", "status": "PASS"},
+    {"name": "frontend canonical Turbopack build", "status": "BLOCKED", "reason": "host denied Turbopack internal local port bind; no code error was reported"},
+    {"name": "Supabase smoke", "status": "NOT RUN", "reason": "no backend/Supabase/frontend contract changed and remote provider access is forbidden"}
+  ],
+  "provider_actions": "NONE"
+}

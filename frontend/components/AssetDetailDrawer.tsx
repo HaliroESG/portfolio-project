@@ -7,6 +7,9 @@ import { cn } from '../lib/utils'
 import { supabase } from '../lib/supabase'
 import { Tooltip } from './Tooltip'
 import { stateForTechnicalHistory, stateLabel as dataStateLabel } from '../lib/dataStates'
+import { AssetPriceChart } from './AssetPriceChart'
+import { ASSET_DRAWER_WIDTH } from '../lib/panelWidth'
+import { usePersistedPanelWidth } from '../lib/usePersistedPanelWidth'
 
 const WATCHLIST_STORAGE_KEY = 'portfolio_watchlist_tickers'
 
@@ -109,6 +112,7 @@ export function AssetDetailDrawer({ asset, isOpen, onClose }: AssetDetailDrawerP
   // Hook 1: useState
   const [news, setNews] = useState<NewsFeedRow[]>([])
   const [watchlistEntries, setWatchlistEntries] = useState<string[]>(() => readWatchlist())
+  const [drawerWidth, setDrawerWidth] = usePersistedPanelWidth(ASSET_DRAWER_WIDTH)
 
   // Hook 2: useMemo - Memoize derived data to prevent recalculation on every render
   const geographicData = useMemo(() => {
@@ -220,6 +224,32 @@ export function AssetDetailDrawer({ asset, isOpen, onClose }: AssetDetailDrawerP
     setWatchlistEntries(next)
   }
 
+  const handleDrawerResizePointerDown = (event: React.PointerEvent<HTMLButtonElement>) => {
+    event.preventDefault()
+    const startX = event.clientX
+    const startWidth = drawerWidth
+    const onMove = (moveEvent: PointerEvent) => {
+      setDrawerWidth(startWidth - (moveEvent.clientX - startX))
+    }
+    const onEnd = () => {
+      window.removeEventListener('pointermove', onMove)
+      window.removeEventListener('pointerup', onEnd)
+    }
+    window.addEventListener('pointermove', onMove)
+    window.addEventListener('pointerup', onEnd)
+  }
+
+  const handleDrawerResizeKeyDown = (event: React.KeyboardEvent<HTMLButtonElement>) => {
+    if (event.key === 'ArrowLeft') {
+      event.preventDefault()
+      setDrawerWidth(drawerWidth + 20)
+    }
+    if (event.key === 'ArrowRight') {
+      event.preventDefault()
+      setDrawerWidth(drawerWidth - 20)
+    }
+  }
+
   return (
     <>
       {/* Backdrop */}
@@ -235,12 +265,23 @@ export function AssetDetailDrawer({ asset, isOpen, onClose }: AssetDetailDrawerP
       {asset && (
       <div
         className={cn(
-          "fixed right-0 top-0 h-full w-full max-w-2xl bg-white dark:bg-[#0A0D12] z-50 shadow-2xl dark:shadow-[0_0_50px_rgba(0,255,136,0.1)]",
+          "fixed right-0 top-0 h-full w-full bg-white dark:bg-[#0A0D12] z-50 shadow-2xl dark:shadow-[0_0_50px_rgba(0,255,136,0.1)]",
           "transform transition-transform duration-300 ease-in-out",
           "border-l-2 border-slate-200 dark:border-[#00FF88]/20",
           isOpen ? "translate-x-0" : "translate-x-full"
         )}
+        style={{ width: `min(100vw, ${drawerWidth}px)` }}
       >
+        <button
+          type="button"
+          aria-label="Resize asset detail drawer separator"
+          title="Drag to resize detail drawer"
+          onPointerDown={handleDrawerResizePointerDown}
+          onKeyDown={handleDrawerResizeKeyDown}
+          className="group absolute left-0 top-0 z-30 hidden h-full w-4 -translate-x-1/2 cursor-ew-resize items-center justify-center focus:outline-none focus-visible:ring-2 focus-visible:ring-blue-500 dark:focus-visible:ring-[#00FF88] sm:flex"
+        >
+          <span className="h-20 w-1 rounded-full bg-slate-300 transition-colors group-hover:bg-slate-500 group-focus-visible:bg-blue-500 dark:bg-white/20 dark:group-hover:bg-[#00FF88] dark:group-focus-visible:bg-[#00FF88]" />
+        </button>
         <div className="h-full flex flex-col overflow-hidden">
           {/* Header */}
           <div className="p-6 border-b-2 border-slate-200 dark:border-white/5 bg-slate-50 dark:bg-[#080A0F]">
@@ -265,13 +306,15 @@ export function AssetDetailDrawer({ asset, isOpen, onClose }: AssetDetailDrawerP
                   </span>
                 </div>
               </div>
-              <button
-                onClick={onClose}
-                className="p-2 hover:bg-slate-200 dark:hover:bg-white/10 rounded-lg transition-colors"
-                aria-label="Close drawer"
-              >
-                <X className="w-5 h-5 text-slate-600 dark:text-gray-400" />
-              </button>
+              <div className="flex shrink-0 items-center gap-2">
+                <button
+                  onClick={onClose}
+                  className="p-2 hover:bg-slate-200 dark:hover:bg-white/10 rounded-lg transition-colors"
+                  aria-label="Close drawer"
+                >
+                  <X className="w-5 h-5 text-slate-600 dark:text-gray-400" />
+                </button>
+              </div>
             </div>
 
             {/* Price Section */}
@@ -315,6 +358,8 @@ export function AssetDetailDrawer({ asset, isOpen, onClose }: AssetDetailDrawerP
 
           {/* Content */}
           <div className="flex-1 overflow-y-auto p-6 space-y-6">
+            <AssetPriceChart ticker={asset.ticker} assetCurrency={asset.currency} />
+
             {/* Geographic Breakdown */}
             {geographicData.length > 0 && (
               <div className="bg-slate-50 dark:bg-[#080A0F] rounded-2xl border-2 border-slate-200 dark:border-white/5 p-6 shadow-xl">

@@ -1,5 +1,6 @@
 import React from 'react'
 import { LineSeries } from './BacktestChart'
+import { FullscreenChartButton } from './FullscreenChart'
 
 interface DrawdownChartProps {
   dates: string[]
@@ -51,6 +52,33 @@ export function DrawdownChart({ dates, series, title = 'Drawdown' }: DrawdownCha
   }
 
   const zeroY = getY(0)
+  const legend = (
+    <div className="flex flex-wrap items-center gap-2 text-[10px] font-mono text-slate-500 dark:text-gray-400">
+      {series.map((s) => (
+        <span key={s.key} className="flex items-center gap-1">
+          <span className="w-2.5 h-2.5 rounded-full" style={{ backgroundColor: s.color }}></span>
+          {s.label}
+        </span>
+      ))}
+    </div>
+  )
+  const renderChartSvg = (heightClass: string) => (
+    <svg viewBox={`0 0 ${width} ${height}`} className={`w-full ${heightClass}`}>
+      <line x1={paddingX} x2={width - paddingX} y1={zeroY} y2={zeroY} stroke="#64748b" strokeDasharray="4 4" />
+      {series.map((s) => {
+        const linePath = buildLinePath(s.values, getX, getY)
+        return (
+          <path key={s.key} d={linePath} fill="none" stroke={s.color} strokeWidth="2.2" />
+        )
+      })}
+      <text x="10" y="14" className="fill-slate-500 dark:fill-gray-500 text-[9px] font-mono">
+        {max.toFixed(2)}
+      </text>
+      <text x="10" y="190" className="fill-slate-500 dark:fill-gray-500 text-[9px] font-mono">
+        {min.toFixed(2)}
+      </text>
+    </svg>
+  )
 
   return (
     <div className="bg-white dark:bg-[#0D1117]/50 rounded-3xl border-2 border-slate-200 dark:border-white/5 shadow-2xl p-6">
@@ -61,32 +89,21 @@ export function DrawdownChart({ dates, series, title = 'Drawdown' }: DrawdownCha
             {formatDate(dates[0])} → {formatDate(dates[dates.length - 1])}
           </div>
         </div>
-        <div className="flex flex-wrap items-center gap-2 text-[10px] font-mono text-slate-500 dark:text-gray-400">
-          {series.map((s) => (
-            <span key={s.key} className="flex items-center gap-1">
-              <span className="w-2.5 h-2.5 rounded-full" style={{ backgroundColor: s.color }}></span>
-              {s.label}
-            </span>
-          ))}
+        <div className="flex flex-wrap items-center justify-end gap-2">
+          {legend}
+          <FullscreenChartButton title={title}>
+            <div className="space-y-4">
+              {legend}
+              <div className="rounded-2xl border border-slate-200 bg-slate-50 p-3 dark:border-white/5 dark:bg-[#080A0F]">
+                {renderChartSvg('h-auto')}
+              </div>
+            </div>
+          </FullscreenChartButton>
         </div>
       </div>
 
       <div className="mt-4 rounded-2xl border border-slate-200 dark:border-white/5 bg-slate-50 dark:bg-[#080A0F] p-3">
-        <svg viewBox={`0 0 ${width} ${height}`} className="w-full h-48">
-          <line x1={paddingX} x2={width - paddingX} y1={zeroY} y2={zeroY} stroke="#64748b" strokeDasharray="4 4" />
-          {series.map((s) => {
-            const linePath = buildLinePath(s.values, getX, getY)
-            return (
-              <path key={s.key} d={linePath} fill="none" stroke={s.color} strokeWidth="2.2" />
-            )
-          })}
-          <text x="10" y="14" className="fill-slate-500 dark:fill-gray-500 text-[9px] font-mono">
-            {max.toFixed(2)}
-          </text>
-          <text x="10" y="190" className="fill-slate-500 dark:fill-gray-500 text-[9px] font-mono">
-            {min.toFixed(2)}
-          </text>
-        </svg>
+        {renderChartSvg('h-48')}
       </div>
     </div>
   )

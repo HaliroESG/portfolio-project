@@ -1,0 +1,28 @@
+name: Bootstrap Private Owner (Disabled)
+
+on:
+  workflow_dispatch:
+    inputs:
+      authorization_ref:
+        description: "Separate approved runbook or change reference"
+        required: true
+        type: string
+
+permissions:
+  contents: read
+
+jobs:
+  fail-closed:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    environment: Production
+
+    steps:
+      - name: Refuse bootstrap without a separately authorized runbook
+        env:
+          AUTHORIZATION_REF: ${{ inputs.authorization_ref }}
+        run: |
+          echo "::error::BOOTSTRAP_DISABLED_PENDING_SEPARATE_AUTHORITY"
+          echo "::error::Private-owner bootstrap requires an approved backup, rollback, operator and provider-mutation runbook."
+          test -n "$AUTHORIZATION_REF" || echo "::error::authorization_ref is required."
+          exit 2

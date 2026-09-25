@@ -1,0 +1,88 @@
+name: Frontend Runtime Smoke
+
+on:
+  workflow_dispatch:
+  push:
+    branches:
+      - main
+    paths:
+      - "frontend/**"
+      - ".github/workflows/frontend-runtime-smoke.yml"
+
+permissions:
+  contents: read
+
+jobs:
+  smoke:
+    runs-on: ubuntu-latest
+    env:
+      NEXT_PUBLIC_SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+      NEXT_PUBLIC_SUPABASE_ANON_KEY: ${{ secrets.SUPABASE_ANON_KEY }}
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: "npm"
+          cache-dependency-path: frontend/package-lock.json
+
+      - name: Install dependencies
+        working-directory: ./frontend
+        run: npm ci
+
+      - name: Lint
+        working-directory: ./frontend
+        run: npm run lint
+
+      - name: TypeScript
+        working-directory: ./frontend
+        run: npx tsc --noEmit
+
+      - name: Frontend unit smoke
+        working-directory: ./frontend
+        run: npm run test:frontend
+
+      - name: Runtime budgets
+        working-directory: ./frontend
+        run: npm run perf:budget
+
+      - name: Build
+        working-directory: ./frontend
+        env:
+          NEXT_PUBLIC_SUPABASE_URL: ${{ secrets.SUPABASE_URL || 'http://localhost:54321' }}
+          NEXT_PUBLIC_SUPABASE_ANON_KEY: ${{ secrets.SUPABASE_ANON_KEY || 'ci-placeholder-anon-key' }}
+        run: npm run build
+
+      - name: Install Playwright browser
+        if: ${{ env.NEXT_PUBLIC_SUPABASE_URL != '' && env.NEXT_PUBLIC_SUPABASE_ANON_KEY != '' }}
+        working-directory: ./frontend
+        run: npx playwright install --with-deps chromium
+
+      - name: Start app
+        if: ${{ env.NEXT_PUBLIC_SUPABASE_URL != '' && env.NEXT_PUBLIC_SUPABASE_ANON_KEY != '' }}
+        working-directory: ./frontend
+        run: |
+          npm run start -- --hostname 127.0.0.1 --port 3001 > /tmp/next-runtime-smoke.log 2>&1 &
+          for i in {1..45}; do
+            if curl -fsS http://127.0.0.1:3001 >/dev/null; then
+              exit 0
+            fi
+            sleep 2
+          done
+          cat /tmp/next-runtime-smoke.log
+          exit 1
+
+      - name: Browser smoke
+        if: ${{ env.NEXT_PUBLIC_SUPABASE_URL != '' && env.NEXT_PUBLIC_SUPABASE_ANON_KEY != '' }}
+        working-directory: ./frontend
+        env:
+          BASE_URL: http://127.0.0.1:3001
+        run: npm run smoke:browser
+
+      - name: Browser smoke skipped
+        if: ${{ env.NEXT_PUBLIC_SUPABASE_URL == '' || env.NEXT_PUBLIC_SUPABASE_ANON_KEY == '' }}
+        run: echo "Skipping browser smoke because Supabase runtime secrets are not configured."

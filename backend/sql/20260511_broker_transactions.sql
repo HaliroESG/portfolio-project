@@ -93,3 +93,21 @@ create index if not exists broker_reconciliation_items_run_idx
 
 create index if not exists broker_reconciliation_items_state_idx
   on public.broker_reconciliation_items (state);
+
+alter table public.broker_transactions enable row level security;
+alter table public.broker_reconciliation_runs enable row level security;
+alter table public.broker_reconciliation_items enable row level security;
+
+drop policy if exists broker_reconciliation_runs_read on public.broker_reconciliation_runs;
+create policy broker_reconciliation_runs_read on public.broker_reconciliation_runs
+  for select to anon, authenticated using (true);
+
+drop policy if exists broker_reconciliation_items_read on public.broker_reconciliation_items;
+create policy broker_reconciliation_items_read on public.broker_reconciliation_items
+  for select to anon, authenticated using (true);
+
+grant usage on schema public to anon, authenticated;
+grant select on table
+  public.broker_reconciliation_runs,
+  public.broker_reconciliation_items
+to anon, authenticated;

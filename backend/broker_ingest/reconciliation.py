@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import csv
+import re
 from dataclasses import dataclass
 from decimal import Decimal
 from pathlib import Path
@@ -24,6 +25,8 @@ class BrokerPosition:
     quantity: Decimal
     average_cost: Optional[Decimal] = None
     currency: Optional[str] = None
+    name: Optional[str] = None
+    source_row: Optional[int] = None
 
 
 @dataclass
@@ -52,11 +55,19 @@ def _parse_decimal(value: str | None) -> Decimal:
 
 
 def _get(row: dict[str, str], *keys: str) -> str:
+    normalized = {_normalize_key(key): value for key, value in row.items() if key is not None}
     for key in keys:
         value = row.get(key)
         if value is not None:
             return value
+        normalized_value = normalized.get(_normalize_key(key))
+        if normalized_value is not None:
+            return normalized_value
     return ""
+
+
+def _normalize_key(value: str) -> str:
+    return re.sub(r"[^a-z0-9]+", "", value.strip().lower())
 
 
 def _instrument_key(symbol: str | None, isin: str | None) -> str:
@@ -71,7 +82,7 @@ def parse_broker_positions_csv(path: str | Path) -> list[BrokerPosition]:
     positions: list[BrokerPosition] = []
     with open(path, "r", encoding="utf-8-sig") as handle:
         reader = csv.DictReader(handle)
-        for row in reader:
+        for row_number, row in enumerate(reader, start=2):
             average_cost_raw = _get(row, "average_cost", "avg_cost", "pru", "cost_basis")
             average_cost = _parse_decimal(average_cost_raw) if average_cost_raw.strip() else None
             positions.append(
@@ -81,6 +92,8 @@ def parse_broker_positions_csv(path: str | Path) -> list[BrokerPosition]:
                     quantity=_parse_decimal(_get(row, "quantity", "qty", "quantity_current")),
                     average_cost=average_cost,
                     currency=(_get(row, "currency", "devise").strip().upper() or None),
+                    name=_get(row, "name", "nom", "security", "instrument", "description").strip() or None,
+                    source_row=row_number,
                 )
             )
     return positions

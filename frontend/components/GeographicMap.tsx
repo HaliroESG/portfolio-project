@@ -4,6 +4,7 @@ import React, { useMemo, useState } from 'react'
 import { ComposableMap, Geographies, Geography, Marker, ZoomableGroup } from 'react-simple-maps'
 import { scaleLinear } from 'd3-scale'
 import { Asset, MarketRegion } from '../types'
+import { FullscreenChartButton } from './FullscreenChart'
 
 // URL stable pour les pays (TopoJSON)
 const GEO_URL = 'https://cdn.jsdelivr.net/npm/world-atlas@2/countries-110m.json'
@@ -49,9 +50,10 @@ export function GeographicMap({ regions, hoveredAsset, showBubbles = false, view
   }, [bubbleRegions])
 
   const [position, setPosition] = useState({ coordinates: [0, 20] as [number, number], zoom: 1 })
+  const [hoveredGeography, setHoveredGeography] = useState<string | null>(null)
 
-  return (
-    <div className="bg-white dark:bg-[#080A0F] h-full w-full flex flex-col relative overflow-hidden shadow-inner dark:shadow-2xl">
+  const renderMapSurface = (heightClass: string) => (
+    <div className={`bg-white dark:bg-[#080A0F] ${heightClass} w-full flex flex-col relative overflow-hidden shadow-inner dark:shadow-2xl`}>
       
       {/* Indicateur de Statut */}
       <div className="absolute top-4 left-4 z-20 p-2 bg-white/90 dark:bg-black/50 rounded border border-slate-300 dark:border-white/10 backdrop-blur-sm shadow-lg">
@@ -68,13 +70,18 @@ export function GeographicMap({ regions, hoveredAsset, showBubbles = false, view
             center={position.coordinates}
             minZoom={1}
             maxZoom={4}
-            onMoveEnd={(next) => setPosition({ coordinates: next.coordinates, zoom: next.zoom })}
+            onMoveEnd={(next) =>
+              setPosition((current) => ({
+                coordinates: next.coordinates ?? current.coordinates,
+                zoom: next.zoom ?? current.zoom,
+              }))
+            }
           >
             <Geographies geography={GEO_URL}>
               {({ geographies }) =>
                 geographies.map((geo) => {
                   // --- IDENTIFICATION DU PAYS ---
-                  const numericId = geo.id?.toString().padStart(3, '0');
+                  const numericId = geo.id?.toString().padStart(3, '0') ?? '';
                   const countryCode = (
                     ISO_MAP[numericId] || 
                     geo.properties?.ISO_A2 || 
@@ -108,24 +115,24 @@ export function GeographicMap({ regions, hoveredAsset, showBubbles = false, view
                     opacity = 0.8;
                   }
 
+                  const isHovered = hoveredGeography === geo.rsmKey && !hoveredAsset
+                  const renderedFill = isHovered ? 'rgb(59, 130, 246)' : fill
+                  const renderedOpacity = isHovered ? 0.9 : opacity
+
                   return (
                     <Geography
                       key={geo.rsmKey}
                       geography={geo}
-                      fill={fill}
-                      fillOpacity={opacity}
+                      fill={renderedFill}
+                      fillOpacity={renderedOpacity}
                       stroke={stroke}
                       strokeWidth={strokeWidth}
+                      onMouseEnter={() => setHoveredGeography(geo.rsmKey)}
+                      onMouseLeave={() => setHoveredGeography(null)}
                       style={{
-                        default: { outline: 'none', transition: 'all 250ms ease-in-out' },
-                        hover: { 
-                          fill: hoveredAsset ? fill : 'rgb(59, 130, 246)', // blue-500
-                          fillOpacity: hoveredAsset ? opacity : 0.9,
-                          outline: 'none', 
-                          cursor: 'pointer',
-                          transition: 'all 250ms ease-in-out'
-                        },
-                        pressed: { outline: 'none' },
+                        outline: 'none',
+                        cursor: 'pointer',
+                        transition: 'all 250ms ease-in-out',
                       }}
                     />
                   )
@@ -168,6 +175,17 @@ export function GeographicMap({ regions, hoveredAsset, showBubbles = false, view
           </ZoomableGroup>
         </ComposableMap>
       </div>
+    </div>
+  )
+
+  return (
+    <div className="relative h-full w-full">
+      <div className="absolute right-4 top-4 z-30">
+        <FullscreenChartButton title="Geographic View">
+          {renderMapSurface('h-[78vh] min-h-[520px]')}
+        </FullscreenChartButton>
+      </div>
+      {renderMapSurface('h-full')}
     </div>
   )
 }

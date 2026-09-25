@@ -1,0 +1,23 @@
+{
+  "schema_version": "astrocyte_pr15_governance_preview_local_validation_v1",
+  "generated_at": "2026-08-31T13:19:08Z",
+  "base_sha": "ff5c0d616052ffccf0e6d9b1479ce1fc49b424ac",
+  "correction_commit": "e6b93e53b9a0769ee276784cf937daf31517de55",
+  "correction_tree": "de5ac2c397afdf1f48d2230d232759fd0959b938",
+  "results": [
+    {"name": "PR14/PR15 governance targeted tests", "result": "18 passed", "status": "PASS"},
+    {"name": "all .github tests", "result": "56 passed", "status": "PASS"},
+    {"name": "workflow parity", "result": "12 workflows", "status": "PASS"},
+    {"name": "actionlint", "result": "v1.7.7 darwin/arm64; official archive checksum verified", "status": "PASS"},
+    {"name": "Vercel static configuration JSON", "result": "root and frontend configs parse and match the exact branch-bounded contract", "status": "PASS"},
+    {"name": "frontend npm ci", "status": "PASS"},
+    {"name": "frontend lint", "status": "PASS"},
+    {"name": "frontend TypeScript", "status": "PASS"},
+    {"name": "frontend production build", "status": "PASS"},
+    {"name": "backend pytest", "status": "NOT RUN", "reason": "no backend path changed; exact-parent CI passed 144 tests and exact-head CI remains required"},
+    {"name": "Supabase smoke", "status": "NOT RUN", "reason": "no Supabase contract changed and no Supabase authority was granted"},
+    {"name": "Vercel Preview runtime", "status": "NOT RUN", "reason": "Preview URLs and runtime were intentionally not opened"}
+  ],
+  "provider_actions": "READ_ONLY_PROJECT_PREFLIGHT_ONLY",
+  "production_actions": "NONE"
+}

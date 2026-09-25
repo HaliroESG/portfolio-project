@@ -27,7 +27,7 @@ const typesText = fs.readFileSync(typesPath, 'utf8');
 const trendTokens = ['UNKNOWN', 'INSUFFICIENT_HISTORY'];
 const missingTrendTokens = trendTokens.filter((t) => !typesText.includes(`'${t}'`));
 
-const requiredInterfaces = ['NewsFeedRow', 'MacroIndicatorRow', 'GovernanceTargetRow'];
+const requiredInterfaces = ['NewsFeedRow', 'MacroIndicatorRow', 'GovernanceTargetRow', 'PortfolioDecisionItemRow', 'TridentStockInsightRow', 'EquityScreenerRow'];
 const missingInterfaces = requiredInterfaces.filter((name) => !typesText.includes(`interface ${name}`));
 
 const result = {

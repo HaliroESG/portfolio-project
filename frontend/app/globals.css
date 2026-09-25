@@ -124,6 +124,12 @@
   }
 }
 
+@layer components {
+  .input {
+    @apply h-10 w-full rounded-md border border-slate-300 bg-white px-3 text-xs text-slate-950 outline-none transition focus:border-emerald-500 focus:ring-2 focus:ring-emerald-500/20 dark:border-white/10 dark:bg-black/20 dark:text-white;
+  }
+}
+
 @keyframes marquee {
   0% {
     transform: translateX(0);

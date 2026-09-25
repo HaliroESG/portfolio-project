@@ -68,6 +68,218 @@ try {
     ]),
     'Asset drawer should show explicit labels/messages for technical unavailability.'
   )
+  addCheck(
+    'frontend.asset_drawer.price_chart_present',
+    hasAll(assetDrawer, [
+      "import { AssetPriceChart } from './AssetPriceChart'",
+      '<AssetPriceChart ticker={asset.ticker} assetCurrency={asset.currency} />',
+    ]),
+    'Asset drawer should render the targeted asset price chart.'
+  )
+  addCheck(
+    'frontend.asset_drawer.resizable_width',
+    hasAll(assetDrawer, [
+      "import { ASSET_DRAWER_WIDTH } from '../lib/panelWidth'",
+      'usePersistedPanelWidth(ASSET_DRAWER_WIDTH)',
+      'Resize asset detail drawer separator',
+      'handleDrawerResizePointerDown',
+      'style={{ width: `min(100vw, ${drawerWidth}px)` }}',
+    ]) && !assetDrawer.includes('type="range"'),
+    'Asset drawer should expose persisted separator-handle resizing and stay mobile-bounded without a range gauge.'
+  )
+
+  const assetPriceChart = read('frontend/components/AssetPriceChart.tsx')
+  addCheck(
+    'frontend.asset_price_chart_controls_and_states',
+    hasAll(assetPriceChart, [
+      "const HORIZONS: PriceHistoryHorizon[] = ['YTD', '5Y', '10Y']",
+      "effectiveMode === 'LOCAL'",
+      'Local unavailable',
+      'Short history',
+      'loadAssetPriceHistory(supabase, ticker, horizon)',
+      'computeRegressionChartModel(displayPoints,',
+      'REGRESSION_MIN_POINTS',
+      'MM200',
+      'Z-score',
+      '±1/±2σ',
+    ]),
+    'Asset price chart should expose horizon/currency controls, explicit data states, and regression/MM200 overlays.'
+  )
+  addCheck(
+    'frontend.asset_price_chart_fullscreen',
+    hasAll(assetPriceChart, [
+      "import { FullscreenChartButton } from './FullscreenChart'",
+      '<FullscreenChartButton title={`${ticker} Price History`}>',
+      "renderChartSvg('h-auto', 'fullscreen')",
+    ]),
+    'Asset price chart should expose a fullscreen chart view.'
+  )
+
+  const tridentPage = read('frontend/app/trident/page.tsx')
+  const screenerPage = read('frontend/app/screener/page.tsx')
+  const equityScreenerData = read('frontend/lib/equityScreenerData.ts')
+  const equityScreenerDefinitions = read('frontend/lib/equityScreenerDefinitions.ts')
+  const tridentRegressionChart = read('frontend/components/TridentRegressionChart.tsx')
+  const regressionChart = read('frontend/lib/regressionChart.ts')
+  const fullscreenChart = read('frontend/components/FullscreenChart.tsx')
+  const panelWidth = read('frontend/lib/panelWidth.ts')
+  addCheck(
+    'frontend.trident_regression_chart_present',
+    hasAll(tridentPage, [
+      "const TridentRegressionChart = dynamic",
+      "import('../../components/TridentRegressionChart')",
+      'data-trident-regression-detail="true"',
+      '<TridentRegressionChart',
+      'ticker={selectedRow.ticker}',
+      'instrumentKey={selectedRow.instrument_key}',
+      'providerSymbol={selectedRow.provider_symbol}',
+      'assetCurrency={selectedRow.currency}',
+    ]) && hasAll(tridentRegressionChart, [
+      'Regression',
+      'MM200',
+      'Z-score',
+    ]),
+    'Trident selected-row panel should render the regression price chart prominently with MM200 and Z-score.'
+  )
+  const tridentCompanyInsight = read('frontend/components/TridentCompanyInsight.tsx')
+  const tridentInsights = read('frontend/lib/tridentInsights.ts')
+  addCheck(
+    'frontend.trident_company_insight_present',
+    hasAll(tridentPage, [
+      "import { TridentCompanyInsight } from '../../components/TridentCompanyInsight'",
+      '<TridentCompanyInsight',
+      'instrumentKey={selectedRow.instrument_key}',
+      'providerSymbol={selectedRow.provider_symbol}',
+    ]) && hasAll(tridentCompanyInsight, [
+      'Company Insight',
+      'AI trend brief',
+      'Full business summary',
+      'Recent drivers',
+      'https://finance.yahoo.com/quote/',
+      'AI brief not configured',
+    ]) && hasAll(tridentInsights, [
+      "from('trident_stock_insights')",
+      'SCHEMA_PENDING',
+    ]),
+    'Trident detail panel should expose backend-generated company insights with explicit unavailable states and Yahoo links.'
+  )
+  addCheck(
+    'frontend.trident_pagination_dom_budget',
+    hasAll(tridentPage, [
+      'const TRIDENT_PAGE_SIZE = 100',
+      'pageRows.map',
+      'data-trident-row="true"',
+      '<PaginationBar',
+    ]),
+    'Trident should page large result sets and expose a DOM marker for browser budget checks.'
+  )
+  addCheck(
+    'frontend.open_screener_present',
+    hasAll(screenerPage, [
+      'Open Screener',
+      "value=\"ESN_UNIVERSE\"",
+      "value=\"IT_SERVICES_VALUE\"",
+      "value=\"MOMENTUM_TREND\"",
+      "value=\"SECTOR_BOOMS\"",
+      'data-equity-screener-row="true"',
+      'FORECAST_UNAVAILABLE',
+      'FCF yield',
+      'Definitions / Calculations',
+      'SCREENER_DEFINITIONS',
+      'DefinitionTooltip',
+      'market_cap_usd',
+      '<TridentRegressionChart',
+    ]) && hasAll(equityScreenerData, [
+      "from('equity_screener_latest')",
+      'SCHEMA_PENDING',
+      'SELECTOR_V2',
+      'SELECTOR_V1',
+      'market_cap_usd',
+      'market_cap_fx_rate',
+      'quality_value_score',
+      'valuation_tag',
+      'regression_slope_pct',
+      'price_coverage_pct',
+    ]) && hasAll(equityScreenerDefinitions, [
+      'Score = valuation 20 pts, FCF 25 pts, quality 20 pts, growth 15 pts, health 20 pts',
+      'market_cap_usd',
+      'currencies.rate_to_eur',
+      'lower positive value between forward PE and trailing PE',
+      'CAGR from the latest fiscal year',
+    ]),
+    'Open screener should expose presets, definitions, USD market cap, explicit missing states, paged rows, and typed Supabase reads.'
+  )
+  addCheck(
+    'frontend.trident_detail_resizable_width',
+    hasAll(tridentPage, [
+      "import { TRIDENT_DETAIL_WIDTH } from '../../lib/panelWidth'",
+      'usePersistedPanelWidth(TRIDENT_DETAIL_WIDTH)',
+      'Resize Trident detail separator',
+      'handleDetailResizePointerDown',
+      '--trident-detail-width',
+    ]) && !tridentPage.includes('type="range"') && hasAll(panelWidth, [
+      'TRIDENT_DETAIL_WIDTH',
+      'ASSET_DRAWER_WIDTH',
+      'clampPanelWidth',
+      'readStoredPanelWidth',
+      'writeStoredPanelWidth',
+    ]),
+    'Trident detail panel should expose persisted separator-handle resizing without a range gauge.'
+  )
+  addCheck(
+    'frontend.trident_regression_chart_controls_and_calculations',
+    hasAll(tridentRegressionChart, [
+      "const HORIZONS: PriceHistoryHorizon[] = ['5Y', '10Y', 'MAX']",
+      "const SCALES: { key: RegressionScaleMode; label: string }[]",
+      'Local unavailable',
+      'SHORT HISTORY',
+      'NO PRICE HISTORY',
+      'Fallback provider_symbol',
+      'computeRegressionChartModel(displayPoints, scaleMode)',
+    ]) && hasAll(regressionChart, [
+      'computeRegressionChartModel',
+      'computeMovingAverage',
+      'latestZScore',
+      'annualizedSlopePct',
+    ]),
+    'Trident regression chart should expose horizon/currency/scale controls and compute regression bands/MM200.'
+  )
+  addCheck(
+    'frontend.chart_fullscreen_controls',
+    hasAll(fullscreenChart, [
+      'Maximize2',
+      'aria-label={`Open ${title} fullscreen`}',
+      "event.key === 'Escape'",
+      'role="dialog"',
+    ]) && hasAll(tridentRegressionChart, [
+      "import { FullscreenChartButton } from './FullscreenChart'",
+      '<FullscreenChartButton title={`${ticker} Regression`} className="h-7 w-7">',
+      'buildRegressionRenderChart(model, scaleMode, showMa200',
+      "renderRegressionSvg(charts.fullscreen, 'h-auto', 'fullscreen', 'fullscreen')",
+    ]),
+    'Fullscreen chart overlay should be shared and wired into Trident regression with dedicated fullscreen geometry.'
+  )
+
+  const backtestChart = read('frontend/components/BacktestChart.tsx')
+  const drawdownChart = read('frontend/components/DrawdownChart.tsx')
+  const geographicMap = read('frontend/components/GeographicMap.tsx')
+  addCheck(
+    'frontend.general_charts_fullscreen',
+    hasAll(backtestChart, [
+      "import { FullscreenChartButton } from './FullscreenChart'",
+      '<FullscreenChartButton title={title}>',
+      "renderChartSvg('h-auto')",
+    ]) && hasAll(drawdownChart, [
+      "import { FullscreenChartButton } from './FullscreenChart'",
+      '<FullscreenChartButton title={title}>',
+      "renderChartSvg('h-auto')",
+    ]) && hasAll(geographicMap, [
+      "import { FullscreenChartButton } from './FullscreenChart'",
+      '<FullscreenChartButton title="Geographic View">',
+      "renderMapSurface('h-[78vh] min-h-[520px]')",
+    ]),
+    'General charts should expose the shared fullscreen control.'
+  )
 
   const geoPage = read('frontend/app/geo/page.tsx')
   addCheck(
@@ -81,28 +293,134 @@ try {
   )
 
   const dashboard = read('frontend/app/page.tsx')
+  const familyOfficeData = read('frontend/lib/familyOfficeData.ts')
   addCheck(
-    'frontend.dashboard.shared_portfolio_cache_key',
+    'frontend.dashboard.family_office_shared_cache',
     hasAll(dashboard, [
-      "useSWR(",
-      'PORTFOLIO_AGGREGATION_SWR_KEY',
-      'loadPortfolioAggregation(supabase)',
-      "<DataHealthPanel />",
+      'useSWR(',
+      'FAMILY_OFFICE_SWR_KEY',
+      'loadFamilyOfficeBundle(supabase)',
+      '<FamilyOfficeStateBadge',
+      "data?.schemaState === 'SCHEMA_PENDING'",
     ]),
-    'Dashboard should use shared aggregation fetch and include DataHealth panel.'
+    'Family Office overview should use the shared registry cache and expose explicit contract/data states.'
+  )
+  addCheck(
+    'frontend.family_office.bounded_parallel_reads',
+    hasAll(familyOfficeData, [
+      'const results = await Promise.all([',
+      "supabase.from('fo_portfolio_overview_latest').select(OVERVIEW_COLUMNS)",
+      "supabase.from('fo_operations_inbox').select(OPERATION_COLUMNS)",
+      ".limit(1500)",
+      ".limit(100)",
+      ".limit(36)",
+    ]),
+    'Family Office reads should be parallel, use narrow selectors, and bound historical result sets.'
   )
 
   const dataHealth = read('frontend/components/DataHealthPanel.tsx')
   addCheck(
     'frontend.data_health.threshold_and_trend_semantics',
     hasAll(dataHealth, [
+      'Data Operations',
       "type EtlQualityState = 'OK' | 'WARNING' | 'CRITICAL' | 'UNKNOWN'",
       'ETL_QUALITY_THRESHOLDS',
       'trendDirectionLabel',
       'trendBasisLabel',
       'technicalBackfilled',
+      'operationActionForRun',
     ]),
-    'Data health should classify threshold states and expose ETL trend semantics.'
+    'Data operations should classify threshold states, expose ETL trends, and provide action hints.'
+  )
+
+  const targetsPage = read('frontend/app/targets/page.tsx')
+  const arbitragePage = read('frontend/app/arbitrage/page.tsx')
+  const supportsPage = read('frontend/app/supports/page.tsx')
+  const sidebar = read('frontend/components/Sidebar.tsx')
+  addCheck(
+    'frontend.targets.portfolio_drift_mobile_cards',
+    hasAll(targetsPage, [
+      'Portfolio Drift',
+      'currentWeightPct',
+      'rebalanceAmountEur',
+      'md:hidden',
+      'hidden md:block',
+      'Targets stay read-only',
+      'broker_position_snapshot_runs',
+      'actual_source_accounts',
+      'Target Excel',
+    ]),
+    'Targets should expose Portfolio Drift metrics, broker snapshot freshness, target import status, and mobile cards while staying frontend read-only.'
+  )
+  addCheck(
+    'frontend.targets.target_studio_two_level_models',
+    hasAll(targetsPage, [
+      'Target Studio',
+      'target_models',
+      'target_buckets',
+      'target_envelope_lines',
+      'Strategic buckets',
+      'Envelope execution lines',
+      'Two-level target model',
+    ]),
+    'Targets should expose Target Studio with strategic buckets and envelope execution lines.'
+  )
+  addCheck(
+    'frontend.arbitrage.decision_dashboard',
+    hasAll(arbitragePage, [
+      'portfolio_decision_items_latest',
+      'DECISION_SELECTOR',
+      'Decision queue',
+      'FilterSelect label="Action"',
+      'FilterSelect label="Data issue"',
+      'rebalance_amount_eur',
+      'reason_codes',
+      'Informative',
+    ]),
+    'Arbitrage should read the decision read model and expose filters, actions, amount, justification, and read-only semantics.'
+  )
+  addCheck(
+    'frontend.arbitrage.allocation_advice',
+    hasAll(arbitragePage, [
+      'allocation_advice_items_latest',
+      'Allocation advice',
+      "Flux d'abord",
+      'NEW_CASH_FIRST',
+      'INTERNAL_ARBITRAGE',
+      'preferred_execution',
+    ]),
+    'Arbitrage should expose bucket-level allocation advice using the flux-first policy.'
+  )
+  addCheck(
+    'frontend.arbitrage.execution_universe',
+    hasAll(arbitragePage, [
+      'support_sources',
+      'support_source_rows',
+      'support_availability',
+      'Execution universe',
+      'MANUAL_REQUIRED',
+      'PARTIAL_SOURCE',
+    ]),
+    'Arbitrage should expose support availability by envelope and surface manual checks for partial/missing identifiers.'
+  )
+  addCheck(
+    'frontend.supports.catalogue_screen',
+    hasAll(supportsPage, [
+      'investment_supports',
+      'support_source_rows',
+      'support_availability',
+      'Support selector',
+      'METRICS_UNAVAILABLE',
+      'IDENTIFIER_MISSING',
+      'PARTIAL',
+      'A mapper',
+      'External ratings optional',
+      'data-support-row="true"',
+    ]) && hasAll(sidebar, [
+      "name: 'Supports'",
+      "href: '/supports'",
+    ]),
+    'Supports should expose the insurance/PER support catalogue and be reachable from navigation.'
   )
 
   const fxPage = read('frontend/app/fx/page.tsx')
@@ -128,6 +446,18 @@ try {
       'target_weight_pct?: number | null;',
       'portfolio_ids?: string[];',
       'portfolio_names?: string[];',
+      'BrokerPositionSnapshotRunRow',
+      'actual_source_accounts?: BrokerPositionSourceAccount[] | null;',
+      'provider_symbol: string | null',
+      'PortfolioDecisionItemRow',
+      'InvestmentSupportRow',
+      'SupportAvailabilityRow',
+      'SupportSourceLineRow',
+      'SupportSourceQuality',
+      'SupportIdentifierState',
+      'TargetBucketRow',
+      'TargetEnvelopeLineRow',
+      'AllocationAdviceRow',
     ]),
     'types.ts should carry current trend-state and portfolio model fields.'
   )

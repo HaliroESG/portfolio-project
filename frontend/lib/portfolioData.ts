@@ -10,6 +10,7 @@ import {
   PortfolioOption,
   TrendState,
 } from '../types'
+import { isSelectorSchemaError } from './supabaseSelectorErrors'
 
 type JsonRecord = Record<string, unknown>
 

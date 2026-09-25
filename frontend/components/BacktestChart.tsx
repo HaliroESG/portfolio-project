@@ -1,4 +1,5 @@
 import React from 'react'
+import { FullscreenChartButton } from './FullscreenChart'
 
 export interface LineSeries {
   key: string
@@ -61,6 +62,52 @@ export function BacktestChart({ dates, series, title = 'NAV (EUR)' }: BacktestCh
     return bottom - ratio * (bottom - top)
   }
 
+  const legend = (
+    <div className="flex flex-wrap items-center gap-2 text-[10px] font-mono text-slate-500 dark:text-gray-400">
+      {series.map((s) => (
+        <span key={s.key} className="flex items-center gap-1">
+          <span className="w-2.5 h-2.5 rounded-full" style={{ backgroundColor: s.color }}></span>
+          {s.label}
+        </span>
+      ))}
+    </div>
+  )
+
+  const renderChartSvg = (heightClass: string) => (
+    <svg viewBox={`0 0 ${width} ${height}`} className={`w-full ${heightClass}`}>
+      <defs>
+        {series.map((s) => {
+          const gradientId = `${sanitizeId(s.key)}-fill`
+          return (
+            <linearGradient key={gradientId} id={gradientId} x1="0" y1="0" x2="0" y2="1">
+              <stop offset="0%" stopColor={s.color} stopOpacity="0.18" />
+              <stop offset="100%" stopColor={s.color} stopOpacity="0" />
+            </linearGradient>
+          )
+        })}
+      </defs>
+
+      {series.map((s, index) => {
+        const gradientId = `${sanitizeId(s.key)}-fill`
+        const linePath = buildLinePath(s.values, getX, getY)
+        const areaPath = `${linePath} L ${getX(dates.length - 1)} ${bottom} L ${getX(0)} ${bottom} Z`
+        return (
+          <g key={s.key}>
+            {index === 0 && <path d={areaPath} fill={`url(#${gradientId})`} />}
+            <path d={linePath} fill="none" stroke={s.color} strokeWidth="2.4" />
+          </g>
+        )
+      })}
+
+      <text x="10" y="14" className="fill-slate-500 dark:fill-gray-500 text-[9px] font-mono">
+        {max.toFixed(0)} EUR
+      </text>
+      <text x="10" y="212" className="fill-slate-500 dark:fill-gray-500 text-[9px] font-mono">
+        {min.toFixed(0)} EUR
+      </text>
+    </svg>
+  )
+
   return (
     <div className="bg-white dark:bg-[#0D1117]/50 rounded-3xl border-2 border-slate-200 dark:border-white/5 shadow-2xl p-6">
       <div className="flex items-center justify-between gap-4">
@@ -70,49 +117,21 @@ export function BacktestChart({ dates, series, title = 'NAV (EUR)' }: BacktestCh
             {formatDate(dates[0])} → {formatDate(dates[dates.length - 1])}
           </div>
         </div>
-        <div className="flex flex-wrap items-center gap-2 text-[10px] font-mono text-slate-500 dark:text-gray-400">
-          {series.map((s) => (
-            <span key={s.key} className="flex items-center gap-1">
-              <span className="w-2.5 h-2.5 rounded-full" style={{ backgroundColor: s.color }}></span>
-              {s.label}
-            </span>
-          ))}
+        <div className="flex flex-wrap items-center justify-end gap-2">
+          {legend}
+          <FullscreenChartButton title={title}>
+            <div className="space-y-4">
+              {legend}
+              <div className="rounded-2xl border border-slate-200 bg-slate-50 p-3 dark:border-white/5 dark:bg-[#080A0F]">
+                {renderChartSvg('h-auto')}
+              </div>
+            </div>
+          </FullscreenChartButton>
         </div>
       </div>
 
       <div className="mt-4 rounded-2xl border border-slate-200 dark:border-white/5 bg-slate-50 dark:bg-[#080A0F] p-3">
-        <svg viewBox={`0 0 ${width} ${height}`} className="w-full h-52">
-          <defs>
-            {series.map((s) => {
-              const gradientId = `${sanitizeId(s.key)}-fill`
-              return (
-                <linearGradient key={gradientId} id={gradientId} x1="0" y1="0" x2="0" y2="1">
-                  <stop offset="0%" stopColor={s.color} stopOpacity="0.18" />
-                  <stop offset="100%" stopColor={s.color} stopOpacity="0" />
-                </linearGradient>
-              )
-            })}
-          </defs>
-
-            {series.map((s, index) => {
-              const gradientId = `${sanitizeId(s.key)}-fill`
-              const linePath = buildLinePath(s.values, getX, getY)
-              const areaPath = `${linePath} L ${getX(dates.length - 1)} ${bottom} L ${getX(0)} ${bottom} Z`
-              return (
-                <g key={s.key}>
-                {index === 0 && <path d={areaPath} fill={`url(#${gradientId})`} />}
-                <path d={linePath} fill="none" stroke={s.color} strokeWidth="2.4" />
-                </g>
-              )
-            })}
-
-          <text x="10" y="14" className="fill-slate-500 dark:fill-gray-500 text-[9px] font-mono">
-            {max.toFixed(0)} EUR
-          </text>
-          <text x="10" y="212" className="fill-slate-500 dark:fill-gray-500 text-[9px] font-mono">
-            {min.toFixed(0)} EUR
-          </text>
-        </svg>
+        {renderChartSvg('h-52')}
       </div>
     </div>
   )

@@ -1,0 +1,884 @@
+#!/usr/bin/env python3
+"""Fail-closed static checks for the default-branch workflow contract."""
+
+from __future__ import annotations
+
+import hashlib
+import json
+import re
+import subprocess
+from pathlib import Path
+
+
+ROOT = Path(__file__).resolve().parents[2]
+WORKFLOWS = ROOT / ".github" / "workflows"
+
+EXPECTED = {
+    "bootstrap-private-owner.yml",
+    "ci.yml",
+    "family-office-release.yml",
+    "frontend-runtime-smoke.yml",
+    "independent-review-gate.yml",
+    "production-app-smoke.yml",
+    "production-data-remediation.yml",
+    "schedule.yml",
+    "trident-price-backfill.yml",
+    "trident-stock-insights.yml",
+    "trident-supabase.yml",
+    "workflow-parity.yml",
+}
+MUTATION_WORKFLOWS = {
+    "production-data-remediation.yml",
+    "schedule.yml",
+    "trident-price-backfill.yml",
+    "trident-stock-insights.yml",
+    "trident-supabase.yml",
+}
+MIGRATION_WORKFLOWS = {
+    "production-data-remediation.yml",
+    "trident-supabase.yml",
+}
+EXPECTED_ENFORCEMENT_COUNTS = {
+    "production-data-remediation.yml": 1,
+    "schedule.yml": 6,
+    "trident-price-backfill.yml": 1,
+    "trident-stock-insights.yml": 1,
+    "trident-supabase.yml": 1,
+}
+TRUST_BOUNDARY_JOBS = {
+    "production-data-remediation.yml": {
+        "remediate-data": (
+            "Claim one-shot mutation authorization",
+            "Apply provider kill switches and verify required configuration",
+        ),
+    },
+    "schedule.yml": {
+        "preflight": (
+            "Claim one-shot mutation authorization",
+            "Verify required secrets and variables",
+        ),
+        "refresh-core": ("Verify authority before mutable setup", "Refresh core feeds"),
+        "refresh-market-history": ("Verify authority before mutable setup", "Refresh historical prices"),
+        "refresh-trident": ("Verify authority before mutable setup", "Refresh Trident screener"),
+        "refresh-backtest": ("Verify authority before mutable setup", "Refresh production reference backtest"),
+        "post-refresh-gate": ("Verify authority before mutable setup", "Post-refresh schema check"),
+    },
+    "trident-price-backfill.yml": {
+        "top-backfill": (
+            "Claim one-shot mutation authorization",
+            "Apply provider kill switches and verify required configuration",
+        ),
+    },
+    "trident-stock-insights.yml": {
+        "sync-insights": (
+            "Claim one-shot mutation authorization",
+            "Apply provider kill switches and verify required configuration",
+        ),
+    },
+    "trident-supabase.yml": {
+        "mutate-production": ("Claim one-shot mutation authorization", "Pre-migration schema check"),
+    },
+}
+PINNED_ACTIONS = {
+    "actions/checkout": "11d5960a326750d5838078e36cf38b85af677262",
+    "actions/setup-python": "a26af69be951a213d495a4c3e4e4022e16d87065",
+    "actions/setup-node": "49933ea5288caeca8642d1e84afbd3f7d6820020",
+    "actions/upload-artifact": "ea165f8d65b6e75b540449e92b4886f43607fa02",
+    "actions/download-artifact": "d3f86a106a0bac45b974a628896c90dbdf5c8093",
+}
+BOOTSTRAP_SHA256 = "77c9966f7a0d40efa2abd56cac0801a11437a34efec35145a69e1bb35729ae0d"
+ACTIONLINT_VERSION = "1.7.7"
+ACTIONLINT_ARCHIVE_SHA256 = (
+    "023070a287cd8cccd71515fedc843f1985bf96c436b7effaecce67290e7e0757"
+)
+ACTIONLINT_ARCHIVE_URL = (
+    "https://github.com/rhysd/actionlint/releases/download/v1.7.7/"
+    "actionlint_1.7.7_linux_amd64.tar.gz"
+)
+REQUIRED_PR_GOVERNANCE = ROOT / ".github" / "required-pr-governance-v1.json"
+EXPECTED_REQUIRED_CHECKS = [
+    "frontend-contract-check",
+    "workflow-contract",
+    "Family Office / validate",
+    "Family Office / prepare",
+    "Trident / validate",
+    "ASTROCYTE Independent Review",
+]
+
+
+def section(text: str, start: str, end: str) -> str:
+    try:
+        start_index = text.index(start)
+        end_index = text.index(end, start_index)
+    except ValueError as exc:
+        raise AssertionError(f"missing section marker: {exc}") from exc
+    return text[start_index:end_index]
+
+
+def require(text: str, fragment: str, path: str) -> None:
+    if fragment not in text:
+        raise AssertionError(f"{path}: missing required contract fragment {fragment!r}")
+
+
+def forbid(text: str, fragment: str, path: str) -> None:
+    if fragment in text:
+        raise AssertionError(f"{path}: forbidden contract fragment {fragment!r}")
+
+
+def require_order(text: str, before: str, after: str, path: str) -> None:
+    require(text, before, path)
+    require(text, after, path)
+    if text.index(before) > text.index(after):
+        raise AssertionError(f"{path}: {before!r} must precede {after!r}")
+
+
+def _strict_json_object(path: Path) -> dict[str, object]:
+    def reject_duplicates(pairs: list[tuple[str, object]]) -> dict[str, object]:
+        result: dict[str, object] = {}
+        for key, value in pairs:
+            if key in result:
+                raise AssertionError(f"{path.name}: duplicate JSON key {key!r}")
+            result[key] = value
+        return result
+
+    try:
+        value = json.loads(path.read_text(encoding="utf-8"), object_pairs_hook=reject_duplicates)
+    except (OSError, json.JSONDecodeError) as exc:
+        raise AssertionError(f"{path.name}: invalid JSON") from exc
+    if not isinstance(value, dict):
+        raise AssertionError(f"{path.name}: root must be an object")
+    return value
+
+
+def validate_required_pr_governance() -> None:
+    contract = _strict_json_object(REQUIRED_PR_GOVERNANCE)
+    expected_fields = {
+        "schema_version",
+        "branch",
+        "activation_status",
+        "required_approving_review_count",
+        "dismiss_stale_reviews",
+        "require_conversation_resolution",
+        "required_checks",
+        "required_check_source",
+        "independent_review",
+        "bootstrap_limitation",
+    }
+    if set(contract) != expected_fields:
+        raise AssertionError("required PR governance fields changed")
+    if contract["schema_version"] != "astrocyte_required_pr_governance_v1":
+        raise AssertionError("required PR governance schema changed")
+    if contract["branch"] != "main":
+        raise AssertionError("required PR governance must target main")
+    if contract["activation_status"] != "NOT_CONFIGURED_BY_THIS_CHANGE":
+        raise AssertionError("repository contract must not overclaim GitHub configuration")
+    if contract["required_approving_review_count"] != 0:
+        raise AssertionError("native approvals must not deadlock the mono-user repository")
+    if contract["dismiss_stale_reviews"] is not True:
+        raise AssertionError("stale reviews must be dismissed")
+    if contract["require_conversation_resolution"] is not True:
+        raise AssertionError("review conversations must be resolved")
+    if contract["required_checks"] != EXPECTED_REQUIRED_CHECKS:
+        raise AssertionError("required PR check contract changed")
+    expected_source = {
+        "expected_app_slug": "github-actions",
+        "app_binding_required": True,
+        "app_id_status": "CONTROLLER_MUST_RESOLVE_BEFORE_ACTIVATION",
+    }
+    if contract["required_check_source"] != expected_source:
+        raise AssertionError("required PR checks must be bound to GitHub Actions")
+    review = contract["independent_review"]
+    expected_review = {
+        "context": "ASTROCYTE Independent Review",
+        "source": "AUTHENTICATED_GITHUB_REVIEW_OR_OWNER_WORKFLOW_DISPATCH",
+        "exact_head_required": True,
+        "human_reviewer_required": False,
+        "reviewer_must_differ_from_author": False,
+        "trusted_associations": ["COLLABORATOR", "MEMBER", "OWNER"],
+        "labels_or_comments_trusted": False,
+        "auto_approval": False,
+        "mono_user_exception": {
+            "source": "OWNER_WORKFLOW_DISPATCH",
+            "actor_must_equal_repository_owner": True,
+            "actor_must_equal_pr_author": True,
+            "same_repository_required": True,
+            "open_ready_pr_required": True,
+            "target_branch": "main",
+            "codex_verdict_required": "SHIP",
+            "codex_review_sha256_required": True,
+            "typed_confirmation": "ACCEPT_CODEX_SHIP_FOR_EXACT_HEAD",
+        },
+    }
+    if review != expected_review:
+        raise AssertionError("independent review contract changed")
+    limitation = contract["bootstrap_limitation"]
+    if not isinstance(limitation, str) or "must already exist on main" not in limitation:
+        raise AssertionError("independent review bootstrap limitation is missing")
+    if "one-time explicit repository-owner override" not in limitation:
+        raise AssertionError("mono-user review bootstrap override is missing")
+
+
+RUBY_YAML_USES_PARSER = r"""
+require "json"
+require "psych"
+document = Psych.safe_load(
+  STDIN.read,
+  permitted_classes: [],
+  permitted_symbols: [],
+  aliases: true
+)
+uses = []
+walk = lambda do |node|
+  case node
+  when Hash
+    node.each do |key, value|
+      uses << value if key.to_s == "uses"
+      walk.call(value)
+    end
+  when Array
+    node.each { |value| walk.call(value) }
+  end
+end
+walk.call(document)
+STDOUT.write(JSON.generate(uses))
+"""
+
+RUBY_YAML_DOCUMENT_PARSER = r"""
+require "json"
+require "psych"
+document = Psych.safe_load(
+  STDIN.read,
+  permitted_classes: [],
+  permitted_symbols: [],
+  aliases: true
+)
+STDOUT.write(JSON.generate(document))
+"""
+
+
+def _parse_workflow_uses(name: str, text: str) -> list[str]:
+    try:
+        result = subprocess.run(
+            ["ruby", "-e", RUBY_YAML_USES_PARSER],
+            input=text,
+            text=True,
+            capture_output=True,
+            check=True,
+            timeout=15,
+        )
+        parsed = json.loads(result.stdout)
+    except (OSError, subprocess.SubprocessError, json.JSONDecodeError) as exc:
+        raise AssertionError(f"{name}: semantic YAML parsing failed closed") from exc
+    if not isinstance(parsed, list) or not all(isinstance(item, str) for item in parsed):
+        raise AssertionError(f"{name}: every semantic uses value must be a string")
+    return parsed
+
+
+def _parse_workflow_document(name: str, text: str) -> dict[str, object]:
+    try:
+        result = subprocess.run(
+            ["ruby", "-e", RUBY_YAML_DOCUMENT_PARSER],
+            input=text,
+            text=True,
+            capture_output=True,
+            check=True,
+            timeout=15,
+        )
+        parsed = json.loads(result.stdout)
+    except (OSError, subprocess.SubprocessError, json.JSONDecodeError) as exc:
+        raise AssertionError(f"{name}: semantic YAML document parsing failed closed") from exc
+    if not isinstance(parsed, dict):
+        raise AssertionError(f"{name}: workflow document must be a mapping")
+    return parsed
+
+
+def _semantic_strings(value: object):
+    if isinstance(value, str):
+        yield value
+    elif isinstance(value, dict):
+        for nested in value.values():
+            yield from _semantic_strings(nested)
+    elif isinstance(value, list):
+        for nested in value:
+            yield from _semantic_strings(nested)
+
+
+def _references_expression_context(value: object, context: str) -> bool:
+    marker = "${{" + context + "."
+    return any(marker in "".join(text.split()) for text in _semantic_strings(value))
+
+
+def _check_job_environment_contexts(name: str, text: str) -> None:
+    document = _parse_workflow_document(name, text)
+    jobs = document.get("jobs")
+    if not isinstance(jobs, dict):
+        raise AssertionError(f"{name}: jobs must be a mapping")
+    for job_name, job in jobs.items():
+        if not isinstance(job, dict):
+            raise AssertionError(f"{name}: job {job_name} must be a mapping")
+        if _references_expression_context(job.get("env", {}), "runner"):
+            raise AssertionError(
+                f"{name} {job_name}: runner context is unavailable in job env"
+            )
+
+
+def _check_required_actionlint(text: str) -> None:
+    document = _parse_workflow_document("workflow-parity.yml", text)
+    jobs = document.get("jobs")
+    if not isinstance(jobs, dict):
+        raise AssertionError("workflow-parity.yml: jobs must be a mapping")
+    job = jobs.get("workflow-contract")
+    if not isinstance(job, dict):
+        raise AssertionError("workflow-parity.yml: required job is missing")
+    steps = job.get("steps")
+    if not isinstance(steps, list) or not all(isinstance(step, dict) for step in steps):
+        raise AssertionError("workflow-parity.yml: required job steps must be mappings")
+    names = [step.get("name") for step in steps]
+    install_name = "Install checksum-pinned Actionlint"
+    validate_name = "Validate every workflow with Actionlint"
+    if install_name not in names or validate_name not in names:
+        raise AssertionError("workflow-parity.yml: required Actionlint steps are missing")
+    install_index = names.index(install_name)
+    validate_index = names.index(validate_name)
+    if install_index >= validate_index:
+        raise AssertionError("workflow-parity.yml: Actionlint validation order is unsafe")
+
+    install = steps[install_index]
+    environment = install.get("env")
+    if not isinstance(environment, dict) or environment.get(
+        "ACTIONLINT_VERSION"
+    ) != ACTIONLINT_VERSION or environment.get(
+        "ACTIONLINT_ARCHIVE_SHA256"
+    ) != ACTIONLINT_ARCHIVE_SHA256:
+        raise AssertionError(
+            "workflow-parity.yml: Actionlint version and archive checksum must be pinned"
+        )
+    install_run = install.get("run")
+    if not isinstance(install_run, str) or not all(
+        fragment in install_run
+        for fragment in (
+            ACTIONLINT_ARCHIVE_URL,
+            "sha256sum --check --strict",
+            'reported_version=$("$install_dir/actionlint" -version)',
+            'test "${reported_version%%$\'\\n\'*}" = "$ACTIONLINT_VERSION"',
+        )
+    ):
+        raise AssertionError(
+            "workflow-parity.yml: Actionlint acquisition must verify checksum and version"
+        )
+    validate_run = steps[validate_index].get("run")
+    if not isinstance(validate_run, str) or validate_run.strip() != (
+        "actionlint -shellcheck= -pyflakes= .github/workflows/*.yml"
+    ):
+        raise AssertionError(
+            "workflow-parity.yml: required Actionlint scan must cover every workflow "
+            "with optional ShellCheck and Pyflakes integrations disabled"
+        )
+
+
+def _check_trust_boundaries(name: str, text: str) -> None:
+    document = _parse_workflow_document(name, text)
+    jobs = document.get("jobs")
+    if not isinstance(jobs, dict):
+        raise AssertionError(f"{name}: jobs must be a mapping")
+    encoded_document = json.dumps(document, sort_keys=True)
+    if any(
+        f"vars.{credential}" in encoded_document
+        for credential in ("SUPABASE_DB_URL", "DATABASE_URL")
+    ):
+        raise AssertionError(
+            f"{name}: database credentials may not come from repository variables"
+        )
+    preparation = jobs.get("prepare-runtime")
+    if not isinstance(preparation, dict):
+        raise AssertionError(f"{name}: isolated prepare-runtime job is missing")
+    encoded_preparation = json.dumps(preparation, sort_keys=True)
+    if "environment" in preparation or "secrets." in encoded_preparation:
+        raise AssertionError(
+            f"{name}: dependency preparation must not receive Production or secrets"
+        )
+    if "Build untrusted dependency artifact without secrets" not in encoded_preparation:
+        raise AssertionError(f"{name}: dependency preparation contract is missing")
+    for job_name, (initial_boundary, provider_step) in TRUST_BOUNDARY_JOBS[name].items():
+        job = jobs.get(job_name)
+        if not isinstance(job, dict):
+            raise AssertionError(f"{name}: missing protected job {job_name}")
+        job_env = json.dumps(job.get("env", {}), sort_keys=True)
+        if "secrets." in job_env:
+            raise AssertionError(f"{name} {job_name}: provider secrets may not be job-scoped")
+        if any(
+            f"vars.{credential}" in job_env
+            for credential in ("SUPABASE_DB_URL", "DATABASE_URL")
+        ):
+            raise AssertionError(
+                f"{name} {job_name}: database credentials may not come from vars or job env"
+            )
+        steps = job.get("steps")
+        if not isinstance(steps, list) or not all(isinstance(step, dict) for step in steps):
+            raise AssertionError(f"{name} {job_name}: steps must be mappings")
+        names = [step.get("name") for step in steps]
+        if initial_boundary not in names or provider_step not in names:
+            raise AssertionError(f"{name} {job_name}: trust boundary steps are missing")
+        initial_index = names.index(initial_boundary)
+        pre_download_name = "Validate one-shot authorization before dependency download"
+        if pre_download_name not in names:
+            raise AssertionError(
+                f"{name} {job_name}: pre-download authority validation is missing"
+            )
+        pre_download_index = names.index(pre_download_name)
+        final_name = "Enforce one-shot authorization immediately before provider access"
+        if final_name not in names:
+            raise AssertionError(f"{name} {job_name}: final authority enforcement is missing")
+        final_index = names.index(final_name)
+        provider_index = names.index(provider_step)
+        dependency_name = "Download prepared dependencies after authority"
+        if dependency_name not in names:
+            raise AssertionError(
+                f"{name} {job_name}: prepared dependencies must be downloaded after authority"
+            )
+        dependency_index = names.index(dependency_name)
+        if not (
+            initial_index
+            < pre_download_index
+            < dependency_index
+            < final_index
+            < provider_index
+        ):
+            raise AssertionError(f"{name} {job_name}: authority ordering is unsafe")
+        for step in steps[:initial_index]:
+            encoded = json.dumps(step, sort_keys=True)
+            if "secrets." in encoded:
+                raise AssertionError(f"{name} {job_name}: secret is exposed before authority")
+            if any(
+                fragment in encoded
+                for fragment in ("pip install", "npm ci", "actions/setup-python@", "actions/setup-node@")
+            ):
+                raise AssertionError(f"{name} {job_name}: mutable setup runs before authority")
+        provider_secret_indexes = []
+        for index, step in enumerate(steps):
+            encoded = json.dumps(step, sort_keys=True)
+            secret_names = set(re.findall(r"secrets\.([A-Z0-9_]+)", encoded))
+            provider_secret_names = secret_names - {"ASTROCYTE_AUTHORIZATION_HMAC_KEY"}
+            if provider_secret_names:
+                provider_secret_indexes.append(index)
+            if index < final_index and provider_secret_names:
+                raise AssertionError(f"{name} {job_name}: provider secret precedes final authority")
+            step_env = step.get("env", {})
+            if isinstance(step_env, dict):
+                for credential in ("SUPABASE_DB_URL", "DATABASE_URL"):
+                    if credential not in step_env:
+                        continue
+                    if step_env[credential] != f"${{{{ secrets.{credential} }}}}":
+                        raise AssertionError(
+                            f"{name} {job_name}: {credential} must be a step-scoped secret"
+                        )
+                    if index <= final_index:
+                        raise AssertionError(
+                            f"{name} {job_name}: database credential precedes final authority"
+                        )
+        if (
+            not provider_secret_indexes
+            or provider_secret_indexes[0] != provider_index
+            or provider_index != final_index + 1
+        ):
+            raise AssertionError(
+                f"{name} {job_name}: final authority must immediately precede the first provider-secret step"
+            )
+        initial_run = steps[initial_index].get("run", "")
+        pre_download_run = steps[pre_download_index].get("run", "")
+        final_run = steps[final_index].get("run", "")
+        if not all(
+            isinstance(run, str) and "/usr/bin/python3 -I -S" in run
+            for run in (initial_run, pre_download_run, final_run)
+        ):
+            raise AssertionError(f"{name} {job_name}: verifier must use isolated system Python")
+        integrity_names = {
+            "Record trusted verifier digest before mutable setup",
+            "Verify trusted verifier integrity after mutable setup",
+        }
+        if not integrity_names.issubset(set(names)):
+            raise AssertionError(f"{name} {job_name}: verifier integrity checks are missing")
+
+
+def _check_action_pins(name: str, text: str) -> None:
+    for use in _parse_workflow_uses(name, text):
+        action, separator, reference = use.rpartition("@")
+        if not separator or not action or not reference:
+            raise AssertionError(f"{name}: malformed or unpinned action reference {use!r}")
+        expected = PINNED_ACTIONS.get(action)
+        if expected is None:
+            raise AssertionError(f"{name}: unreviewed third-party action {action!r}")
+        if reference != expected:
+            raise AssertionError(
+                f"{name}: {action} must be pinned to reviewed SHA {expected}"
+            )
+
+
+def validate_workflow_contract(contents: dict[str, str]) -> None:
+    if set(contents) != EXPECTED:
+        raise AssertionError("workflow inventory mismatch")
+    for name, text in contents.items():
+        require(text, "permissions:\n  contents: read", name)
+        _check_job_environment_contexts(name, text)
+
+    bootstrap = contents["bootstrap-private-owner.yml"]
+    digest = hashlib.sha256(bootstrap.encode("utf-8")).hexdigest()
+    if digest != BOOTSTRAP_SHA256:
+        raise AssertionError("bootstrap-private-owner.yml: unconditional refusal changed")
+    require(
+        bootstrap,
+        "BOOTSTRAP_DISABLED_PENDING_SEPARATE_AUTHORITY",
+        "bootstrap-private-owner.yml",
+    )
+
+    family_office = contents["family-office-release.yml"]
+    family_on = section(family_office, "on:\n", "\npermissions:")
+    family_pr = section(family_on, "  pull_request:\n", "  push:\n")
+    forbid(family_pr, "paths:", "family-office-release.yml pull_request")
+    family_validate = section(
+        family_office,
+        "  validate:\n",
+        "\n  prepare:\n",
+    )
+    family_prepare = section(
+        family_office,
+        "  prepare:\n",
+        "\n  mutate-production:\n",
+    )
+    family_mutate = family_office[family_office.index("  mutate-production:\n") :]
+    for untrusted_job, label in (
+        (family_validate, "validate"),
+        (family_prepare, "prepare"),
+    ):
+        forbid(untrusted_job, "secrets.", f"family-office-release.yml {label}")
+        forbid(
+            untrusted_job,
+            "environment: Production",
+            f"family-office-release.yml {label}",
+        )
+    require(family_validate, "name: Family Office / validate", "family-office-release.yml")
+    require(family_prepare, "name: Family Office / prepare", "family-office-release.yml")
+    require(family_prepare, "needs: validate", "family-office-release.yml prepare")
+    require(family_prepare, "if: ${{ always() }}", "family-office-release.yml prepare")
+    require(
+        family_prepare,
+        "Require Family Office validate PASS",
+        "family-office-release.yml prepare",
+    )
+    require(
+        family_prepare,
+        'test "$VALIDATE_RESULT" = "success"',
+        "family-office-release.yml prepare",
+    )
+    require(family_mutate, "environment: Production", "family-office-release.yml")
+    require(
+        family_office,
+        "default: false",
+        "family-office-release.yml mutate_production",
+    )
+    require(
+        family_mutate,
+        "github.event_name == 'workflow_dispatch' && inputs.mutate_production",
+        "family-office-release.yml mutate-production",
+    )
+    require(family_mutate, "ASTROCYTE_AUTHORIZATION_HMAC_KEY", "family-office-release.yml")
+    require(family_mutate, "ASTROCYTE_MUTATION_GATE", "family-office-release.yml")
+    require(
+        family_mutate,
+        "ASTROCYTE_FAMILY_OFFICE_PRODUCTION_GATE",
+        "family-office-release.yml",
+    )
+    require(family_office, "recent ISOLATED_PROJECT receipt", "family-office-release.yml")
+    require(family_prepare, "family_office_release_gate.py", "family-office-release.yml")
+    require(family_mutate, "check_mutation_contract.py", "family-office-release.yml")
+    require(family_mutate, "--workflow family-office-release", "family-office-release.yml")
+    require(family_mutate, "--replay-phase claim", "family-office-release.yml")
+    require(family_mutate, "--replay-phase enforce", "family-office-release.yml")
+    require(family_mutate, "retention-days: 30", "family-office-release.yml")
+    require(
+        family_validate,
+        "check_family_office_release_hold.py --validate",
+        "family-office-release.yml validate",
+    )
+    require(
+        family_mutate,
+        "Enforce active PR14 release hold before authorization",
+        "family-office-release.yml mutate-production",
+    )
+    require_order(
+        family_mutate,
+        "Enforce active PR14 release hold before authorization",
+        "Record trusted verifier digest before authorization",
+        "family-office-release.yml mutate-production",
+    )
+    require_order(
+        family_mutate,
+        "Enforce active PR14 release hold before authorization",
+        "Claim one-shot mutation authorization",
+        "family-office-release.yml mutate-production",
+    )
+    require(
+        family_mutate,
+        "check_family_office_release_hold.py --enforce-mutation",
+        "family-office-release.yml mutate-production",
+    )
+    require_order(
+        family_mutate,
+        "Enforce one-shot authorization immediately before provider access",
+        "Refuse provider mutation while Production contract is HTTP 503",
+        "family-office-release.yml mutate-production",
+    )
+    require(
+        family_mutate,
+        "FAMILY_OFFICE_PRODUCTION_HTTP_503: no provider mutation command is enabled.",
+        "family-office-release.yml",
+    )
+    for forbidden_provider_input in (
+        "SUPABASE_DB_URL",
+        "DATABASE_URL",
+        "SUPABASE_SERVICE_KEY",
+        "VERCEL_TOKEN",
+    ):
+        forbid(
+            family_office,
+            forbidden_provider_input,
+            "family-office-release.yml provider-free contract",
+        )
+    _check_action_pins("family-office-release.yml", family_office)
+
+    independent = contents["independent-review-gate.yml"]
+    independent_on = section(independent, "on:\n", "\npermissions:")
+    require(independent_on, "pull_request_target:", "independent-review-gate.yml")
+    require(independent_on, "pull_request_review:", "independent-review-gate.yml")
+    require(independent_on, "workflow_dispatch:", "independent-review-gate.yml")
+    for owner_input in (
+        "pull_request:",
+        "head_sha:",
+        "codex_review_sha256:",
+        "codex_verdict:",
+        "confirmation:",
+        "ACCEPT_CODEX_SHIP_FOR_EXACT_HEAD",
+    ):
+        require(independent_on, owner_input, "independent-review-gate.yml")
+    forbid(independent, "secrets.", "independent-review-gate.yml")
+    require(independent, "pull-requests: read", "independent-review-gate.yml")
+    require(independent, "checks: write", "independent-review-gate.yml")
+    forbid(independent, "statuses: write", "independent-review-gate.yml")
+    require(independent, "cancel-in-progress: false", "independent-review-gate.yml")
+    require(
+        independent,
+        "Checkout trusted default-branch verifier only",
+        "independent-review-gate.yml",
+    )
+    require(
+        independent,
+        "ref: ${{ github.event.repository.default_branch }}",
+        "independent-review-gate.yml",
+    )
+    require(independent, "persist-credentials: false", "independent-review-gate.yml")
+    forbid(
+        independent,
+        "ref: ${{ github.event.pull_request.head.sha }}",
+        "independent-review-gate.yml",
+    )
+    require(independent, "check_independent_review.py", "independent-review-gate.yml")
+    require(independent, "GITHUB_TOKEN: ${{ github.token }}", "independent-review-gate.yml")
+    require(
+        independent,
+        "github.event_name == 'workflow_dispatch'",
+        "independent-review-gate.yml",
+    )
+    require(independent, "OWNER_REVIEW_HEAD_SHA", "independent-review-gate.yml")
+    require(independent, "OWNER_REVIEW_CODEX_SHA256", "independent-review-gate.yml")
+    require(independent, "OWNER_REVIEW_CODEX_VERDICT", "independent-review-gate.yml")
+    require(independent, "OWNER_REVIEW_CONFIRMATION", "independent-review-gate.yml")
+    require(
+        independent,
+        "Emit exact-head owner-accepted Codex SHIP context",
+        "independent-review-gate.yml",
+    )
+    require(independent, "if: ${{ always() }}", "independent-review-gate.yml")
+    require(independent, "retention-days: 30", "independent-review-gate.yml")
+    _check_action_pins("independent-review-gate.yml", independent)
+
+    parity_on = section(contents["workflow-parity.yml"], "on:\n", "\npermissions:")
+    require(parity_on, "pull_request:", "workflow-parity.yml")
+    require(parity_on, "push:", "workflow-parity.yml")
+    forbid(parity_on, "paths:", "workflow-parity.yml")
+    require(
+        contents["workflow-parity.yml"], "workflow-contract:", "workflow-parity.yml"
+    )
+    require(
+        contents["workflow-parity.yml"],
+        "python3 -m unittest discover -s .github/tests -p 'test_*.py'",
+        "workflow-parity.yml",
+    )
+    require(
+        contents["workflow-parity.yml"],
+        "fetch-depth: 0",
+        "workflow-parity.yml pinned candidate history",
+    )
+    _check_required_actionlint(contents["workflow-parity.yml"])
+    _check_action_pins("workflow-parity.yml", contents["workflow-parity.yml"])
+
+    schedule_on = section(contents["schedule.yml"], "on:\n", "\npermissions:")
+    require(schedule_on, "schedule:", "schedule.yml")
+    require(schedule_on, "cron:", "schedule.yml")
+    require(schedule_on, "default: validate", "schedule.yml")
+    schedule = contents["schedule.yml"]
+    require(schedule, "scheduler-heartbeat:", "schedule.yml")
+    require(schedule, "github.event_name == 'schedule'", "schedule.yml")
+    require(schedule, "python3 .github/scripts/check_workflow_parity.py", "schedule.yml")
+    require(schedule, "github.event_name == 'workflow_dispatch'", "schedule.yml")
+    heartbeat = section(schedule, "  scheduler-heartbeat:\n", "\n  preflight:")
+    forbid(heartbeat, "secrets.", "schedule.yml scheduler heartbeat")
+    forbid(heartbeat, "vars.", "schedule.yml scheduler heartbeat")
+    forbid(heartbeat, "environment: Production", "schedule.yml scheduler heartbeat")
+    require(
+        heartbeat,
+        "fetch-depth: 0",
+        "schedule.yml scheduler heartbeat pinned candidate history",
+    )
+    require(
+        schedule,
+        "  preflight:\n    if: ${{ github.event_name == 'workflow_dispatch' && inputs.scope != 'validate' }}",
+        "schedule.yml",
+    )
+    preflight = section(schedule, "  preflight:\n", "\n  refresh-core:")
+    require(preflight, "environment: Production", "schedule.yml preflight")
+    require_order(
+        preflight,
+        "Enforce one-shot authorization immediately before provider access",
+        "Preflight schema check",
+        "schedule.yml preflight",
+    )
+    schedule_jobs = {
+        "refresh-core": ("\n  refresh-market-history:", "Refresh core feeds"),
+        "refresh-market-history": ("\n  refresh-trident:", "Refresh historical prices"),
+        "refresh-trident": ("\n  refresh-backtest:", "Refresh Trident screener"),
+        "refresh-backtest": ("\n  post-refresh-gate:", "Refresh production reference backtest"),
+    }
+    for job, (end, provider_step) in schedule_jobs.items():
+        job_text = section(schedule, f"  {job}:\n", end)
+        require(job_text, "environment: Production", f"schedule.yml {job}")
+        require_order(
+            job_text,
+            "Enforce one-shot authorization immediately before provider access",
+            provider_step,
+            f"schedule.yml {job}",
+        )
+
+    for name in MUTATION_WORKFLOWS:
+        text = contents[name]
+        _check_trust_boundaries(name, text)
+        require(text, "actions: read", name)
+        require(text, "portfolio-production-mutation", name)
+        require(text, "cancel-in-progress: false", name)
+        require(text, "authorization_manifest:", name)
+        require(text, "authorization_manifest_sha256:", name)
+        require(text, "authorization_signature:", name)
+        require(text, "authorization_nonce:", name)
+        require(text, "authorization_receipt_id:", name)
+        require(text, "check_mutation_contract.py", name)
+        require(text, "Claim one-shot mutation authorization", name)
+        require(text, "--replay-phase claim", name)
+        require(text, "Persist one-shot anti-replay marker", name)
+        require(text, "retention-days: 30", name)
+        require(text, "--replay-phase enforce", name)
+        require(text, "ASTROCYTE_AUTHORIZATION_HMAC_KEY", name)
+        require(text, "Apply provider kill switches", name)
+        require(text, "ASTROCYTE_MUTATION_GATE", name)
+        require(text, "ASTROCYTE_SOURCE_RIGHTS_GATE", name)
+        enforcement = "Enforce one-shot authorization immediately before provider access"
+        if text.count(enforcement) != EXPECTED_ENFORCEMENT_COUNTS[name]:
+            raise AssertionError(f"{name}: every mutative job must revalidate authority")
+        _check_action_pins(name, text)
+
+    for name in MIGRATION_WORKFLOWS:
+        text = contents[name]
+        require(text, "--single-transaction", name)
+        if re.search(
+            r"name: Pre-migration schema check\n(?:\s+[^\n]+\n){0,3}\s+continue-on-error:",
+            text,
+        ):
+            raise AssertionError(f"{name}: pre-migration check may not continue on error")
+        if re.search(
+            r"name: Post-migration schema check\n(?:\s+[^\n]+\n){0,3}\s+continue-on-error:",
+            text,
+        ):
+            raise AssertionError(f"{name}: post-migration check may not continue on error")
+
+    trident = contents["trident-supabase.yml"]
+    trident_on = section(trident, "on:\n", "\npermissions:")
+    trident_pr = section(trident_on, "  pull_request:\n", "  push:\n")
+    forbid(trident_pr, "paths:", "trident-supabase.yml pull_request")
+    validate_job = section(trident, "  validate:\n", "\n  mutate-production:")
+    require(validate_job, "name: Trident / validate", "trident-supabase.yml validate")
+    forbid(
+        validate_job,
+        "environment: Production",
+        "trident-supabase.yml validate job",
+    )
+    require(trident, "  mutate-production:", "trident-supabase.yml")
+    require(trident, "environment: Production", "trident-supabase.yml")
+    require(
+        trident,
+        "github.event_name == 'workflow_dispatch'",
+        "trident-supabase.yml",
+    )
+    mutate_job = trident[trident.index("  mutate-production:\n") :]
+    require_order(
+        mutate_job,
+        "Enforce one-shot authorization immediately before provider access",
+        "Pre-migration schema check",
+        "trident-supabase.yml mutate-production",
+    )
+
+    require_order(
+        contents["production-data-remediation.yml"],
+        "Enforce one-shot authorization immediately before provider access",
+        "Apply provider kill switches and verify required configuration",
+        "production-data-remediation.yml",
+    )
+    require_order(
+        contents["trident-price-backfill.yml"],
+        "Enforce one-shot authorization immediately before provider access",
+        "Preflight schema check",
+        "trident-price-backfill.yml",
+    )
+    require_order(
+        contents["trident-stock-insights.yml"],
+        "Enforce one-shot authorization immediately before provider access",
+        "Preflight schema check",
+        "trident-stock-insights.yml",
+    )
+
+    remediation_on = section(
+        contents["production-data-remediation.yml"], "on:\n", "\npermissions:"
+    )
+    forbid(remediation_on, "\n  push:", "production-data-remediation.yml")
+    forbid(
+        contents["production-data-remediation.yml"],
+        "cancel-in-progress: true",
+        "production-data-remediation.yml",
+    )
+
+
+def main() -> None:
+    actual = {path.name for path in WORKFLOWS.glob("*.yml")}
+    if actual != EXPECTED:
+        missing = sorted(EXPECTED - actual)
+        unexpected = sorted(actual - EXPECTED)
+        raise AssertionError(
+            f"workflow inventory mismatch; missing={missing}, unexpected={unexpected}"
+        )
+    contents = {
+        name: (WORKFLOWS / name).read_text(encoding="utf-8") for name in EXPECTED
+    }
+    validate_required_pr_governance()
+    validate_workflow_contract(contents)
+    print(f"workflow parity PASS: {len(actual)} workflow files")
+
+
+if __name__ == "__main__":
+    main()

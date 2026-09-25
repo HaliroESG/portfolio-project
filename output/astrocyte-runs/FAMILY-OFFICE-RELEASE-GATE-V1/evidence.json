@@ -1,0 +1,56 @@
+{
+  "schema_version": "astrocyte_family_office_release_gate_evidence_v1",
+  "status": "PASS_WITH_LOCAL_ENVIRONMENT_LIMITATIONS",
+  "generated_at": "2026-08-29T20:03:00Z",
+  "base_sha": "3828d6d7851958f6e832896ce908c60097f67f90",
+  "receipt_bound_code_sha": "ccfc0960812ce90deccfc01434da457e1e6934ce",
+  "reviewed_source_head": "bc1d9f6eacbbe28dccd4b4bb19fe0987ed7ac91b",
+  "candidate_sha": "c01eb33878e4030975144c5b0ae98e9bdf31ea04",
+  "provider_actions": "NONE",
+  "local_restore": {
+    "receipt": "receipts/local-restore-receipt.json",
+    "receipt_sha256": "bd42fac9b3fa14f535e74bc5ef7c2b3dc1574be26336d4755ad4b055e8e77761",
+    "restore_mode": "LOCAL_ISOLATED_DATABASE",
+    "postgres_major": 15,
+    "rpo_seconds": 0.069448,
+    "rto_seconds": 0.977171,
+    "fingerprint_match": true,
+    "cleanup_status": "DELETED",
+    "promotable_to_production": false
+  },
+  "tests": [
+    {"name": "local PostgreSQL backup/restore/migration/isolation/rollback drill", "status": "PASS"},
+    {"name": "Family Office Python tests", "result": "5 passed", "status": "PASS"},
+    {"name": "all .github Python tests", "result": "38 passed", "status": "PASS"},
+    {"name": "workflow contract tests", "result": "15 passed", "status": "PASS"},
+    {"name": "workflow parity", "result": "11 workflows", "status": "PASS"},
+    {"name": "actionlint", "result": "1.7.7", "status": "PASS"},
+    {"name": "backend pytest", "result": "144 passed", "status": "PASS"},
+    {"name": "backend targeted py_compile", "status": "PASS"},
+    {"name": "frontend lint", "status": "PASS"},
+    {"name": "frontend TypeScript strict check", "status": "PASS"},
+    {"name": "frontend critical-flow validation", "result": "28 checks", "status": "PASS"},
+    {"name": "frontend webpack production build with local placeholders", "status": "PASS"},
+    {"name": "canonical Turbopack production build", "status": "BLOCKED", "reason": "local sandbox forbids the internal bind operation"},
+    {"name": "frontend Supabase smoke", "status": "BLOCKED", "reason": "no local Supabase was running at the configured localhost endpoint; no provider fallback was attempted"}
+  ],
+  "security": {
+    "primary_scan_id": "c8be56b6-1fbf-4cbe-87ac-9e23f05defac",
+    "primary_exact_range": "3828d6d7851958f6e832896ce908c60097f67f90..ccfc0960812ce90deccfc01434da457e1e6934ce",
+    "supplemental_scan_id": "75c4d2cc-61a4-45e7-9fcf-349570f9a09a",
+    "supplemental_exact_range": "c07a45ff4fd003329e2d6b673644a67da065701d..bc1d9f6eacbbe28dccd4b4bb19fe0987ed7ac91b",
+    "changed_paths_reviewed": 11,
+    "reportable_findings": 0,
+    "coverage": "PARTIAL_WITH_EXPLICIT_MANUAL_FALLBACK",
+    "supplemental_reportable_findings": 0
+  },
+  "ci_observation": {
+    "first_round_family_office_validate": "PASS",
+    "first_round_family_office_prepare": "PASS",
+    "first_round_mutate_production": "SKIPPED",
+    "first_round_workflow_contract": "FAIL_SHALLOW_CHECKOUT",
+    "bounded_correction": "fetch-depth 0 plus parity assertion",
+    "correction_local_validation": "PASS",
+    "automatic_rerun_at_seal_time": "PENDING"
+  }
+}

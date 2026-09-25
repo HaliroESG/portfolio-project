@@ -1,0 +1,124 @@
+schema_version: astrocyte_workflow_parse_incident_handoff_v3
+workstream: portfolio-pr13-deterministic-native-actionlint-v1
+owner_thread_id: 01a04cc7-807e-7720-b53e-011f4e5dacfd
+controller_thread_id: 01a048fb-6d82-7363-be6a-781ed87229b0
+updated_at_utc: 2026-08-29T12:43:57Z
+status: SEALED_AWAITING_SINGLE_FINAL_HEAD_CI
+route: solo
+lease:
+  registry: /Users/oliviersoudee/.codex/haliro-execution-governor/portfolio-project-workstreams.json
+  profile: normal-pr
+  base_sha: 69e7eb766c46f968d0bd87b1a6968c4837b8833c
+  authority_id: pr13-deterministic-native-actionlint-continuation-2026-08-29
+  authority_scope_sha256: e61f217b57a3981cf85907470ab7d85018f6aa1af9c527b9926f7192b0ca3419
+  allowed_actions:
+    - commit
+    - push
+    - draft-pr
+    - automatic-ci
+  push_budget: EXACTLY_ONE_TARGETED_FORCE_WITH_LEASE
+  remote_ci_budget: EXACTLY_ONE_AUTOMATIC_CI
+continuation:
+  exact_prior_head: 69e7eb766c46f968d0bd87b1a6968c4837b8833c
+  exact_main: 994a9e530275627667b23de64c375804ecec94a9
+  refs_verified_before_mutation: true
+  prior_remote_workflow_parity_run: 33252924000
+  prior_remote_failure: ACTIONLINT_AUTO_DETECTED_OPTIONAL_SHELLCHECK_AND_REPORTED_PREEXISTING_SC2034
+  authorized_correction: DISABLE_OPTIONAL_SHELLCHECK_AND_PYFLAKES_IN_REQUIRED_NATIVE_ACTIONLINT_SCAN
+git:
+  branch: codex/pr11-postmerge-workflow-parse-v1
+  pr_number: 13
+  pr_state: OPEN_DRAFT
+  correction_code_commit: e38325eb2a15ac620f0350f6f6009c143fcc0dcf
+  correction_code_tree: 852f9516b00c7b889a89cfe716079cda327859b0
+  final_seal_commit: GIT_OBJECT_CONTAINING_THIS_HANDOFF
+  push_policy: TARGETED_FORCE_WITH_LEASE_EXPECTING_69E7EB7
+impact:
+  backend_writes: NO_PAYLOAD_OR_ETL_CHANGE
+  supabase_schema_data: NO_SCHEMA_DATA_OR_PROVIDER_ACCESS
+  frontend_reads_ui: NO_TYPED_READ_OR_UI_CHANGE
+correction:
+  required_check: Workflow_Parity_workflow_contract
+  actionlint_version: 1.7.7
+  actionlint_archive_sha256: 023070a287cd8cccd71515fedc843f1985bf96c436b7effaecce67290e7e0757
+  acquisition: VERSION_PINNED_HTTPS_AND_EMBEDDED_SHA256_VERIFIED_FAIL_CLOSED
+  checksum_command: sha256sum_--check_--strict
+  binary_version_check: REQUIRED_EQUALS_1_7_7
+  exact_scan_command: actionlint_-shellcheck=_-pyflakes=_dot_github_workflows_glob_yml
+  native_github_workflow_validation: REQUIRED_FOR_ALL_TEN_WORKFLOWS
+  shellcheck_integration: EXPLICITLY_DISABLED
+  pyflakes_integration: EXPLICITLY_DISABLED
+  scan_order: ACTIONLINT_BEFORE_PYTHON_CONTRACTS
+  checker_guard: SEMANTIC_YAML_AND_EXACT_ACTIONLINT_COMMAND
+  adversarial_runner_variants_preserved:
+    - RUNNER_CONTEXT_SPACED
+    - RUNNER_CONTEXT_COMPACT
+    - RUNNER_CONTEXT_TABS
+    - RUNNER_CONTEXT_NEWLINES
+  positive_control_preserved: RUNNER_CONTEXT_ALLOWED_IN_STEP_ENV
+  new_contract_subtests:
+    - REMOVING_SHELLCHECK_EMPTY_OVERRIDE_FAILS
+    - REMOVING_PYFLAKES_EMPTY_OVERRIDE_FAILS
+security_properties:
+  production_mutation_trigger: WORKFLOW_DISPATCH_ONLY
+  production_environment_gate: PRESERVED
+  production_concurrency: portfolio-production-mutation
+  cancel_in_progress: false
+  authorization_order: PREVALIDATE_THEN_DOWNLOAD_THEN_ISOLATED_REVALIDATE_THEN_PROVIDER
+  verifier_command: /usr/bin/python3_-I_-S
+  downloaded_dependencies_active_during_hmac_validation: false
+  provider_credentials: PRODUCTION_SECRETS_ONLY_STEP_SCOPED_AFTER_FINAL_REVALIDATION
+  provider_credentials_from_vars_or_job_env: FORBIDDEN
+  hmac_authority_and_binding: PRESERVED
+  anti_replay_nonce_receipt_id: PRESERVED
+  restore_receipt_gate: PRESERVED
+  provider_variables: KILL_SWITCHES_ONLY
+  migrations: BLOCKING_PRECHECK_SINGLE_TRANSACTION_BLOCKING_POSTCHECK
+  scheduler_heartbeat: NON_MUTATING_NO_SECRETS
+  bootstrap_private_owner: FAIL_CLOSED_UNCHANGED
+  required_parity_job_secrets: NONE
+  required_parity_job_provider_access: NONE
+  provider_protection_and_pitr_restore_evidence: SEPARATE_UNCHANGED_GATES
+tests:
+  actionlint_help_empty_shellcheck_semantics: PASS
+  actionlint_help_empty_pyflakes_semantics: PASS
+  actionlint_all_ten_workflows_exact_flags: PASS_ZERO_ERRORS
+  workflow_parity: PASS_10_FILES
+  workflow_contract_unittest: PASS_30_TOTAL
+  shellcheck_disable_contract_negative: PASS
+  pyflakes_disable_contract_negative: PASS
+  runner_context_whitespace_variants: PASS_4_NEGATIVE
+  legitimate_step_runner_control: PASS
+  python_compile: PASS
+  backend_pytest: PASS_144
+  backend_py_compile: PASS
+  frontend_lint: PASS
+  frontend_tsc: PASS
+  frontend_build: PASS
+  frontend_smoke_supabase: NOT_RUN_NO_CONTRACT_CHANGE_AND_PROVIDER_ACCESS_FORBIDDEN
+  remote_ci: PENDING_FINAL_SEAL_HEAD
+review_payload:
+  definition: BINARY_DIFF_EXACT_CONTINUATION_BASE_TO_CORRECTION_CODE_COMMIT_EXCLUDING_SEAL_ARTIFACTS
+  base_sha: 69e7eb766c46f968d0bd87b1a6968c4837b8833c
+  target_sha: e38325eb2a15ac620f0350f6f6009c143fcc0dcf
+  file: review.diff
+  sidecar: review.diff.sha256
+  sha256: a92fbc4b4a90e991715f07c6711d4bf9945e9c6035c6ccaa287352bbd52ab0d7
+  changed_files: 3
+  file_sha256:
+    .github/scripts/check_workflow_parity.py: afb526621bd088b2b1661eb6e1ff59bca813c6123462f2906c1316c0de3fb907
+    .github/tests/test_workflow_contracts.py: b5780f1d17d3cad15e3787cdc53cc992e84b48f58acbcc1b065b432f21f1933e
+    .github/workflows/workflow-parity.yml: 1ea4314e94d3dd6562946f046afff09e0d32fe62387eb0ec8d681cf89464be30
+risks:
+  - REQUIRED_CHECK_DEPENDS_ON_GITHUB_HOSTED_RUNNER_CURL_TAR_SHA256SUM_BASELINE
+  - ACTIONLINT_EXTERNAL_SHELLCHECK_AND_PYFLAKES_CHECKS_ARE_INTENTIONALLY_OUTSIDE_THIS_REQUIRED_NATIVE_VALIDATION
+  - PYTHON_PROVIDER_DEPENDENCIES_REMAIN_NOT_HASH_LOCKED_INHERITED_AND_OUT_OF_SCOPE
+  - PRODUCTION_SECRETS_PROVIDER_GATES_PITR_AND_RESTORE_CAPABILITY_REMAIN_UNCONFIGURED_OR_UNVERIFIED
+blocked:
+  - NO_ADDITIONAL_CORRECTION_AUTHORIZED
+  - NO_READY_TRANSITION_AUTHORIZED
+  - NO_MERGE_AUTHORIZED
+  - NO_WORKFLOW_DISPATCH_AUTHORIZED
+  - NO_PRODUCTION_OR_PROVIDER_ACCESS_AUTHORIZED
+next_single_action: RUN_EXACTLY_ONE_AUTOMATIC_CI_THEN_INDEPENDENT_REREVIEW_IF_GREEN
+handoff_sidecar: handoff.yaml.sha256

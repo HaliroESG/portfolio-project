@@ -14,9 +14,11 @@ const geistMono = Geist_Mono({
 });
 
 export const metadata: Metadata = {
-  title: "QuantTerminal | Market Intelligence",
-  description: "Terminal de monitoring financier haute fréquence",
+  title: "Portfolio Office | Pilotage patrimonial",
+  description: "Gestion consolidée, performance, risque et décisions patrimoniales",
 };
+
+export const dynamic = "force-dynamic";
 
 export default function RootLayout({
   children,
