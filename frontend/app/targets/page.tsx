@@ -2,6 +2,9 @@
 
 import React, { useMemo, useState } from 'react'
 import useSWR from 'swr'
+import { sourceReadiness, hasSelectedPortfolio } from '../../lib/sourceReadiness'
+import { SourceStateScreen } from '../../components/SourceStateScreen'
+import { usePortfolioSelection } from '../../lib/usePortfolioSelection'
 import { Database, FileSpreadsheet, LockKeyhole, Target } from 'lucide-react'
 import { AppShell } from '../../components/AppShell'
 import { EmptyState } from '../../components/EmptyState'
@@ -195,23 +198,26 @@ function priorityClass(priority: DriftPriority): string {
 }
 
 export default function TargetsPage() {
-  const [selectedPortfolioIdOverride, setSelectedPortfolioIdOverride] = useState<string>('')
   const [selectedScope, setSelectedScope] = useState<PortfolioScope>('PERSO')
 
-  const { data: portfolios } = useSWR('fo-target-portfolios', async () => {
+  const portfoliosSource = useSWR('fo-target-portfolios', async () => {
     const { data, error } = await supabase.from('fo_portfolios').select('id,name').eq('status', 'ACTIVE').order('name')
     if (error) throw error
     return (data ?? []) as PortfolioRow[]
   })
 
-  const selectedPortfolioId = selectedPortfolioIdOverride || portfolios?.[0]?.id || ''
+  const { data: portfolios } = portfoliosSource
+  const [selectedPortfolioId, setSelectedPortfolioIdOverride] = usePortfolioSelection(
+    portfolios, sourceReadiness([portfoliosSource]) === 'READY',
+  )
 
-  const { data: allocationRows = [], error: allocationError, isLoading: allocationLoading } = useSWR(
+  const allocationSource = useSWR(
     selectedPortfolioId ? ['fo-allocation-source', selectedPortfolioId] : null,
     async () => buildFamilyOfficeAllocationRows(await loadFamilyOfficeAllocationSource(supabase, selectedPortfolioId)),
   )
 
-  const { data: targetModels = [], error: targetModelError, isLoading: targetModelLoading } = useSWR('target-models', async () => {
+  const { data: allocationRows = [], error: allocationError, isLoading: allocationLoading } = allocationSource
+  const modelsSource = useSWR('target-models', async () => {
     const { data, error } = await supabase
       .from('target_models')
       .select('id,portfolio_scope,model_name,source_file,source_kind,as_of_date,is_active,target_total_pct,status,report_json,imported_at,updated_at')
@@ -223,9 +229,10 @@ export default function TargetsPage() {
       .filter((row): row is TargetModelRow => row !== null)
   })
 
+  const { data: targetModels = [], error: targetModelError, isLoading: targetModelLoading } = modelsSource
   const selectedTargetModel = targetModels.find((model) => model.portfolio_scope === selectedScope) ?? null
 
-  const { data: targetBuckets = [] } = useSWR(
+  const bucketsSource = useSWR(
     selectedTargetModel ? ['target-buckets', selectedTargetModel.id] : null,
     async () => {
       const { data, error } = await supabase
@@ -240,11 +247,8 @@ export default function TargetsPage() {
     }
   )
 
-  const {
-    data: targetEnvelopeLinesData,
-    error: targetEnvelopeLinesError,
-    isLoading: targetEnvelopeLinesLoading,
-  } = useSWR(
+  const { data: targetBuckets = [] } = bucketsSource
+  const linesSource = useSWR(
     selectedTargetModel ? ['target-envelope-lines', selectedTargetModel.id] : null,
     async () => {
       const { data, error } = await supabase
@@ -259,6 +263,7 @@ export default function TargetsPage() {
         .filter((row): row is TargetEnvelopeLineRow => row !== null)
     }
   )
+  const { data: targetEnvelopeLinesData, error: targetEnvelopeLinesError, isLoading: targetEnvelopeLinesLoading } = linesSource
   const targetEnvelopeLines = useMemo(() => targetEnvelopeLinesData ?? [], [targetEnvelopeLinesData])
   const targetEnvelopeLinesReady = !selectedTargetModel
     || (!targetEnvelopeLinesLoading && !targetEnvelopeLinesError && targetEnvelopeLinesData !== undefined)
@@ -358,6 +363,22 @@ export default function TargetsPage() {
       lastSyncIso: latest ?? null,
     }
   }, [positionViews])
+
+  // Gate the whole surface, including summary metrics outside the row-level states.
+  const requiredSources = [
+    portfoliosSource, modelsSource,
+    ...(selectedPortfolioId ? [allocationSource] : []),
+    ...(selectedTargetModel ? [bucketsSource, linesSource] : []),
+  ]
+  const reads = sourceReadiness(requiredSources)
+  const state = reads === 'READY' && !hasSelectedPortfolio(portfolios, selectedPortfolioId) ? 'UNAVAILABLE' : reads
+  if (state !== 'READY') return (
+    <AppShell className="bg-slate-50">
+      <SourceStateScreen key={`${selectedPortfolioId}:${selectedScope}`} title="Portfolio Drift" state={state} portfolios={portfolios} portfolioId={selectedPortfolioId}
+        scope={selectedScope} onPortfolio={setSelectedPortfolioIdOverride} onScope={setSelectedScope}
+        onRetry={() => Promise.allSettled(requiredSources.map((source) => source.mutate()))} />
+    </AppShell>
+  )
 
   return (
     <AppShell lastSync={lastSync} lastSyncIso={lastSyncIso} className="bg-slate-50">
