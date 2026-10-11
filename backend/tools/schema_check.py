@@ -266,8 +266,9 @@ CRITICAL_SCHEMA: dict[str, list[str]] = {
     ],
     "target_models": [
         "id", "portfolio_scope", "model_name", "source_file", "source_kind",
-        "as_of_date", "is_active", "target_total_pct", "status", "report_json",
-        "imported_at", "updated_at",
+        "as_of_date", "is_active", "target_total_pct", "allocation_contract_version",
+        "reserve_floor_eur", "reserve_excluded_from_risky_allocation", "status",
+        "report_json", "imported_at", "updated_at",
     ],
     "target_buckets": [
         "id", "model_id", "portfolio_scope", "bucket_key", "bucket_label",
@@ -279,16 +280,36 @@ CRITICAL_SCHEMA: dict[str, list[str]] = {
         "instrument", "asset_class", "region", "currency", "target_weight_pct",
         "target_value_eur", "notes", "source_sheet", "source_row", "updated_at",
     ],
+    "target_sleeve_allocations": [
+        "id", "model_id", "portfolio_scope", "sleeve_key", "component_label",
+        "bucket_key", "bucket_label", "target_weight_pct", "instrument_policy",
+        "activation_status", "source_sheet", "source_row", "updated_at",
+    ],
     "target_model_audit_holdings": [
         "id", "model_id", "portfolio_scope", "envelope", "ticker", "isin",
         "instrument", "asset_class", "region", "currency", "market_value_eur",
         "quantity", "notes", "source_sheet", "source_row", "updated_at",
     ],
     "allocation_advice_items_latest": [
-        "portfolio_scope", "model_id", "model_name", "bucket_key",
+        "portfolio_scope", "portfolio_id", "model_id", "model_name", "source_file", "bucket_key",
         "bucket_label", "current_value_eur", "current_weight_pct",
         "target_weight_pct", "drift_pct", "rebalance_amount_eur",
-        "action", "confidence", "reason_codes", "preferred_execution", "updated_at",
+        "action", "confidence", "reason_codes", "preferred_execution", "data_state",
+        "model_contract_state", "model_contract_reason", "bucket_position_count",
+        "bucket_unavailable_positions", "position_count", "unavailable_positions",
+        "unmatched_positions", "unmatched_scope_positions", "total_value_eur",
+        "allocatable_total_eur", "reserve_floor_eur", "reserve_current_eur",
+        "reserve_eligible_positions", "reserve_state", "updated_at",
+    ],
+}
+
+CRITICAL_RPCS: dict[str, list[str]] = {
+    "apply_target_model_v1": [
+        "p_model",
+        "p_buckets",
+        "p_sleeve_allocations",
+        "p_envelope_lines",
+        "p_audit_holdings",
     ],
 }
 
@@ -320,6 +341,21 @@ def _http_get(base_url: str, api_key: str, table: str, select_expr: str) -> tupl
         return 599, {"message": str(e)}
 
 
+def _http_get_openapi(base_url: str, api_key: str) -> tuple[int, Any]:
+    headers = _headers(api_key)
+    headers["Accept"] = "application/openapi+json"
+    req = Request(f"{base_url}/rest/v1/", headers=headers, method="GET")
+    try:
+        with urlopen(req, timeout=20) as resp:
+            status = getattr(resp, "status", 200)
+            return status, _safe_json_bytes(resp.read())
+    except HTTPError as e:
+        body = e.read() if hasattr(e, "read") else b""
+        return e.code, _safe_json_bytes(body)
+    except URLError as e:
+        return 599, {"message": str(e)}
+
+
 def check_table_exists(base_url: str, api_key: str, table: str) -> tuple[bool, str | None]:
     status, payload = _http_get(base_url, api_key, table, "*")
     if status in (200, 206):
@@ -336,12 +372,123 @@ def check_column_exists(base_url: str, api_key: str, table: str, column: str) ->
     return False, f"HTTP {status}: {msg}"
 
 
+def _openapi_request_object(
+    value: Any, document: dict[str, Any], refs: tuple[str, ...] = (),
+) -> tuple[dict[str, Any], tuple[str, ...]]:
+    """Resolve only local JSON references; never fetch a referenced resource."""
+    if not isinstance(value, dict):
+        raise ValueError("invalid request object")
+    while "$ref" in value:
+        ref = value["$ref"]
+        if not isinstance(ref, str) or not ref.startswith("#/"):
+            raise ValueError("external or invalid request reference")
+        if ref in refs or len(refs) >= 64:
+            raise ValueError("cyclic or excessively deep request reference")
+        refs = (*refs, ref)
+        target: Any = document
+        for part in ref[2:].split("/"):
+            key = part.replace("~1", "/").replace("~0", "~")
+            if not isinstance(target, dict) or key not in target:
+                raise ValueError("missing request reference")
+            target = target[key]
+        if not isinstance(target, dict):
+            raise ValueError("invalid request reference target")
+        value = target
+    return value, refs
+
+
+def _openapi_read_only(
+    value: Any, document: dict[str, Any], refs: tuple[str, ...], depth: int,
+) -> bool:
+    if depth >= 64:
+        raise ValueError("excessively deep request property")
+    schema, refs = _openapi_request_object(value, document, refs)
+    read_only = schema.get("readOnly", False)
+    if not isinstance(read_only, bool):
+        raise ValueError("invalid request property readOnly")
+    parts = schema.get("allOf", [])
+    if not isinstance(parts, list):
+        raise ValueError("invalid request property composition")
+    for part in parts:
+        read_only = _openapi_read_only(part, document, refs, depth + 1) or read_only
+    return read_only
+
+
+def _openapi_property_access(
+    value: Any, document: dict[str, Any], refs: tuple[str, ...] = (), depth: int = 0,
+) -> dict[str, bool]:
+    if depth >= 64:
+        raise ValueError("excessively deep request schema")
+    schema, refs = _openapi_request_object(value, document, refs)
+    properties = schema.get("properties", {})
+    if not isinstance(properties, dict):
+        raise ValueError("invalid request properties")
+    # Retain exclusions across allOf: another declaration of a response-only
+    # property must not reintroduce it as a writable RPC argument.
+    access = {
+        name: _openapi_read_only(prop, document, refs, depth + 1)
+        for name, prop in properties.items()
+    }
+    parts = schema.get("allOf", [])
+    if not isinstance(parts, list):
+        raise ValueError("invalid request schema composition")
+    for part in parts:
+        for name, read_only in _openapi_property_access(part, document, refs, depth + 1).items():
+            access[name] = access.get(name, False) or read_only
+    return access
+
+
+def _openapi_property_names(
+    value: Any, document: dict[str, Any], refs: tuple[str, ...] = (),
+) -> set[str]:
+    return {name for name, read_only in _openapi_property_access(value, document, refs).items() if not read_only}
+
+
+def check_rpc_exists(
+    base_url: str,
+    api_key: str,
+    rpc_name: str,
+    required_arguments: list[str],
+) -> tuple[bool, str | None]:
+    status, payload = _http_get_openapi(base_url, api_key)
+    if status not in (200, 206):
+        msg = payload.get("message") if isinstance(payload, dict) else str(payload)
+        return False, f"HTTP {status}: {msg}"
+    paths = payload.get("paths") if isinstance(payload, dict) else None
+    if not isinstance(paths, dict) or f"/rpc/{rpc_name}" not in paths:
+        return False, f"RPC {rpc_name} is absent from the PostgREST OpenAPI contract"
+    try:
+        path, refs = _openapi_request_object(paths[f"/rpc/{rpc_name}"], payload)
+        operation, operation_refs = _openapi_request_object(path.get("post"), payload, refs)
+        observed_arguments: set[str] = set()
+        for owner, owner_refs in ((path, refs), (operation, operation_refs)):
+            parameters = owner.get("parameters", [])
+            if not isinstance(parameters, list):
+                raise ValueError("invalid request parameters")
+            for raw_parameter in parameters:
+                parameter, parameter_refs = _openapi_request_object(raw_parameter, payload, owner_refs)
+                # Older inline contracts omit 'in'; keep their body-schema support.
+                if parameter.get("in") == "body" or ("in" not in parameter and "schema" in parameter):
+                    observed_arguments.update(_openapi_property_names(parameter.get("schema"), payload, parameter_refs))
+                elif parameter.get("in") in ("query", "formData"):
+                    name = parameter.get("name")
+                    if isinstance(name, str):
+                        observed_arguments.add(name)
+    except ValueError as exc:
+        return False, f"RPC {rpc_name} has an invalid request contract: {exc}"
+    missing_arguments = sorted(set(required_arguments) - observed_arguments)
+    if missing_arguments:
+        return False, f"RPC {rpc_name} is missing arguments: {', '.join(missing_arguments)}"
+    return True, None
+
+
 def run_check(base_url: str, api_key: str) -> dict[str, Any]:
     report: dict[str, Any] = {
         "generated_at": datetime.now(timezone.utc).isoformat(),
         "supabase_url": base_url,
         "pass": True,
         "tables": {},
+        "rpcs": {},
     }
 
     for table, required_columns in CRITICAL_SCHEMA.items():
@@ -369,6 +516,17 @@ def run_check(base_url: str, api_key: str) -> dict[str, Any]:
             "missing_columns": missing_columns,
             "errors": errors,
             "pass": table_pass,
+        }
+
+    for rpc_name, required_arguments in CRITICAL_RPCS.items():
+        exists, rpc_error = check_rpc_exists(base_url, api_key, rpc_name, required_arguments)
+        if not exists:
+            report["pass"] = False
+        report["rpcs"][rpc_name] = {
+            "exists": exists,
+            "required_arguments": required_arguments,
+            "errors": [] if rpc_error is None else [rpc_error],
+            "pass": exists,
         }
 
     return report
