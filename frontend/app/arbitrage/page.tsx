@@ -424,7 +424,6 @@ function SortHeader({
 }
 
 export default function ArbitragePage() {
-  const [selectedScope, setSelectedScope] = useState<PortfolioScope>('PERSO')
   const [overlayFilter, setOverlayFilter] = useState<OverlayFilter>('ALL')
   const [actionFilter, setActionFilter] = useState<'ALL' | PortfolioDecisionAction>('ALL')
   const [issueFilter, setIssueFilter] = useState('ALL')
@@ -437,10 +436,14 @@ export default function ArbitragePage() {
     if (error) throw error
     return parseTargetPortfolios(data ?? [])
   })
-  const { data: portfolios } = portfoliosSource
+  const { data: portfolios, error: portfoliosError, isLoading: portfoliosLoading } = portfoliosSource
   const [selectedPortfolioId, setSelectedPortfolioIdOverride] = usePortfolioSelection(
     portfolios, sourceReadiness([portfoliosSource]) === 'READY',
   )
+
+  const selectedPortfolio = portfolios?.find((portfolio) => portfolio.id === selectedPortfolioId) ?? null
+  const [scopeOverride, setScopeOverride] = useState<PortfolioScope | null>(null)
+  const selectedScope = scopeOverride ?? ((selectedPortfolio as { portfolio_type?: string | null } | null)?.portfolio_type === 'PRO' ? 'PRO' : (selectedPortfolio as { portfolio_type?: string | null } | null)?.portfolio_type === 'PERSONAL' ? 'PERSO' : null)
 
   const allocationSource = useSWR(
     selectedPortfolioId ? ['fo-arbitrage-allocation', selectedPortfolioId] : null,
@@ -485,7 +488,7 @@ export default function ArbitragePage() {
       return parseTargetBuckets(data ?? [])
     },
   )
-  const { data: targetBuckets = [] } = bucketsSource
+  const { data: targetBuckets = [], error: bucketsError, isLoading: bucketsLoading } = bucketsSource
   const sleevesSource = useSWR(
     selectedTargetModel?.portfolio_scope === 'PRO' ? ['target-sleeves', selectedTargetModel.id] : null,
     async () => {
@@ -498,18 +501,20 @@ export default function ArbitragePage() {
       return parseTargetSleeves(data ?? [])
     },
   )
-  const { data: targetSleeves = [] } = sleevesSource
+  const { data: targetSleeves = [], error: sleevesError, isLoading: sleevesLoading } = sleevesSource
+  const error = portfoliosError ?? allocationError ?? targetModelError ?? targetLinesError ?? bucketsError ?? sleevesError
+  const isLoading = allocationLoading || targetModelLoading || targetLinesLoading || Boolean(selectedTargetModel && (bucketsLoading || targetLinesLoading)) || Boolean(selectedTargetModel?.portfolio_scope === 'PRO' && sleevesLoading)
   const assessment = useMemo(
-    () => assessFamilyOfficeAllocation(allocationRows, selectedTargetModel, targetLines, {
-      expectedScope: selectedScope,
-      targetBuckets,
-      targetSleeves,
-    }),
-    [allocationRows, selectedScope, selectedTargetModel, targetBuckets, targetLines, targetSleeves],
+    () => portfoliosError || allocationError || targetModelError || targetLinesError || (bucketsSource ? bucketsSource.error : undefined) || (sleevesSource ? sleevesSource.error : undefined) || isLoading
+      ? { rows: [], total_value_eur: null, target_total_pct: null, target_model_ready: false }
+      : assessFamilyOfficeAllocation(allocationRows, selectedTargetModel, targetLines, {
+        expectedScope: selectedScope as PortfolioScope,
+        targetBuckets,
+        targetSleeves,
+      }),
+    [allocationRows, selectedScope, selectedTargetModel, targetBuckets, targetLines, targetSleeves, error, isLoading],
   )
   const rows = useMemo(() => toPortfolioDecisionRows(assessment), [assessment])
-  const error = allocationError ?? targetModelError ?? targetLinesError
-  const isLoading = allocationLoading || targetModelLoading || Boolean(selectedTargetModel && targetLinesLoading)
 
   const adviceSource = useSWR(
     ['allocation-advice', selectedScope],
@@ -616,7 +621,8 @@ export default function ArbitragePage() {
     portfoliosSource,
     ...(showStandardOverlay ? [modelsSource, adviceSource, executionSource,
       ...(selectedPortfolioId ? [allocationSource] : []),
-      ...(selectedTargetModel ? [linesSource] : []),
+      ...(selectedTargetModel ? [bucketsSource, linesSource] : []),
+    ...(selectedTargetModel?.portfolio_scope === 'PRO' ? [sleevesSource] : []),
     ] : []),
     ...(showMacroOverlay && selectedPortfolioId ? [macroSource] : []),
   ]
@@ -624,10 +630,25 @@ export default function ArbitragePage() {
   const state = reads === 'READY' && !hasSelectedPortfolio(portfolios, selectedPortfolioId) ? 'UNAVAILABLE' : reads
   if (state !== 'READY') return (
     <AppShell className="bg-slate-50">
-      <SourceStateScreen key={`${selectedPortfolioId}:${selectedScope}:${overlayFilter}`} title="Arbitrage" state={state} portfolios={portfolios} portfolioId={selectedPortfolioId}
-        scope={selectedScope} onPortfolio={setSelectedPortfolioIdOverride} onScope={setSelectedScope}
-        overlay={overlayFilter} onOverlay={setOverlayFilter}
-        onRetry={() => Promise.allSettled(requiredSources.map((source) => source.mutate()))} />
+      <main className="p-3 sm:p-6 lg:p-10">
+        <div className="mx-auto max-w-7xl space-y-5">
+          <div className="grid grid-cols-2 gap-3 md:grid-cols-5">
+            {[
+              ['Liquid allocation', '--'],
+              ['Confidence', '--'],
+            ].map(([label, value]) => (
+              <div key={label} className="rounded-lg border border-slate-200 bg-white/80 px-3 py-3 dark:border-white/10 dark:bg-white/[0.03]">
+                <div className="text-[9px] font-black uppercase tracking-wider text-slate-500 dark:text-gray-500">{label}</div>
+                <div className="mt-1 text-sm font-mono font-black text-slate-950 dark:text-white">{value}</div>
+              </div>
+            ))}
+          </div>
+          <SourceStateScreen key={`${selectedPortfolioId}:${selectedScope}:${overlayFilter}`} title="Arbitrage" state={state} portfolios={portfolios} portfolioId={selectedPortfolioId}
+            scope={selectedScope ?? 'PERSO'} onPortfolio={setSelectedPortfolioIdOverride} onScope={setScopeOverride}
+            overlay={overlayFilter} onOverlay={setOverlayFilter}
+            onRetry={() => Promise.allSettled(requiredSources.map((source) => source.mutate()))} />
+        </div>
+      </main>
     </AppShell>
   )
 
@@ -694,8 +715,8 @@ export default function ArbitragePage() {
             <label className="flex min-w-[150px] flex-1 items-center gap-2 rounded-md border border-slate-200 bg-slate-50 px-2 py-2 dark:border-white/10 dark:bg-black/20 sm:flex-none">
               <span className="text-[9px] font-black uppercase tracking-wider text-slate-500 dark:text-gray-400">Scope</span>
               <select
-                value={selectedScope}
-                onChange={(event) => setSelectedScope(event.target.value as PortfolioScope)}
+                value={selectedScope ?? "PERSO"}
+                onChange={(event) => setScopeOverride(event.target.value as PortfolioScope)}
                 className="min-w-0 flex-1 bg-transparent text-[10px] font-black uppercase text-slate-900 outline-none dark:text-white"
               >
                 <option value="PERSO">PERSO</option>
@@ -711,7 +732,7 @@ export default function ArbitragePage() {
             </>}
           </section>
 
-          {showMacroOverlay && (
+          {showMacroOverlay && selectedScope && (
             <section className="overflow-hidden rounded-xl border border-slate-200 bg-white dark:border-white/10 dark:bg-[#0D1117]/70">
               <div className="flex flex-wrap items-center justify-between gap-2 border-b border-slate-200 px-4 py-3 dark:border-white/10">
                 <div>
@@ -790,7 +811,7 @@ export default function ArbitragePage() {
             </section>
           )}
 
-          {showStandardOverlay && (
+          {showStandardOverlay && selectedScope && (
             <>
           <section className="overflow-hidden rounded-xl border border-slate-200 bg-white dark:border-white/10 dark:bg-[#0D1117]/70">
             <div className="flex flex-wrap items-center justify-between gap-2 border-b border-slate-200 px-4 py-3 dark:border-white/10">
@@ -825,7 +846,7 @@ export default function ArbitragePage() {
             )}
           </section>
 
-          <section className="overflow-hidden rounded-xl border border-slate-200 bg-white dark:border-white/10 dark:bg-[#0D1117]/70">
+{showStandardOverlay && selectedScope && (          <section className="overflow-hidden rounded-xl border border-slate-200 bg-white dark:border-white/10 dark:bg-[#0D1117]/70">
             <div className="flex flex-wrap items-center justify-between gap-2 border-b border-slate-200 px-4 py-3 dark:border-white/10">
               <div>
                 <h2 className="text-sm font-black uppercase tracking-tight text-slate-950 dark:text-white">Allocation advice</h2>
@@ -888,7 +909,7 @@ export default function ArbitragePage() {
                 </div>
               </>
             )}
-          </section>
+          </section>)}
 
           {error ? (
             <EmptyState
