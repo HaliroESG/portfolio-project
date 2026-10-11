@@ -2,9 +2,6 @@
 
 import React, { useMemo, useState } from 'react'
 import useSWR from 'swr'
-import { sourceReadiness, hasSelectedPortfolio } from '../../lib/sourceReadiness'
-import { SourceStateScreen } from '../../components/SourceStateScreen'
-import { usePortfolioSelection } from '../../lib/usePortfolioSelection'
 import { Database, FileSpreadsheet, LockKeyhole, Target } from 'lucide-react'
 import { AppShell } from '../../components/AppShell'
 import { EmptyState } from '../../components/EmptyState'
@@ -16,6 +13,9 @@ import {
 import { parseTargetModels, parseTargetSleeves, parseTargetBuckets, parseTargetEnvelopeLines, parseTargetPortfolios } from '../../lib/targetModelReaders'
 import { supabase } from '../../lib/supabase'
 import { cn } from '../../lib/utils'
+import { sourceReadiness, hasSelectedPortfolio } from '../../lib/sourceReadiness'
+import { usePortfolioSelection } from '../../lib/usePortfolioSelection'
+import { SourceStateScreen } from '../../components/SourceStateScreen'
 import type {
   FamilyOfficeAllocationAssessmentRow,
 } from '../../lib/familyOfficeAllocation'
@@ -120,27 +120,33 @@ function priorityClass(priority: DriftPriority): string {
 }
 
 export default function TargetsPage() {
-  const [selectedScope, setSelectedScope] = useState<PortfolioScope>('PERSO')
-
-  const portfoliosSource = useSWR('fo-target-portfolios', async () => {
-    const { data, error } = await supabase.from('fo_portfolios').select('id,name').eq('status', 'ACTIVE').order('name')
+  const portfoliosSource = useSWR(
+  'fo-target-portfolios', async () => {
+    const { data, error } = await supabase.from('fo_portfolios').select('id,name,portfolio_type').eq('status', 'ACTIVE').order('name')
     if (error) throw error
     return parseTargetPortfolios(data ?? [])
   })
+  const { data: portfolios, error: portfoliosError, isLoading: portfoliosLoading } = portfoliosSource
 
-  const { data: portfolios } = portfoliosSource
   const [selectedPortfolioId, setSelectedPortfolioIdOverride] = usePortfolioSelection(
     portfolios, sourceReadiness([portfoliosSource]) === 'READY',
   )
+  const selectedPortfolio = portfolios?.find((portfolio) => portfolio.id === selectedPortfolioId) ?? null
+  const [scopeOverride, setScopeOverride] = useState<PortfolioScope | null>(
+    typeof window !== 'undefined' && new URLSearchParams(window.location.search).get('scope') === 'PRO' ? 'PRO' : null,
+  )
+  const selectedScope = scopeOverride ?? scopeFromPortfolioType(selectedPortfolio?.portfolio_type)
 
-  const allocationSource = useSWR(
+  const allocationRowsDataSource = useSWR(
+  
     selectedPortfolioId ? ['fo-allocation-source', selectedPortfolioId] : null,
     async () => buildFamilyOfficeAllocationRows(await loadFamilyOfficeAllocationSource(supabase, selectedPortfolioId)),
   )
+  const { data: allocationRowsData, error: allocationError, isLoading: allocationLoading } = allocationRowsDataSource
   const allocationRows = useMemo(() => allocationRowsData ?? [], [allocationRowsData])
 
-  const { data: allocationRows = [], error: allocationError, isLoading: allocationLoading } = allocationSource
-  const modelsSource = useSWR('target-models', async () => {
+  const targetModelsDataSource = useSWR(
+  'target-models', async () => {
     const { data, error } = await supabase
       .from('target_models')
       .select('id,portfolio_scope,model_name,source_file,source_kind,as_of_date,is_active,target_total_pct,allocation_contract_version,reserve_floor_eur,reserve_excluded_from_risky_allocation,status,report_json,imported_at,updated_at')
@@ -149,12 +155,31 @@ export default function TargetsPage() {
     if (error) throw error
     return parseTargetModels(data ?? [])
   })
+  const { data: targetModelsData, error: targetModelError, isLoading: targetModelLoading } = targetModelsDataSource
   const targetModels = useMemo(() => targetModelsData ?? [], [targetModelsData])
 
-  const { data: targetModels = [], error: targetModelError, isLoading: targetModelLoading } = modelsSource
-  const selectedTargetModel = targetModels.find((model) => model.portfolio_scope === selectedScope) ?? null
+  const selectedTargetModel = selectedScope
+    ? targetModels.find((model) => model.portfolio_scope === selectedScope) ?? null
+    : null
 
-  const bucketsSource = useSWR(
+  const targetSleevesDataSource = useSWR(
+  
+    selectedTargetModel?.portfolio_scope === 'PRO' ? ['target-sleeves', selectedTargetModel.id] : null,
+    async () => {
+      const { data, error } = await supabase
+        .from('target_sleeve_allocations')
+        .select('id,model_id,portfolio_scope,sleeve_key,component_label,bucket_key,bucket_label,target_weight_pct,instrument_policy,activation_status,source_sheet,source_row,updated_at')
+        .eq('model_id', selectedTargetModel!.id)
+        .order('source_row', { ascending: true })
+      if (error) throw error
+      return parseTargetSleeves(data ?? [])
+    },
+  )
+  const { data: targetSleevesData, error: targetSleevesError, isLoading: targetSleevesLoading } = targetSleevesDataSource
+  const targetSleeves = useMemo(() => targetSleevesData ?? [], [targetSleevesData])
+
+  const targetBucketsDataSource = useSWR(
+  
     selectedTargetModel ? ['target-buckets', selectedTargetModel.id] : null,
     async () => {
       const { data, error } = await supabase
@@ -166,10 +191,11 @@ export default function TargetsPage() {
       return parseTargetBuckets(data ?? [])
     }
   )
+  const { data: targetBucketsData, error: targetBucketsError, isLoading: targetBucketsLoading } = targetBucketsDataSource
   const targetBuckets = useMemo(() => targetBucketsData ?? [], [targetBucketsData])
 
-  const { data: targetBuckets = [] } = bucketsSource
-  const linesSource = useSWR(
+  const targetEnvelopeLinesDataSource = useSWR(
+  
     selectedTargetModel ? ['target-envelope-lines', selectedTargetModel.id] : null,
     async () => {
       const { data, error } = await supabase
@@ -182,7 +208,7 @@ export default function TargetsPage() {
       return parseTargetEnvelopeLines(data ?? [])
     }
   )
-  const { data: targetEnvelopeLinesData, error: targetEnvelopeLinesError, isLoading: targetEnvelopeLinesLoading } = linesSource
+  const { data: targetEnvelopeLinesData, error: targetEnvelopeLinesError, isLoading: targetEnvelopeLinesLoading } = targetEnvelopeLinesDataSource
   const targetEnvelopeLines = useMemo(() => targetEnvelopeLinesData ?? [], [targetEnvelopeLinesData])
   const targetEnvelopeLinesReady = !selectedTargetModel
     || (!targetEnvelopeLinesLoading && !targetEnvelopeLinesError && targetEnvelopeLinesData !== undefined)
@@ -200,6 +226,17 @@ export default function TargetsPage() {
     || Boolean(selectedTargetModel?.portfolio_scope === 'PRO' && targetSleevesLoading)
   const sourceError = portfoliosError ?? allocationError ?? targetModelError ?? targetBucketsError ?? targetEnvelopeLinesError ?? targetSleevesError
 
+
+  const requiredSources = [
+    portfoliosSource,
+    allocationRowsDataSource,
+    targetModelsDataSource,
+    targetBucketsDataSource,
+    targetEnvelopeLinesDataSource,
+  ]
+  const reads = sourceReadiness(selectedScope === 'PRO' && selectedTargetModel ? [...requiredSources, targetSleevesDataSource] : requiredSources)
+  const state = reads === 'READY' && !hasSelectedPortfolio(portfolios, selectedPortfolioId) ? 'UNAVAILABLE' : reads
+  const selectedScopeIsPro = selectedTargetModel?.portfolio_scope === 'PRO'
   const assessment = useMemo(
     () => !sourceLoading && !sourceError && targetEnvelopeLinesReady && selectedScope
       ? assessFamilyOfficeAllocation(allocationRows, selectedTargetModel, targetEnvelopeLines, {
@@ -298,18 +335,11 @@ export default function TargetsPage() {
     }
   }, [positionViews])
 
-  // Gate the whole surface, including summary metrics outside the row-level states.
-  const requiredSources = [
-    portfoliosSource, modelsSource,
-    ...(selectedPortfolioId ? [allocationSource] : []),
-    ...(selectedTargetModel ? [bucketsSource, linesSource] : []),
-  ]
-  const reads = sourceReadiness(requiredSources)
-  const state = reads === 'READY' && !hasSelectedPortfolio(portfolios, selectedPortfolioId) ? 'UNAVAILABLE' : reads
+
   if (state !== 'READY') return (
     <AppShell className="bg-slate-50">
       <SourceStateScreen key={`${selectedPortfolioId}:${selectedScope}`} title="Portfolio Drift" state={state} portfolios={portfolios} portfolioId={selectedPortfolioId}
-        scope={selectedScope} onPortfolio={setSelectedPortfolioIdOverride} onScope={setSelectedScope}
+        scope={selectedScope ?? 'PERSO'} onPortfolio={setSelectedPortfolioIdOverride} onScope={setScopeOverride}
         onRetry={() => Promise.allSettled(requiredSources.map((source) => source.mutate()))} />
     </AppShell>
   )

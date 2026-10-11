@@ -79,8 +79,7 @@ try {
     const sources = ['portfolios', 'models', 'allocation', 'lines', ...(route === 'targets' ? ['buckets'] : ['advice', 'macro', 'execution'])]
     for (const scope of ['PERSO', 'PRO']) {
       if (scope === 'PRO') {
-        if (route === 'targets') await page.getByRole('button', { name: 'PRO', exact: true }).click()
-        else await page.getByRole('combobox', { name: 'Scope' }).selectOption('PRO')
+        await page.goto(base + '/' + route + '?scope=PRO'); await ready()
         await ready()
       }
       for (const source of sources) {
@@ -114,11 +113,11 @@ try {
     // A removed selection must never silently switch to another portfolio.
     await page.locator('select').first().selectOption('p2')
     await ready()
-    await page.evaluate(() => window.qa.replace('portfolios', [{ id: 'p1', name: 'Portfolio one' }]))
+    await page.evaluate(() => window.qa.replace('portfolios', [{ id: 'p1', name: 'Portfolio one', portfolio_type: 'PERSONAL' }]))
     await hidden('UNAVAILABLE')
     await page.getByRole('combobox', { name: 'Portfolio', exact: true }).selectOption('p1')
     await ready(); scenarios++
-    await page.evaluate(() => window.qa.replace('portfolios', [{ id: 'p1', name: 'One' }, { id: 'p1', name: 'Duplicate' }]))
+    await page.evaluate(() => window.qa.replace('portfolios', [{ id: 'p1', name: 'One', portfolio_type: 'PERSONAL' }, { id: 'p1', name: 'Duplicate', portfolio_type: 'PERSONAL' }]))
     await hidden('UNAVAILABLE'); scenarios++
     await page.goto(base + '/' + route + '?hold=portfolios')
     await hidden('LOADING'); scenarios++
@@ -129,17 +128,17 @@ try {
     // return; it must never follow a new first row without user input.
     await page.goto(base + '/' + route)
     await ready()
-    await page.evaluate(() => window.qa.replace('portfolios', [{ id: 'p2', name: 'Two' }, { id: 'p1', name: 'One' }]))
+    await page.evaluate(() => window.qa.replace('portfolios', [{ id: 'p2', name: 'Two', portfolio_type: 'PERSONAL' }, { id: 'p1', name: 'One', portfolio_type: 'PERSONAL' }]))
     await ready()
     assert.equal(await page.locator('select').first().inputValue(), 'p1')
     assert.equal(await page.evaluate(() => window.qa.activeKey('allocation')[1]), 'p1'); scenarios++
-    await page.evaluate(() => window.qa.replace('portfolios', [{ id: 'p2', name: 'Two' }]))
+    await page.evaluate(() => window.qa.replace('portfolios', [{ id: 'p2', name: 'Two', portfolio_type: 'PERSONAL' }]))
     await hidden('UNAVAILABLE')
     assert.equal(await page.evaluate(() => window.qa.activeKey('allocation')[1]), 'p1'); scenarios++
-    await page.evaluate(() => window.qa.replace('portfolios', [{ id: 'p1', name: 'One' }, { id: 'p2', name: 'Two' }]))
+    await page.evaluate(() => window.qa.replace('portfolios', [{ id: 'p1', name: 'One', portfolio_type: 'PERSONAL' }, { id: 'p2', name: 'Two', portfolio_type: 'PERSONAL' }]))
     await ready()
     assert.equal(await page.locator('select').first().inputValue(), 'p1'); scenarios++
-    await page.evaluate(() => window.qa.replace('portfolios', [{ id: 'p2', name: 'Two' }]))
+    await page.evaluate(() => window.qa.replace('portfolios', [{ id: 'p2', name: 'Two', portfolio_type: 'PERSONAL' }]))
     await hidden('UNAVAILABLE')
     await page.evaluate(() => window.qa.setMode('allocation', 'hold'))
     await page.getByRole('combobox', { name: 'Portfolio', exact: true }).selectOption('p2')
