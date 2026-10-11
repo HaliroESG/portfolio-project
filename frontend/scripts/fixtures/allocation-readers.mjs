@@ -54,7 +54,7 @@ export function allocationFixture(scope = 'PERSO') {
 
 export const pageKeys = {
   targets: { portfolios: 'fo-target-portfolios', models: 'target-models', allocation: 'fo-allocation-source', buckets: 'target-buckets', sleeves: 'target-sleeves', lines: 'target-envelope-lines' },
-  arbitrage: { portfolios: 'fo-arbitrage-portfolios', models: 'fo-arbitrage-target-models', allocation: 'fo-arbitrage-allocation', buckets: 'fo-arbitrage-target-buckets', sleeves: 'fo-arbitrage-target-sleeves', lines: 'fo-arbitrage-target-lines' },
+  arbitrage: { portfolios: 'fo-arbitrage-portfolios', models: 'fo-arbitrage-target-models', allocation: 'fo-arbitrage-allocation', buckets: 'target-buckets', sleeves: 'target-sleeves', lines: 'fo-arbitrage-target-lines', execution: 'arbitrage-execution-universe' },
 }
 
 export function fixtureCache(page, fixture) {
@@ -70,6 +70,7 @@ export function fixtureCache(page, fixture) {
       preferred_execution: 'NEW_CASH_FIRST', reserve_current_eur: fixture.model.reserve_floor_eur,
       reserve_floor_eur: fixture.model.reserve_floor_eur, reserve_state: 'READY',
     }
+    cache.set('arbitrage-execution-universe', { data: [] })
     cache.set('allocation-advice', { data: [{ ...advice, bucket_label: 'Synthetic cached allocation advice' }] })
     cache.set('macro-allocation-advice', { data: [{
       ...advice, bucket_label: 'Synthetic cached macro advice', snapshot_id: 'synthetic',
