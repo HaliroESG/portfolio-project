@@ -1,0 +1,41 @@
+name: ASTROCYTE Native Review Gate
+
+on:
+  pull_request:
+    types: [opened, reopened, synchronize, ready_for_review]
+  pull_request_review:
+    types: [submitted, edited, dismissed]
+
+permissions:
+  contents: read
+  actions: read
+  pull-requests: read
+
+concurrency:
+  group: astrocyte-native-review-${{ github.event.pull_request.number }}
+  cancel-in-progress: false
+
+jobs:
+  native-review:
+    name: ASTROCYTE Independent Review
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Checkout candidate verifier without write credentials
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha }}
+          persist-credentials: false
+          path: candidate
+      - name: Checkout trusted base policy
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          ref: ${{ github.event.pull_request.base.sha }}
+          persist-credentials: false
+          path: trusted
+      - name: Verify authenticated exact-head review evidence
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: >-
+          python3 candidate/.github/scripts/verify_native_review.py
+          --trusted-verifier trusted/.github/scripts/check_independent_review.py

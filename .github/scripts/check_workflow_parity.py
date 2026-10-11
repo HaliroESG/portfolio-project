@@ -19,6 +19,7 @@ EXPECTED = {
     "family-office-release.yml",
     "frontend-runtime-smoke.yml",
     "independent-review-gate.yml",
+    "native-review-gate.yml",
     "production-app-smoke.yml",
     "production-data-remediation.yml",
     "schedule.yml",
@@ -700,6 +701,18 @@ def validate_workflow_contract(contents: dict[str, str]) -> None:
     require(independent, "if: ${{ always() }}", "independent-review-gate.yml")
     require(independent, "retention-days: 30", "independent-review-gate.yml")
     _check_action_pins("independent-review-gate.yml", independent)
+
+    native = contents["native-review-gate.yml"]
+    native_on = section(native, "on:\n", "\npermissions:")
+    require(native_on, "pull_request:", "native-review-gate.yml")
+    require(native_on, "pull_request_review:", "native-review-gate.yml")
+    for forbidden in ("workflow_dispatch:", "pull_request_target:", "secrets.", ": write"):
+        forbid(native, forbidden, "native-review-gate.yml")
+    for required in ("name: ASTROCYTE Independent Review", "actions: read", "pull-requests: read",
+                     "persist-credentials: false", "github.event.pull_request.base.sha",
+                     "verify_native_review.py", "--trusted-verifier trusted/.github/scripts/check_independent_review.py"):
+        require(native, required, "native-review-gate.yml")
+    _check_action_pins("native-review-gate.yml", native)
 
     parity_on = section(contents["workflow-parity.yml"], "on:\n", "\npermissions:")
     require(parity_on, "pull_request:", "workflow-parity.yml")

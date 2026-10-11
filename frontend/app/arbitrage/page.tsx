@@ -2,6 +2,9 @@
 
 import React, { useMemo, useState } from 'react'
 import useSWR from 'swr'
+import { sourceReadiness, hasSelectedPortfolio } from '../../lib/sourceReadiness'
+import { SourceStateScreen } from '../../components/SourceStateScreen'
+import { usePortfolioSelection } from '../../lib/usePortfolioSelection'
 import { AlertTriangle, ArrowDown, ArrowUp, ChevronsUpDown, LockKeyhole, Scale } from 'lucide-react'
 import { AppShell } from '../../components/AppShell'
 import { EmptyState } from '../../components/EmptyState'
@@ -425,7 +428,7 @@ function SortHeader({
 }
 
 export default function ArbitragePage() {
-  const [selectedPortfolioIdOverride, setSelectedPortfolioIdOverride] = useState('')
+  const [selectedScope, setSelectedScope] = useState<PortfolioScope>('PERSO')
   const [overlayFilter, setOverlayFilter] = useState<OverlayFilter>('ALL')
   const [actionFilter, setActionFilter] = useState<'ALL' | PortfolioDecisionAction>('ALL')
   const [issueFilter, setIssueFilter] = useState('ALL')
@@ -433,30 +436,24 @@ export default function ArbitragePage() {
   const [currencyFilter, setCurrencyFilter] = useState('ALL')
   const [sort, setSort] = useState<SortConfig>(DEFAULT_SORT)
 
-  const { data: portfolios, error: portfoliosError, isLoading: portfoliosLoading } = useSWR('fo-arbitrage-portfolios', async () => {
-    const { data, error } = await supabase.from('fo_portfolios').select('id,name,portfolio_type').eq('status', 'ACTIVE').order('name')
+  const portfoliosSource = useSWR('fo-arbitrage-portfolios', async () => {
+    const { data, error } = await supabase.from('fo_portfolios').select('id,name').eq('status', 'ACTIVE').order('name')
     if (error) throw error
     return parseTargetPortfolios(data ?? [])
   })
-  const selectedPortfolioId = selectedPortfolioIdOverride || portfolios?.[0]?.id || ''
-  const selectedPortfolio = portfolios?.find((portfolio) => portfolio.id === selectedPortfolioId) ?? null
-  const selectedScope = scopeFromPortfolioType(selectedPortfolio?.portfolio_type)
+  const { data: portfolios } = portfoliosSource
+  const [selectedPortfolioId, setSelectedPortfolioIdOverride] = usePortfolioSelection(
+    portfolios, sourceReadiness([portfoliosSource]) === 'READY',
+  )
 
-  const {
-    data: allocationRowsData,
-    error: allocationError,
-    isLoading: allocationLoading,
-  } = useSWR(
+  const allocationSource = useSWR(
     selectedPortfolioId ? ['fo-arbitrage-allocation', selectedPortfolioId] : null,
     async () => buildFamilyOfficeAllocationRows(await loadFamilyOfficeAllocationSource(supabase, selectedPortfolioId)),
   )
   const allocationRows = useMemo(() => allocationRowsData ?? [], [allocationRowsData])
 
-  const {
-    data: targetModelsData,
-    error: targetModelError,
-    isLoading: targetModelLoading,
-  } = useSWR('fo-arbitrage-target-models', async () => {
+  const { data: allocationRows = [], error: allocationError, isLoading: allocationLoading } = allocationSource
+  const modelsSource = useSWR('fo-arbitrage-target-models', async () => {
     const { data, error } = await supabase
       .from('target_models')
       .select('id,portfolio_scope,model_name,source_file,source_kind,as_of_date,is_active,target_total_pct,allocation_contract_version,reserve_floor_eur,reserve_excluded_from_risky_allocation,status,report_json,imported_at,updated_at')
@@ -467,48 +464,9 @@ export default function ArbitragePage() {
   })
   const targetModels = useMemo(() => targetModelsData ?? [], [targetModelsData])
 
-  const selectedTargetModel = selectedScope
-    ? targetModels.find((model) => model.portfolio_scope === selectedScope) ?? null
-    : null
-  const {
-    data: targetBucketsData,
-    error: targetBucketsError,
-    isLoading: targetBucketsLoading,
-  } = useSWR(
-    selectedTargetModel ? ['fo-arbitrage-target-buckets', selectedTargetModel.id] : null,
-    async () => {
-      const { data, error } = await supabase
-        .from('target_buckets')
-        .select('id,model_id,portfolio_scope,bucket_key,bucket_label,parent_bucket_key,target_weight_pct,lower_band_pct,upper_band_pct,source_sheet,source_row,updated_at')
-        .eq('model_id', selectedTargetModel!.id)
-        .order('source_row', { ascending: true })
-      if (error) throw error
-      return parseTargetBuckets(data ?? [])
-    },
-  )
-  const targetBuckets = useMemo(() => targetBucketsData ?? [], [targetBucketsData])
-  const {
-    data: targetSleevesData,
-    error: targetSleevesError,
-    isLoading: targetSleevesLoading,
-  } = useSWR(
-    selectedTargetModel?.portfolio_scope === 'PRO' ? ['fo-arbitrage-target-sleeves', selectedTargetModel.id] : null,
-    async () => {
-      const { data, error } = await supabase
-        .from('target_sleeve_allocations')
-        .select('id,model_id,portfolio_scope,sleeve_key,component_label,bucket_key,bucket_label,target_weight_pct,instrument_policy,activation_status,source_sheet,source_row,updated_at')
-        .eq('model_id', selectedTargetModel!.id)
-        .order('source_row', { ascending: true })
-      if (error) throw error
-      return parseTargetSleeves(data ?? [])
-    },
-  )
-  const targetSleeves = useMemo(() => targetSleevesData ?? [], [targetSleevesData])
-  const {
-    data: targetLinesData,
-    error: targetLinesError,
-    isLoading: targetLinesLoading,
-  } = useSWR(
+  const { data: targetModels = [], error: targetModelError, isLoading: targetModelLoading } = modelsSource
+  const selectedTargetModel = targetModels.find((model) => model.portfolio_scope === selectedScope) ?? null
+  const linesSource = useSWR(
     selectedTargetModel ? ['fo-arbitrage-target-lines', selectedTargetModel.id] : null,
     async () => {
       const { data, error } = await supabase
@@ -531,6 +489,7 @@ export default function ArbitragePage() {
     || Boolean(selectedTargetModel && (targetBucketsLoading || targetLinesLoading))
     || Boolean(selectedTargetModel?.portfolio_scope === 'PRO' && targetSleevesLoading)
 
+  const { data: targetLines = [], error: targetLinesError, isLoading: targetLinesLoading } = linesSource
   const assessment = useMemo(
     () => !isLoading && !error && selectedScope
       ? assessFamilyOfficeAllocation(allocationRows, selectedTargetModel, targetLines, {
@@ -543,8 +502,8 @@ export default function ArbitragePage() {
   )
   const rows = useMemo(() => toPortfolioDecisionRows(assessment), [assessment])
 
-  const { data: adviceData, error: adviceError, isLoading: adviceLoading } = useSWR(
-    selectedScope && selectedPortfolioId ? ['allocation-advice', selectedPortfolioId] : null,
+  const adviceSource = useSWR(
+    ['allocation-advice', selectedScope],
     async () => {
       const { data, error } = await supabase
         .from('allocation_advice_items_latest')
@@ -559,21 +518,21 @@ export default function ArbitragePage() {
     }
   )
 
-  const adviceRows = useMemo(() => selectedScope && !error && !isLoading && !adviceError && !adviceLoading
-    ? adviceData ?? [] : [], [adviceData, adviceError, adviceLoading, error, isLoading, selectedScope])
-
-  const { data: macroData, error: macroError, isLoading: macroLoading } = useSWR(
-    selectedScope && selectedPortfolioId ? ['macro-allocation-advice', selectedPortfolioId] : null,
+  const { data: adviceRows = [], error: adviceError } = adviceSource
+  const macroSource = useSWR(
+    selectedPortfolioId ? ['macro-allocation-advice', selectedPortfolioId] : null,
     () => loadMacroAllocationAdvice(supabase, selectedPortfolioId)
   )
   const macroRows = useMemo(() => selectedScope && !error && !isLoading && !macroError && !macroLoading
     ? macroData ?? [] : [], [error, isLoading, macroData, macroError, macroLoading, selectedScope])
 
-  const { data: executionRows = [], error: executionError } = useSWR(
+  const { data: macroRows = [], error: macroError } = macroSource
+  const executionSource = useSWR(
     'arbitrage-execution-universe',
     loadExecutionUniverse
   )
 
+  const { data: executionRows = [], error: executionError } = executionSource
   const filters = useMemo(() => {
     const issueCodes = new Set<string>()
     const assetClasses = new Set<string>()
@@ -621,12 +580,12 @@ export default function ArbitragePage() {
 
   const lastSyncIso = useMemo(() => {
     return [
-      ...rows.map((row) => row.updated_at),
-      ...macroRows.map((row) => row.updated_at),
+      ...(showStandardOverlay ? rows.map((row) => row.updated_at) : []),
+      ...(showMacroOverlay ? macroRows.map((row) => row.updated_at) : []),
     ]
       .filter((value): value is string => Boolean(value))
       .sort((a, b) => new Date(b).getTime() - new Date(a).getTime())[0] ?? null
-  }, [macroRows, rows])
+  }, [macroRows, rows, showMacroOverlay, showStandardOverlay])
   const lastSync = lastSyncIso ? new Date(lastSyncIso).toLocaleTimeString('fr-FR') : ''
 
   const handleSort = (key: SortKey) => {
@@ -645,6 +604,26 @@ export default function ArbitragePage() {
       return { key, direction: defaultDirection[key] }
     })
   }
+
+  // Dependencies match the visible overlay, including its summary/filter data.
+  const requiredSources = [
+    portfoliosSource,
+    ...(showStandardOverlay ? [modelsSource, adviceSource, executionSource,
+      ...(selectedPortfolioId ? [allocationSource] : []),
+      ...(selectedTargetModel ? [linesSource] : []),
+    ] : []),
+    ...(showMacroOverlay && selectedPortfolioId ? [macroSource] : []),
+  ]
+  const reads = sourceReadiness(requiredSources)
+  const state = reads === 'READY' && !hasSelectedPortfolio(portfolios, selectedPortfolioId) ? 'UNAVAILABLE' : reads
+  if (state !== 'READY') return (
+    <AppShell className="bg-slate-50">
+      <SourceStateScreen key={`${selectedPortfolioId}:${selectedScope}:${overlayFilter}`} title="Arbitrage" state={state} portfolios={portfolios} portfolioId={selectedPortfolioId}
+        scope={selectedScope} onPortfolio={setSelectedPortfolioIdOverride} onScope={setSelectedScope}
+        overlay={overlayFilter} onOverlay={setOverlayFilter}
+        onRetry={() => Promise.allSettled(requiredSources.map((source) => source.mutate()))} />
+    </AppShell>
+  )
 
   return (
     <AppShell lastSync={lastSync} lastSyncIso={lastSyncIso} className="bg-slate-50">
@@ -686,13 +665,18 @@ export default function ArbitragePage() {
           </div>
 
           <div className="grid grid-cols-2 gap-3 md:grid-cols-5">
-            {[
+            {(showStandardOverlay ? [
               ['Liquid allocation', formatEur(stats.totalValue || null)],
               ['Actions', isLoading || error ? '--' : stats.actionable.toString()],
               ['Unavailable', stats.unavailable.toString()],
               ['Gross trade', formatEur(stats.grossTrade || null)],
               ['Confidence', stats.avgConfidence === null ? '--' : `${stats.avgConfidence.toFixed(0)}%`],
-            ].map(([label, value]) => (
+            ] : [
+              ['Macro actions', macroStats.actionable.toString()],
+              ['Macro unavailable', macroStats.unavailable.toString()],
+              ['Macro gross trade', formatEur(macroStats.grossTrade || null)],
+              ['Macro confidence', macroStats.avgConfidence === null ? '--' : `${macroStats.avgConfidence.toFixed(0)}%`],
+            ]).map(([label, value]) => (
               <div key={label} className="rounded-lg border border-slate-200 bg-white/80 px-3 py-3 dark:border-white/10 dark:bg-white/[0.03]">
                 <div className="text-[9px] font-black uppercase tracking-wider text-slate-500 dark:text-gray-500">{label}</div>
                 <div className="mt-1 text-sm font-mono font-black text-slate-950 dark:text-white">{value}</div>
@@ -707,11 +691,13 @@ export default function ArbitragePage() {
                 {selectedScope ?? 'UNKNOWN'} · portfolio bound
               </span>
             </label>
-            <FilterSelect label="Action" value={actionFilter} options={['BUY', 'REDUCE', 'EXIT', 'HOLD', 'UNAVAILABLE']} onChange={(value) => setActionFilter(value as 'ALL' | PortfolioDecisionAction)} />
+            {showStandardOverlay && <FilterSelect label="Action" value={actionFilter} options={['BUY', 'REDUCE', 'EXIT', 'HOLD', 'UNAVAILABLE']} onChange={(value) => setActionFilter(value as 'ALL' | PortfolioDecisionAction)} />}
             <FilterSelect label="Overlay" value={overlayFilter} options={['STANDARD', 'MACRO']} onChange={(value) => setOverlayFilter(value as OverlayFilter)} />
-            <FilterSelect label="Data issue" value={issueFilter} options={filters.issueCodes} onChange={setIssueFilter} />
-            <FilterSelect label="Asset class" value={assetClassFilter} options={filters.assetClasses} onChange={setAssetClassFilter} />
-            <FilterSelect label="Currency" value={currencyFilter} options={filters.currencies} onChange={setCurrencyFilter} />
+            {showStandardOverlay && <>
+              <FilterSelect label="Data issue" value={issueFilter} options={filters.issueCodes} onChange={setIssueFilter} />
+              <FilterSelect label="Asset class" value={assetClassFilter} options={filters.assetClasses} onChange={setAssetClassFilter} />
+              <FilterSelect label="Currency" value={currencyFilter} options={filters.currencies} onChange={setCurrencyFilter} />
+            </>}
           </section>
 
           {showMacroOverlay && (
