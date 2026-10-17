@@ -1,78 +1,22 @@
 "use client"
 
-import React, { useMemo } from 'react'
+import React from 'react'
 import useSWR from 'swr'
 import { AppShell } from '../../components/AppShell'
 import { supabase } from '../../lib/supabase'
 import { ArrowRightLeft, TrendingUp, TrendingDown } from 'lucide-react'
 import { cn } from '../../lib/utils'
-
-// Interface pour les données brutes de Supabase
-interface MarketWatchItem {
-  ticker: string | null
-  name: string | null
-  currency: string | null
-  last_price: number | null
-  perf_day_local: number | null
-  last_update: string | null
-}
+import { FX_PAIRS_SWR_KEY, fxPairState, loadFxPairs } from '../../lib/fxData'
+import { latestSourceTimestamp } from '../../lib/readerState'
 
 export default function CurrenciesPage() {
-  const { data, isLoading } = useSWR(
-    'market-watch-currencies',
-    async () => {
-      const { data: rows, error } = await supabase
-        .from('market_watch')
-        .select('ticker, name, currency, last_price, perf_day_local, last_update')
-        .not('currency', 'is', null)
-      if (error) throw error
-      return (rows ?? []) as MarketWatchItem[]
-    },
+  const { data, isLoading, error } = useSWR(
+    FX_PAIRS_SWR_KEY, () => loadFxPairs(supabase),
     { refreshInterval: 300000, revalidateOnFocus: false }
   )
-
-  const { currencyPairs, lastSync, lastSyncIso } = useMemo(() => {
-    if (!data || data.length === 0) return { currencyPairs: [], lastSync: '', lastSyncIso: null as string | null }
-
-    const pairs = data
-      .filter((item) => {
-        const name = (item.name || '').toLowerCase()
-        const ticker = (item.ticker || '').toUpperCase()
-        const currency = (item.currency || '').toUpperCase()
-
-        return (
-          currency !== 'EUR' ||
-          name.includes('vs') ||
-          name.includes('pair') ||
-          ticker.includes('=X') ||
-          ticker.includes('USD') ||
-          ticker.includes('EUR')
-        )
-      })
-      .map((item) => ({
-        ticker: item.ticker || 'N/A',
-        name: item.name || 'Unknown',
-        currency: item.currency || 'USD',
-        last_price: item.last_price || 0,
-        perf_day_local: (item.perf_day_local || 0) * 100,
-      }))
-
-    const initialValue = data[0]?.last_update || new Date().toISOString()
-    const latest = data.reduce((max: string, item: MarketWatchItem) => {
-      const itemUpdate = item.last_update
-      if (!itemUpdate) return max
-      const maxDate = max ? new Date(max) : new Date(0)
-      const itemDate = new Date(itemUpdate)
-      if (isNaN(itemDate.getTime())) return max
-      return itemDate > maxDate ? itemUpdate : max
-    }, initialValue)
-
-    return {
-      currencyPairs: pairs,
-      lastSync: new Date(latest).toLocaleTimeString('fr-FR'),
-      lastSyncIso: latest,
-    }
-  }, [data])
+  const currencyPairs = data ?? []
+  const lastSyncIso = latestSourceTimestamp(currencyPairs.map((pair) => pair.last_update))
+  const lastSync = lastSyncIso ? new Date(lastSyncIso).toLocaleTimeString('fr-FR') : ''
 
   return (
     <AppShell lastSync={lastSync} lastSyncIso={lastSyncIso} className="bg-slate-50">
@@ -84,6 +28,8 @@ export default function CurrenciesPage() {
             </div>
             
             {/* Currency Pairs Table */}
+            <p className="text-sm text-slate-500">Paires explicites uniquement. 1 unité de devise de base = taux en devise de cotation. Statut de marché déclaré par la source ; date affichée = collecte, pas cotation. Variation source masquée si l’état est périmé, incomplet ou inconnu.</p>
+            {error && <p role="alert" className="text-sm text-amber-700">Lecture FX impossible. Les éventuelles valeurs précédentes sont conservées comme cache.</p>}
             <div className="bg-white dark:bg-[#0D1117]/50 rounded-3xl border-2 border-slate-200 dark:border-white/5 shadow-2xl overflow-hidden">
               <div className="p-6 border-b-2 border-slate-200 dark:border-white/5">
                 <h2 className="text-sm font-black uppercase tracking-tighter text-slate-950 dark:text-white">
@@ -118,12 +64,14 @@ export default function CurrenciesPage() {
                     ) : currencyPairs.length === 0 ? (
                       <tr>
                         <td colSpan={4} className="p-8 text-center text-slate-500 dark:text-gray-400">
-                          No currency pairs found
+                          {error ? 'FX read failed — no verified pairs available' : 'No explicit currency pairs found'}
                         </td>
                       </tr>
                     ) : (
                       currencyPairs.map((pair) => {
-                        const isPositive = pair.perf_day_local >= 0
+                        const state = fxPairState(pair)
+                        const change = !error && state === 'SOURCE_OK' ? pair.perf_day_local : null
+                        const isPositive = change !== null && change >= 0
                         
                         return (
                           <tr 
@@ -134,6 +82,7 @@ export default function CurrenciesPage() {
                               <span className="text-sm font-black text-slate-950 dark:text-white">
                                 {pair.name}
                               </span>
+                              <div className="mt-1 text-[10px] text-slate-500">{error ? 'CACHED' : state} · Collecte : {pair.last_update ? new Date(pair.last_update).toLocaleString('fr-FR') : 'date inconnue'}</div>
                             </td>
                             <td className="p-4">
                               <span className="text-sm font-mono font-bold text-slate-500 dark:text-gray-400">
@@ -142,25 +91,25 @@ export default function CurrenciesPage() {
                             </td>
                             <td className="p-4 text-right">
                               <span className="text-sm font-mono font-black text-slate-950 dark:text-white">
-                                {pair.last_price > 0 
+                                {pair.last_price !== null
                                   ? pair.last_price.toFixed(4)
                                   : 'N/A'}
                               </span>
                             </td>
                             <td className="p-4 text-right">
                               <div className="flex items-center justify-end gap-1.5">
-                                {isPositive ? (
+                                {change === null ? null : isPositive ? (
                                   <TrendingUp className="w-3 h-3 text-green-600 dark:text-green-400" />
                                 ) : (
                                   <TrendingDown className="w-3 h-3 text-red-600 dark:text-red-400" />
                                 )}
                                 <span className={cn(
                                   "text-sm font-mono font-black",
-                                  isPositive
+                                  change === null ? 'text-slate-500' : isPositive
                                     ? "text-green-600 dark:text-green-400"
                                     : "text-red-600 dark:text-red-400"
                                 )}>
-                                  {isPositive ? '+' : ''}{pair.perf_day_local.toFixed(2)}%
+                                  {change === null ? 'N/A' : `${isPositive ? '+' : ''}${(change * 100).toFixed(2)}%`}
                                 </span>
                               </div>
                             </td>

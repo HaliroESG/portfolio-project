@@ -427,11 +427,17 @@ try {
   addCheck(
     'frontend.fx.data_state_handling',
     hasAll(fxPage, [
-      "type FxState = 'LIVE' | 'STALE' | 'CACHED' | 'EMPTY'",
-      'readFxCache',
-      'saveFxCache',
-      'resolveFxState',
-      "text: 'No Feed'",
+      'loadCurrencyRates',
+      'loadFxPairs',
+      'parseFxCache',
+      'rateDailyChange',
+      'observationState',
+      "'CACHED'",
+      "'ERROR'",
+      "'UNKNOWN'",
+      "'STALE'",
+      "'EMPTY'",
+      "change === null ? 'N/A'",
     ]),
     'FX page should include explicit feed/cached/stale state handling.'
   )

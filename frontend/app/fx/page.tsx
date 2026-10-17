@@ -1,6 +1,6 @@
 "use client"
 
-import React, { useEffect, useMemo, useState } from 'react'
+import React, { useEffect } from 'react'
 import useSWR from 'swr'
 import { AppShell } from '../../components/AppShell'
 import { EmptyState } from '../../components/EmptyState'
@@ -9,311 +9,44 @@ import { ArrowRightLeft, TrendingDown, TrendingUp } from 'lucide-react'
 import { cn } from '../../lib/utils'
 import { stateLabel as dataStateLabel, UnifiedDataState } from '../../lib/dataStates'
 import { swrOptions, SWR_REFRESH } from '../../lib/swrConfig'
-import { formatSyncTime, resolveFreshness } from '../../lib/dataFreshness'
-
-type FxState = 'LIVE' | 'STALE' | 'CACHED' | 'EMPTY'
-
-interface CurrencyData {
-  id: string
-  symbol: string
-  rate_to_eur: number | null
-  change_pct?: number | null
-  last_update?: string | null
-}
-
-interface CurrencyRow {
-  id: string
-  symbol: string
-  rate_to_eur: number | null
-  last_update: string | null
-}
-
-interface MarketWatchAssetRow {
-  ticker: string | null
-  currency: string | null
-  perf_day_eur: number | null
-  perf_week_local?: number | null
-  perf_month_local?: number | null
-  last_price: number | null
-  last_update: string | null
-}
-
-const FX_CACHE_KEY = 'fx_pairs_cache_v1'
-const FX_DATA_SWR_KEY = 'fx-data-v1'
-const SELECTOR_CACHE: Record<string, string> = {}
-
-async function selectWithFallback<T>(
-  table: string,
-  selectors: string[],
-  options?: {
-    notNullColumn?: string
-    orderBy?: { column: string; ascending?: boolean }
-  }
-): Promise<T[]> {
-  let lastErrorMessage = ''
-  const cachedSelector = SELECTOR_CACHE[table]
-  const orderedSelectors = cachedSelector
-    ? [cachedSelector, ...selectors.filter((selector) => selector !== cachedSelector)]
-    : selectors
-
-  for (const selector of orderedSelectors) {
-    let query = supabase.from(table).select(selector)
-
-    if (options?.notNullColumn) {
-      query = query.not(options.notNullColumn, 'is', null)
-    }
-    if (options?.orderBy) {
-      query = query.order(options.orderBy.column, { ascending: options.orderBy.ascending ?? true })
-    }
-
-    const { data, error } = await query
-    if (!error) {
-      SELECTOR_CACHE[table] = selector
-      return (data ?? []) as T[]
-    }
-    lastErrorMessage = error.message
-  }
-
-  throw new Error(`[fx] failed to query "${table}": ${lastErrorMessage || 'unknown error'}`)
-}
-
-function readFxCache(): CurrencyData[] {
-  if (typeof window === 'undefined') return []
-  try {
-    const raw = window.localStorage.getItem(FX_CACHE_KEY)
-    if (!raw) return []
-    const parsed = JSON.parse(raw)
-    return Array.isArray(parsed)
-      ? parsed.filter(
-          (item) =>
-            item &&
-            typeof item === 'object' &&
-            typeof item.id === 'string' &&
-            ('rate_to_eur' in item)
-        )
-      : []
-  } catch {
-    return []
-  }
-}
-
-function saveFxCache(values: CurrencyData[]): void {
-  if (typeof window === 'undefined') return
-  window.localStorage.setItem(FX_CACHE_KEY, JSON.stringify(values))
-}
-
-function latestTimestamp(values: Array<string | null | undefined>): string | null {
-  return values
-    .filter((value): value is string => Boolean(value))
-    .sort((a, b) => new Date(b).getTime() - new Date(a).getTime())[0] ?? null
-}
-
-function resolveFxState(lastUpdate: string | null): FxState {
-  return resolveFreshness(lastUpdate, 36 * 60, { marketAware: true }).state === 'LIVE' ? 'LIVE' : 'STALE'
-}
+import { formatSyncTime } from '../../lib/dataFreshness'
+import { FX_CACHE_KEY, FX_PAIRS_SWR_KEY, FX_RATES_SWR_KEY, currencyCollectionState, loadCurrencyRates, loadFxPairs, parseFxCache, rateDailyChange } from '../../lib/fxData'
+import { latestSourceTimestamp, observationState } from '../../lib/readerState'
+import type { CurrencyRateRow } from '../../types'
 
 export default function FXPage() {
-  const [lastSync, setLastSync] = useState('')
-  const [lastSyncIso, setLastSyncIso] = useState<string | null>(null)
-  const [currencies, setCurrencies] = useState<CurrencyData[]>([])
-  const [loading, setLoading] = useState(true)
-  const [marketNote, setMarketNote] = useState('')
-  const [fxState, setFxState] = useState<FxState>('EMPTY')
-
-  const { data, isLoading, error } = useSWR(
-    FX_DATA_SWR_KEY,
-    async () => {
-      const [currenciesData, assetsData] = await Promise.all([
-        selectWithFallback<CurrencyRow>(
-          'currencies',
-          ['id, symbol, rate_to_eur, last_update', 'id, symbol, rate_to_eur'],
-          { orderBy: { column: 'id', ascending: true } }
-        ),
-        selectWithFallback<MarketWatchAssetRow>(
-          'market_watch',
-          [
-            'ticker, currency, perf_day_eur, last_price, last_update',
-          ],
-          { notNullColumn: 'currency' }
-        ),
-      ])
-
-      return {
-        currencies: currenciesData,
-        assets: assetsData,
-      }
-    },
-    swrOptions(SWR_REFRESH.SLOW)
-  )
-
+  const { data: rates, isLoading, error } = useSWR(FX_RATES_SWR_KEY, () => loadCurrencyRates(supabase), swrOptions(SWR_REFRESH.SLOW))
+  const { data: pairs, error: pairError } = useSWR(FX_PAIRS_SWR_KEY, () => loadFxPairs(supabase), swrOptions(SWR_REFRESH.SLOW))
+  const { data: cached = [] } = useSWR<CurrencyRateRow[]>(error ? FX_CACHE_KEY : null, () => {
+    try { return parseFxCache(window.localStorage.getItem(FX_CACHE_KEY)) } catch { return [] }
+  }, { revalidateOnFocus: false, revalidateOnReconnect: false })
   useEffect(() => {
-    async function computeCurrencies() {
-      try {
-        const typedCurrencies = data?.currencies ?? []
-        const typedAssets = data?.assets ?? []
+    if (!rates) return
+    try { window.localStorage.setItem(FX_CACHE_KEY, JSON.stringify(rates)) } catch { /* Cache is optional. */ }
+  }, [rates])
 
-        const forexAssets = typedAssets.filter((asset) => {
-          const ticker = (asset.ticker || '').toUpperCase()
-          return ticker.includes('=X')
-        })
-
-        const currencyPerformance = new Map<string, number[]>()
-
-        const performanceSource = forexAssets.length > 0 ? forexAssets : typedAssets
-        performanceSource.forEach((asset) => {
-          const currency = asset.currency?.toUpperCase()
-          if (!currency || asset.perf_day_eur === null) return
-
-          if (!currencyPerformance.has(currency)) {
-            currencyPerformance.set(currency, [])
-          }
-          currencyPerformance.get(currency)?.push((asset.perf_day_eur || 0) * 100)
-        })
-
-        let resolvedCurrencies: CurrencyData[] = []
-        let nextFxState: FxState = 'EMPTY'
-
-        if (typedCurrencies.length > 0) {
-          resolvedCurrencies = typedCurrencies.map((currency) => {
-            const perfs = currencyPerformance.get(currency.id.toUpperCase()) || []
-            const avgChange = perfs.length > 0 ? perfs.reduce((sum, value) => sum + value, 0) / perfs.length : 0
-
-            return {
-              ...currency,
-              change_pct: avgChange / 100,
-            }
-          })
-
-          const latestUpdate = latestTimestamp(typedCurrencies.map((currency) => currency.last_update))
-          setLastSync(latestUpdate ? new Date(latestUpdate).toLocaleTimeString('fr-FR') : '')
-          setLastSyncIso(latestUpdate)
-          nextFxState = resolveFxState(latestUpdate)
-          setFxState(nextFxState)
-          saveFxCache(resolvedCurrencies)
-        } else {
-          const inferredFromMarketWatch = new Map<string, CurrencyData>()
-
-          forexAssets.forEach((asset) => {
-            const currency = asset.currency?.toUpperCase()
-            if (!currency || currency === 'EUR') return
-            if (asset.last_price === null || asset.last_price <= 0) return
-
-            const perfs = currencyPerformance.get(currency) || []
-            const avgChange = perfs.length > 0 ? perfs.reduce((sum, value) => sum + value, 0) / perfs.length : 0
-
-            inferredFromMarketWatch.set(currency, {
-              id: currency,
-              symbol: currency,
-              rate_to_eur: asset.last_price,
-              change_pct: avgChange / 100,
-              last_update: null,
-            })
-          })
-
-          resolvedCurrencies = Array.from(inferredFromMarketWatch.values()).sort((left, right) =>
-            left.id.localeCompare(right.id, 'en', { sensitivity: 'base' })
-          )
-
-          if (resolvedCurrencies.length > 0) {
-            const latestUpdate = latestTimestamp(performanceSource.map((asset) => asset.last_update))
-            setLastSync(latestUpdate ? new Date(latestUpdate).toLocaleTimeString('fr-FR') : '')
-            setLastSyncIso(latestUpdate)
-            nextFxState = resolveFxState(latestUpdate)
-            setFxState(nextFxState)
-          } else {
-            const cached = readFxCache()
-            if (cached.length > 0) {
-              resolvedCurrencies = cached
-              const latestUpdate = latestTimestamp(cached.map((currency) => currency.last_update))
-              setLastSync(latestUpdate ? new Date(latestUpdate).toLocaleTimeString('fr-FR') : '')
-              setLastSyncIso(latestUpdate)
-              nextFxState = 'CACHED'
-              setFxState(nextFxState)
-            } else {
-              setLastSync('')
-              setLastSyncIso(null)
-              nextFxState = 'EMPTY'
-              setFxState(nextFxState)
-            }
-          }
-        }
-
-        setCurrencies(resolvedCurrencies)
-
-        const strongCurrencies = resolvedCurrencies.filter((currency) => (currency.change_pct || 0) > 0.5)
-        const weakCurrencies = resolvedCurrencies.filter((currency) => (currency.change_pct || 0) < -0.5)
-
-        let note = 'FX markets showing mixed signals. '
-        if (strongCurrencies.length > 0) {
-          note += `${strongCurrencies.map((currency) => currency.id).join(', ')} ${strongCurrencies.length > 1 ? 'are' : 'is'} strengthening against EUR. `
-        }
-        if (weakCurrencies.length > 0) {
-          note += `${weakCurrencies.map((currency) => currency.id).join(', ')} ${weakCurrencies.length > 1 ? 'are' : 'is'} weakening. `
-        }
-
-        if (strongCurrencies.length === 0 && weakCurrencies.length === 0) {
-          note += 'Major pairs trading in tight ranges. Monitor central bank policy divergence for breakout signals.'
-        } else {
-          note += 'Monitor G10 yields and central bank communications for directional bias.'
-        }
-
-        if (nextFxState === 'CACHED') {
-          note += ' Display currently relies on last cached values.'
-        }
-
-        setMarketNote(note)
-      } catch (error) {
-        console.error('Error fetching currencies:', error)
-
-        const cached = readFxCache()
-        if (cached.length > 0) {
-          setCurrencies(cached)
-          const latestUpdate = latestTimestamp(cached.map((currency) => currency.last_update))
-          setLastSync(latestUpdate ? new Date(latestUpdate).toLocaleTimeString('fr-FR') : '')
-          setLastSyncIso(latestUpdate)
-          setFxState('CACHED')
-        } else {
-          setLastSync('')
-          setLastSyncIso(null)
-          setFxState('EMPTY')
-        }
-      } finally {
-        setLoading(isLoading)
-      }
-    }
-    computeCurrencies()
-  }, [data, isLoading])
-
-
-  const unifiedState: UnifiedDataState = isLoading
-    ? 'LOADING'
-    : error
-    ? 'ERROR'
-    : fxState === 'EMPTY'
-    ? 'EMPTY'
-    : fxState === 'CACHED' || fxState === 'STALE'
-    ? 'STALE'
-    : 'OK'
-
-  const stateLabel = useMemo(() => {
-    if (fxState === 'LIVE') return { text: 'Live', color: 'text-green-400', dot: 'bg-green-400' }
-    if (fxState === 'STALE') return { text: 'Stale', color: 'text-amber-400', dot: 'bg-amber-400' }
-    if (fxState === 'CACHED') return { text: 'Cached', color: 'text-blue-400', dot: 'bg-blue-400' }
-    return { text: 'No Feed', color: 'text-red-400', dot: 'bg-red-400' }
-  }, [fxState])
-
-  const freshnessLabel = useMemo(() => {
-    if (!lastSyncIso) return 'No source timestamp'
-    const freshness = resolveFreshness(lastSyncIso, 36 * 60, { marketAware: true })
-    return freshness.isMarketClosedGrace ? `${freshness.label} (market closed)` : freshness.label
-  }, [lastSyncIso])
-
-  const sourceLabel = useMemo(() => {
-    if (fxState === 'CACHED') return 'Browser cache fallback'
-    if ((data?.currencies?.length ?? 0) > 0) return 'Supabase currencies'
-    if (currencies.length > 0) return 'Inferred from market_watch'
-    return 'No source rows'
-  }, [currencies.length, data?.currencies?.length, fxState])
+  const usingCache = Boolean(error && ((rates?.length ?? 0) > 0 || cached.length > 0))
+  const currencies = (error ? rates ?? cached : rates ?? []).map((rate) => ({
+    ...rate,
+    change_pct: error || pairError ? null : rateDailyChange(rate, pairs ?? []),
+  }))
+  const lastSyncIso = latestSourceTimestamp(currencies.map((row) => row.last_update))
+  const lastSync = formatSyncTime(lastSyncIso, '')
+  const loading = isLoading && !rates && !error
+  const rowStates = currencies.map((row) => observationState(row.rate_to_eur, row.last_update))
+  const fxState = usingCache ? 'CACHED' : error ? 'ERROR' : loading ? 'LOADING'
+    : !currencies.length ? 'EMPTY' : rowStates.some((state) => state === 'MISSING' || state === 'UNKNOWN') ? 'UNKNOWN'
+    : rowStates.includes('STALE') ? 'STALE' : 'COLLECTED'
+  const unifiedState: UnifiedDataState = error ? 'ERROR' : loading ? 'LOADING' : fxState === 'EMPTY' ? 'EMPTY'
+    : fxState === 'COLLECTED' ? 'OK' : 'STALE'
+  const stateLabel = {
+    text: fxState,
+    color: fxState === 'COLLECTED' ? 'text-slate-700 dark:text-slate-300' : 'text-amber-700 dark:text-amber-400',
+    dot: fxState === 'COLLECTED' ? 'bg-slate-400' : 'bg-amber-400',
+  }
+  const freshnessLabel = 'Collecte ≤ 72 h · fraîcheur de marché non certifiée'
+  const sourceLabel = usingCache ? 'Cache daté — lecture en erreur' : 'Supabase currencies'
+  const marketNote = '1 unité de devise = taux affiché en EUR. Variation fournie par une paire explicite déclarée OK par la source, orientée vs EUR, avec une collecte du même jour. La date exacte de cotation n’est pas fournie par ce contrat. Aucun cours LIVE certifié et aucune performance d’action utilisée. Source périmée, incomplète ou inconnue : variation N/A.'
 
   return (
     <AppShell lastSync={lastSync} lastSyncIso={lastSyncIso} className="bg-slate-50">
@@ -328,7 +61,7 @@ export default function FXPage() {
                 <div className="inline-flex w-fit max-w-full items-center gap-2 rounded-lg border border-slate-300 bg-slate-200 px-3 py-1 dark:border-white/10 dark:bg-white/10">
                   <span className={`h-2 w-2 rounded-full ${stateLabel.dot}`} />
                   <span className={`text-[10px] font-black uppercase tracking-wider ${stateLabel.color}`}>{stateLabel.text}</span>
-                  <span className="text-[10px] text-slate-500 dark:text-gray-400">· {dataStateLabel(unifiedState)}</span>
+                  <span className="text-[10px] text-slate-500 dark:text-gray-400">· {fxState === 'COLLECTED' ? 'Collecte récente, date de marché inconnue' : fxState === 'UNKNOWN' ? 'Données ou dates incomplètes' : dataStateLabel(unifiedState)}</span>
                 </div>
               </div>
 
@@ -352,6 +85,8 @@ export default function FXPage() {
                   </h2>
                 </div>
                 <div className="overflow-x-auto">
+                  {error && <p role="alert" className="p-4 text-sm text-amber-700">Lecture des taux impossible. Les éventuelles valeurs conservées sont un cache, pas des cours à jour.</p>}
+                  {pairError && <p role="alert" className="p-4 text-sm text-amber-700">Variation quotidienne indisponible : lecture des paires en erreur.</p>}
                   <table className="w-full">
                     <thead className="bg-slate-50 dark:bg-[#080A0F]">
                       <tr>
@@ -370,23 +105,23 @@ export default function FXPage() {
                     {loading ? (
                       <tr>
                         <td colSpan={3} className="p-8 text-center text-slate-500 dark:text-gray-400">
-                          <EmptyState title="Loading FX data" message="Reading currencies and market_watch rows from Supabase." tone="loading" />
+                          <EmptyState title="Loading FX data" message="Reading currency rates from Supabase." tone="loading" />
                         </td>
                       </tr>
                     ) : currencies.length === 0 ? (
                       <tr>
                         <td colSpan={3} className="p-8 text-center text-slate-500 dark:text-gray-400">
                           <EmptyState
-                            title="No FX source data"
-                            message="Supabase returned no currency rows and no inferable market_watch FX rows."
+                            title={error ? 'FX read failed' : 'No FX source data'}
+                            message="No verified currency rates are available. Equity prices are never used as an FX fallback."
                             tone="warning"
                           />
                         </td>
                       </tr>
                       ) : (
                         currencies.map((currency) => {
-                          const change = currency.change_pct || 0
-                          const isPositive = change >= 0
+                          const change = currency.change_pct
+                          const isPositive = change !== null && change >= 0
 
                           return (
                             <tr
@@ -402,6 +137,7 @@ export default function FXPage() {
                                     {currency.symbol}
                                   </span>
                                 </div>
+                                <div className="mt-1 text-[10px] text-slate-500">{error ? 'CACHED' : currencyCollectionState(currency)} · Collecte : {currency.last_update ? new Date(currency.last_update).toLocaleString('fr-FR') : 'date inconnue'}</div>
                               </td>
                               <td className="p-4 text-right">
                                 <span className="text-sm font-mono font-black text-slate-950 dark:text-white">
@@ -410,7 +146,7 @@ export default function FXPage() {
                               </td>
                               <td className="p-4 text-right">
                                 <div className="flex items-center justify-end gap-1.5">
-                                  {isPositive ? (
+                                  {change === null ? null : isPositive ? (
                                     <TrendingUp className="w-3 h-3 text-green-600 dark:text-green-400" />
                                   ) : (
                                     <TrendingDown className="w-3 h-3 text-red-600 dark:text-red-400" />
@@ -418,10 +154,10 @@ export default function FXPage() {
                                   <span
                                     className={cn(
                                       'text-sm font-mono font-black',
-                                      isPositive ? 'text-green-600 dark:text-green-400' : 'text-red-600 dark:text-red-400'
+                                      change === null ? 'text-slate-500' : isPositive ? 'text-green-600 dark:text-green-400' : 'text-red-600 dark:text-red-400'
                                     )}
                                   >
-                                    {isPositive ? '+' : ''}{(change * 100).toFixed(2)}%
+                                    {change === null ? 'N/A' : `${isPositive ? '+' : ''}${(change * 100).toFixed(2)}%`}
                                   </span>
                                 </div>
                               </td>

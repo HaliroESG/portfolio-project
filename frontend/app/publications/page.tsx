@@ -25,10 +25,12 @@ import {
   loadEquityPublicationsBundle,
 } from '../../lib/equityPublicationsData'
 import {
-  matchesPublicationSearch,
+  filterPublicationSearch,
   publicationDate,
   publicationDateKey,
   publicationMonthGrid,
+  publicationMonthCovered,
+  publicationStatusLabel,
 } from '../../lib/equityPublicationUi'
 import { supabase } from '../../lib/supabase'
 import { swrOptions, SWR_REFRESH } from '../../lib/swrConfig'
@@ -102,13 +104,6 @@ function eventStatusClass(status: EquityReportingEventStatus): string {
   return 'border-blue-300 bg-blue-50 text-blue-700 dark:border-blue-900/70 dark:bg-blue-950/30 dark:text-blue-300'
 }
 
-function statusLabel(status: EquityReportingEventStatus): string {
-  if (status === 'CONFIRMED') return 'Confirmée'
-  if (status === 'REPORTED') return 'Publiée'
-  if (status === 'CANCELLED') return 'Annulée'
-  return 'Estimée'
-}
-
 function StateBadge({ state, reasons = [] }: { state: EquityPublicationDataState; reasons?: string[] }) {
   const content = reasons.length
     ? reasons.map((reason) => REASON_LABELS[reason] ?? reason).join(' · ')
@@ -122,10 +117,10 @@ function StateBadge({ state, reasons = [] }: { state: EquityPublicationDataState
   )
 }
 
-function EventStatusBadge({ status }: { status: EquityReportingEventStatus }) {
+function EventStatusBadge({ status, date }: { status: EquityReportingEventStatus; date?: string | null }) {
   return (
     <span className={cn('inline-flex rounded-md border px-1.5 py-0.5 text-[9px] font-black uppercase', eventStatusClass(status))}>
-      {statusLabel(status)}
+      {publicationStatusLabel(status, date)}
     </span>
   )
 }
@@ -262,7 +257,7 @@ function HistoryTable({
         <div className="mb-2 text-[10px] font-black uppercase text-slate-500">Périodes intermédiaires</div>
         {interim.length === 0 ? (
           <div className="border-y border-amber-200 bg-amber-50/60 py-4 text-center text-xs text-amber-800 dark:border-amber-900/60 dark:bg-amber-950/20 dark:text-amber-300">
-            La source gratuite ne fournit pas de période intermédiaire pour cette société.
+            Aucune période intermédiaire exploitable renvoyée par cette lecture.
           </div>
         ) : (
           <div className="overflow-x-auto border-y border-slate-200 dark:border-white/10">
@@ -376,9 +371,10 @@ function PublicationDrawer({
 
             <div className="flex-1 overflow-y-auto px-5 py-5">
               {isLoading && <EmptyState title="Chargement" message="Lecture de l’historique financier." tone="loading" />}
-              {error && <EmptyState title="Historique indisponible" message={String(error)} tone="error" />}
-              {data && (
+              {error && <EmptyState title="Historique indisponible" message="Échec de lecture. Les anciennes valeurs ne sont pas affichées comme un historique vérifié." tone="error" />}
+              {data && !error && (
                 <div className="space-y-8">
+                  <p className="text-xs text-slate-500">Historique borné : jusqu’à 5 exercices, 8 périodes intermédiaires et 24 événements récents. Les estimations passées ne sont pas des confirmations de publication.</p>
                   <HistoryTable annual={data.annual} interim={data.interim} />
                   <section>
                     <div className="mb-2 text-[10px] font-black uppercase text-slate-500">Publications et dépôts</div>
@@ -393,7 +389,7 @@ function PublicationDrawer({
                               <div className="truncate text-xs font-bold text-slate-900 dark:text-white">{event.event_label ?? 'Publication'}</div>
                               <div className="mt-1 text-[9px] uppercase text-slate-500">{event.source_provider} · {event.match_confidence}</div>
                             </div>
-                            <EventStatusBadge status={event.status} />
+                            <EventStatusBadge status={event.status} date={event.event_date} />
                             <SourceLink href={event.source_url} />
                           </div>
                         ))}
@@ -442,7 +438,7 @@ function PublicationTable({
               <th colSpan={6} className="border-r border-slate-300 px-2 py-2 text-center text-emerald-700 dark:border-white/10 dark:text-emerald-300">Dernier exercice</th>
               <th colSpan={5} className="border-r border-slate-300 px-2 py-2 text-center text-blue-700 dark:border-white/10 dark:text-blue-300">Dernière période</th>
               <th colSpan={3} className="border-r border-slate-300 px-2 py-2 text-center text-amber-700 dark:border-white/10 dark:text-amber-300">Valorisation</th>
-              <th colSpan={2} className="px-2 py-2 text-center">Prochaine publication</th>
+              <th colSpan={2} className="px-2 py-2 text-center">Prochaine date selon la source</th>
             </tr>
             <tr className="border-b border-slate-300 dark:border-white/10">
               <th className="px-2 py-2 text-left">Période</th>
@@ -502,7 +498,7 @@ function PublicationTable({
                 <td className="px-2 py-2 text-right font-mono">{formatMultiple(row.forward_pe)}</td>
                 <td className="border-r border-slate-200 px-2 py-2 font-mono text-[10px] dark:border-white/10">{formatDate(row.valuation_as_of, { day: '2-digit', month: 'short', year: '2-digit' })}</td>
                 <td className="px-2 py-2 text-right font-mono font-bold">{formatDate(row.next_event_date, { day: '2-digit', month: 'short', year: '2-digit' })}</td>
-                <td className="px-2 py-2 text-center">{row.next_event_status ? <EventStatusBadge status={row.next_event_status} /> : '--'}</td>
+                <td className="px-2 py-2 text-center">{row.next_event_status ? <EventStatusBadge status={row.next_event_status} date={row.next_event_date} /> : '--'}</td>
               </tr>
             ))}
           </tbody>
@@ -537,6 +533,7 @@ function PublicationTable({
               <div className="text-right">
                 <div className="text-[8px] font-black uppercase text-slate-500">Prochaine publication</div>
                 <div className="mt-1 font-mono text-xs font-bold">{formatDate(row.next_event_date)}</div>
+                {row.next_event_status && <EventStatusBadge status={row.next_event_status} date={row.next_event_date} />}
               </div>
             </div>
           </button>
@@ -551,12 +548,19 @@ function CalendarView({
   month,
   onMonth,
   onSelect,
+  complete,
+  covered,
+  availableKeys,
 }: {
   events: EquityReportingEventRow[]
   month: Date
   onMonth: (value: Date) => void
   onSelect: (event: EquityReportingEventRow) => void
+  complete: boolean
+  covered: boolean
+  availableKeys: Set<string>
 }) {
+  const [expandedDay, setExpandedDay] = useState<string | null>(null)
   const eventsByDate = useMemo(() => {
     const result = new Map<string, EquityReportingEventRow[]>()
     events.forEach((event) => {
@@ -607,10 +611,12 @@ function CalendarView({
         <h2 className="text-sm font-black capitalize text-slate-950 dark:text-white">
           {month.toLocaleDateString('fr-FR', { month: 'long', year: 'numeric' })}
         </h2>
-        <div className="hidden text-[10px] font-mono text-slate-500 sm:block">{monthEvents.length} événements</div>
+        <div className="hidden text-[10px] font-mono text-slate-500 sm:block">{covered ? `${monthEvents.length} événements chargés${complete ? '' : ' · partiel'}` : 'Période non chargée'}</div>
       </div>
-
-      <div className="hidden grid-cols-7 border-b border-l border-slate-200 bg-white dark:border-white/10 dark:bg-[#0D1117]/70 md:grid">
+      {!covered && <EmptyState title="Période non chargée" message="Ce mois est hors de la fenêtre de lecture. L’absence d’événements affichés ne prouve pas l’absence de publications." tone="warning" />}
+      {covered && !complete && <p role="status" className="p-3 text-sm text-amber-700">Calendrier partiel : des événements peuvent manquer.</p>}
+      {covered && monthEvents.length === 0 && <p role="status" className="p-3 text-sm text-slate-500">{complete ? 'Aucun événement fourni par la source pour ce mois et ces filtres.' : 'Aucun événement chargé pour ce mois ; couverture incomplète.'}</p>}
+      {covered && <div className="hidden grid-cols-7 border-b border-l border-slate-200 bg-white dark:border-white/10 dark:bg-[#0D1117]/70 md:grid">
         {WEEKDAYS.map((day) => (
           <div key={day} className="border-r border-slate-200 px-2 py-2 text-center text-[9px] font-black uppercase text-slate-500 dark:border-white/10">{day}</div>
         ))}
@@ -620,17 +626,18 @@ function CalendarView({
           const dayEvents = eventsByDate.get(key) ?? []
           const isToday = key === publicationDateKey(new Date())
           return (
-            <div key={key} className="h-32 overflow-hidden border-r border-t border-slate-200 p-1.5 dark:border-white/10">
+            <div key={key} className="h-32 overflow-y-auto border-r border-t border-slate-200 p-1.5 dark:border-white/10">
               <div className={cn('mb-1 flex h-5 w-5 items-center justify-center rounded-md text-[10px] font-bold', isToday && 'bg-emerald-400 text-slate-950')}>
                 {day.getDate()}
               </div>
               <div className="space-y-1">
-                {dayEvents.slice(0, 3).map((event) => (
+                {(expandedDay === key ? dayEvents : dayEvents.slice(0, 3)).map((event) => (
                   <button
                     type="button"
                     key={event.event_key}
                     onClick={() => onSelect(event)}
-                    title={`${event.ticker} · ${event.event_label ?? 'Publication'}`}
+                    disabled={!availableKeys.has(event.instrument_key)}
+                    title={`${event.ticker} · ${event.event_label ?? 'Publication'} · ${publicationStatusLabel(event.status, event.event_date)}${availableKeys.has(event.instrument_key) ? '' : ' · Fiche société indisponible'}`}
                     className={cn(
                       'block h-6 w-full truncate rounded-md border px-1.5 text-left text-[9px] font-bold',
                       eventStatusClass(event.status)
@@ -639,22 +646,24 @@ function CalendarView({
                     {event.ticker} · {event.event_type === 'REGULATORY_FILING' ? 'Dépôt' : event.period_kind ?? 'Résultats'}
                   </button>
                 ))}
-                {dayEvents.length > 3 && <div className="px-1 text-[9px] font-bold text-slate-500">+{dayEvents.length - 3}</div>}
+                {dayEvents.length > 3 && <button type="button" onClick={() => setExpandedDay(expandedDay === key ? null : key)} className="px-1 text-[9px] font-bold text-blue-600">{expandedDay === key ? 'Réduire' : `Voir les ${dayEvents.length} événements`}</button>}
               </div>
             </div>
           )
         })}
-      </div>
+      </div>}
 
-      <div className="divide-y divide-slate-200 border-b border-slate-200 bg-white dark:divide-white/10 dark:border-white/10 dark:bg-[#0D1117]/70 md:hidden">
+      {covered && <div className="divide-y divide-slate-200 border-b border-slate-200 bg-white dark:divide-white/10 dark:border-white/10 dark:bg-[#0D1117]/70 md:hidden">
         {monthEvents.length === 0 ? (
-          <div className="px-4 py-10 text-center text-sm text-slate-500">Aucune publication ce mois-ci.</div>
+          null
         ) : (
           monthEvents.map((event) => (
             <button
               type="button"
               key={event.event_key}
               onClick={() => onSelect(event)}
+              disabled={!availableKeys.has(event.instrument_key)}
+              title={availableKeys.has(event.instrument_key) ? 'Ouvrir le détail' : 'Fiche société indisponible'}
               className="flex w-full items-center gap-3 px-4 py-3 text-left hover:bg-slate-50 dark:hover:bg-white/[0.03]"
             >
               <div className="w-12 shrink-0 text-center">
@@ -665,11 +674,11 @@ function CalendarView({
                 <div className="truncate text-xs font-black">{event.name ?? event.ticker}</div>
                 <div className="mt-1 truncate text-[10px] text-slate-500">{event.event_label ?? 'Publication de résultats'}</div>
               </div>
-              <EventStatusBadge status={event.status} />
+              <EventStatusBadge status={event.status} date={event.event_date} />
             </button>
           ))
         )}
-      </div>
+      </div>}
     </div>
   )
 }
@@ -690,23 +699,12 @@ export default function PublicationsPage() {
   )
   const rows = data?.rows ?? EMPTY_ROWS
   const events = data?.events ?? EMPTY_EVENTS
+  const rowByKey = useMemo(() => new Map(rows.map((row) => [row.instrument_key, row])), [rows])
+  const availableKeys = useMemo(() => new Set(rowByKey.keys()), [rowByKey])
 
-  const filteredRows = useMemo(() => {
-    const filtered = rows.filter((row) => {
-      if (indexFilter !== 'Tous' && row.source_index !== indexFilter) return false
-      return matchesPublicationSearch([row.ticker, row.name, row.sector], search)
-    })
-    return sortRows(filtered, sortKey, sortDirection)
-  }, [rows, indexFilter, search, sortKey, sortDirection])
-
-  const filteredEvents = useMemo(
-    () =>
-      events.filter((event) => {
-        if (indexFilter !== 'Tous' && event.source_index !== indexFilter) return false
-        return matchesPublicationSearch([event.ticker, event.name, event.event_label], search)
-      }),
-    [events, indexFilter, search]
-  )
+  const searchResults = useMemo(() => filterPublicationSearch(rows, events, indexFilter, search), [rows, events, indexFilter, search])
+  const filteredRows = useMemo(() => sortRows(searchResults.rows, sortKey, sortDirection), [searchResults.rows, sortKey, sortDirection])
+  const filteredEvents = searchResults.events
 
   const selectedRow = rows.find((row) => row.instrument_key === selectedInstrument) ?? null
   const pageCount = Math.max(1, Math.ceil(filteredRows.length / TABLE_PAGE_SIZE))
@@ -807,7 +805,7 @@ export default function PublicationsPage() {
             </div>
             <div className="ml-auto flex items-center gap-2 text-[10px] font-mono text-slate-500">
               <Clock3 className="h-3.5 w-3.5" />
-              {data?.lastBackendRun?.status ?? 'SYNC PENDING'}
+              Collecte backend : {data?.lastBackendRun?.status ?? 'INCONNUE'} · {formatDate(data?.lastBackendRun?.finished_at)}
             </div>
           </div>
         </section>
@@ -818,26 +816,32 @@ export default function PublicationsPage() {
             ['Prêtes', coverage.ready],
             ['Partielles', coverage.partial],
             ['Intermédiaires', coverage.interim],
-            ['Calendrier', coverage.calendar],
-            ['Événements filtrés', filteredEvents.length],
+            ['Sociétés avec événements chargés', coverage.calendar],
+            ['Événements filtrés · fenêtre chargée', filteredEvents.length],
           ].map(([label, value]) => (
             <div key={label} className="border-r border-slate-200 px-4 py-3 last:border-r-0 dark:border-white/10">
               <div className="text-[8px] font-black uppercase text-slate-500">{label}</div>
-              <div className="mt-1 font-mono text-lg font-black text-slate-950 dark:text-white">{value}</div>
+              <div className="mt-1 font-mono text-lg font-black text-slate-950 dark:text-white">{!data || error || data.status === 'SCHEMA_PENDING' ? '--' : value}</div>
             </div>
           ))}
         </section>
 
         <div className="px-4 py-5 sm:px-6 lg:px-8">
+          {data?.status === 'READY' && !error && <div role="status" className="mb-4 space-y-1 rounded-md border border-slate-300 p-3 text-xs text-slate-600 dark:text-slate-300">
+            <p>Univers : {data.dashboardRead.received}/{data.dashboardRead.expected ?? '?'} lignes · {data.dashboardRead.state}.</p>
+            <p>Calendrier : {data.calendarRead.received}/{data.calendarRead.expected ?? '?'} événements · {data.calendarRead.state} · fenêtre {formatDate(data.calendarWindow.start)} — {formatDate(data.calendarWindow.end)}.</p>
+            <p>Complet signifie lecture paginée terminée dans cette fenêtre, pas couverture exhaustive des publications des émetteurs. Les dates inconnues ne sont pas déduites.</p>
+            {(data.calendarRead.state === 'PARTIAL' || data.dashboardRead.state === 'PARTIAL') && <p className="font-bold text-amber-700">Lecture partielle : {data.dashboardRead.reasons.concat(data.calendarRead.reasons).join(' · ')}. Ne pas interpréter un vide comme une absence de publication.</p>}
+          </div>}
           {isLoading && <EmptyState title="Chargement des publications" message="Lecture des fondamentaux et du calendrier." tone="loading" />}
-          {error && <EmptyState title="Lecture impossible" message={String(error)} tone="error" />}
+          {error && <EmptyState title="Lecture impossible" message="Échec de lecture des publications. Les anciens résultats ne sont pas affichés comme courants." tone="error" />}
           {data?.status === 'SCHEMA_PENDING' && (
             <EmptyState title="Schéma en attente" message={data.message ?? 'Migration Supabase requise.'} tone="warning" />
           )}
-          {data?.status === 'READY' && data.rows.length === 0 && (
-            <EmptyState title="Univers vide" message="Le backfill CAC 40 / S&P 500 n’a pas encore été exécuté." tone="warning" />
+          {data?.status === 'READY' && !error && data.rows.length === 0 && (
+            <EmptyState title="Univers vide ou incomplet" message="Aucune société exploitable renvoyée. Cette lecture ne permet pas de conclure sur l’exécution du backfill." tone="warning" />
           )}
-          {data?.status === 'READY' && data.rows.length > 0 && view === 'TABLE' && (
+          {data?.status === 'READY' && !error && data.rows.length > 0 && view === 'TABLE' && (
             <>
               <PublicationTable
                 rows={pageRows}
@@ -873,12 +877,15 @@ export default function PublicationsPage() {
               )}
             </>
           )}
-          {data?.status === 'READY' && data.rows.length > 0 && view === 'CALENDAR' && (
+          {data?.status === 'READY' && !error && view === 'CALENDAR' && (
             <CalendarView
               events={filteredEvents}
               month={month}
               onMonth={setMonth}
               onSelect={(event) => setSelectedInstrument(event.instrument_key)}
+              complete={data.calendarRead.state === 'COMPLETE'}
+              covered={publicationMonthCovered(month, data.calendarWindow)}
+              availableKeys={availableKeys}
             />
           )}
         </div>

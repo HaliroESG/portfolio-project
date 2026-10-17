@@ -527,6 +527,33 @@ export interface MacroIndicatorRow {
 }
 
 export type MacroSeriesDataState = 'READY' | 'PARTIAL' | 'STALE' | 'UNKNOWN' | 'MISSING'
+// Read-only currency contracts. Daily performance comes from an explicitly identified pair.
+export interface CurrencyRateRow {
+  id: string
+  symbol: string
+  rate_to_eur: number | null
+  last_update: string | null
+}
+
+export interface FxPairRow {
+  ticker: string
+  name: string
+  base: string
+  quote: string
+  last_price: number | null
+  perf_day_local: number | null
+  last_update: string | null
+  data_status: DataStatus | null
+}
+
+export interface PublicationReadReceipt {
+  state: 'COMPLETE' | 'PARTIAL'
+  expected: number | null
+  received: number
+  pages: number
+  reasons: string[]
+}
+
 export type MacroRegime = 'REFLATION' | 'GOLDILOCKS' | 'STAGFLATION' | 'DEFLATION' | 'UNKNOWN'
 export type MacroRegimeState = 'READY' | 'PARTIAL' | 'STALE' | 'UNKNOWN'
 export type MacroSignalDirection = 'UP' | 'DOWN' | 'UNKNOWN'
