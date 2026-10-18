@@ -1,5 +1,24 @@
 export function publicationDate(value: string): Date {
-  return new Date(`${value}T12:00:00`)
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(value)) return new Date(NaN)
+  const parsed = new Date(`${value}T12:00:00`)
+  return Number.isFinite(parsed.getTime()) && publicationDateKey(parsed) === value ? parsed : new Date(NaN)
+}
+
+export function publicationCivilDate(value: unknown): string | null {
+  return typeof value === 'string' && Number.isFinite(publicationDate(value).getTime()) ? value : null
+}
+
+export function publicationStatusLabel(status: string, date?: string | null, today = publicationDateKey(new Date())): string {
+  if (status === 'CONFIRMED') return 'Confirmée'
+  if (status === 'REPORTED') return 'Publiée'
+  if (status === 'CANCELLED') return 'Annulée'
+  if (status !== 'ESTIMATED') return 'Inconnu'
+  return publicationCivilDate(date) && date! < today ? 'Estimée · échéance passée' : 'Estimée'
+}
+
+export function publicationMonthCovered(month: Date, window: { start: string; end: string }): boolean {
+  return publicationDateKey(new Date(month.getFullYear(), month.getMonth(), 1)) >= window.start
+    && publicationDateKey(new Date(month.getFullYear(), month.getMonth() + 1, 0)) <= window.end
 }
 
 export function publicationDateKey(value: Date): string {
@@ -29,4 +48,25 @@ export function matchesPublicationSearch(values: Array<string | null | undefined
     .join(' ')
     .toLocaleLowerCase('fr')
     .includes(normalizedSearch)
+}
+import type { EquityPublicationDashboardRow, EquityReportingEventRow } from '../types'
+
+
+// One company identity joins both views. Event labels/periods remain searchable;
+// a matching event also exposes its company in the table, without joining names.
+export function filterPublicationSearch(rows: EquityPublicationDashboardRow[], events: EquityReportingEventRow[], index: string, search: string) {
+  const byKey = new Map(rows.map(row => [row.instrument_key, row]))
+  const companyFields = (row: EquityPublicationDashboardRow) => [row.ticker, row.name, row.sector]
+  const filteredEvents = events.filter(event => {
+    const company = byKey.get(event.instrument_key)
+    const sourceIndex = company?.source_index ?? event.source_index
+    return (index === 'Tous' || sourceIndex === index) && matchesPublicationSearch([
+      ...(company ? companyFields(company) : [event.ticker, event.name]),
+      event.event_label, event.period_kind, event.fiscal_year?.toString(), event.event_date,
+    ], search)
+  })
+  const eventKeys = new Set(filteredEvents.map(event => event.instrument_key))
+  const filteredRows = rows.filter(row => (index === 'Tous' || row.source_index === index)
+    && (matchesPublicationSearch(companyFields(row), search) || eventKeys.has(row.instrument_key)))
+  return { rows: filteredRows, events: filteredEvents }
 }

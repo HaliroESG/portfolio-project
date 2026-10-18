@@ -9,12 +9,14 @@ import type {
   EquityReportingEventType,
   EquityReportingMatchConfidence,
   EquityReportingPeriodKind,
+  PublicationReadReceipt,
 } from '../types'
-import { publicationDateKey } from './equityPublicationUi'
+import { publicationCivilDate, publicationDateKey } from './equityPublicationUi'
+import { parsedReceipt, readPublicationPages } from './publicationPagination'
+import { finiteNumber, latestSourceTimestamp } from './readerState'
 
 type JsonRecord = Record<string, unknown>
 
-const PAGE_SIZE = 1000
 const DASHBOARD_SELECTOR = [
   'instrument_key',
   'ticker',
@@ -129,6 +131,9 @@ export interface EquityPublicationsBundle {
   coverage: Record<string, EquityPublicationCoverage>
   lastUpdateIso: string | null
   lastBackendRun: EquityPublicationsLastRun | null
+  calendarWindow: { start: string; end: string }
+  dashboardRead: PublicationReadReceipt
+  calendarRead: PublicationReadReceipt
   message?: string
 }
 
@@ -144,12 +149,7 @@ function readString(value: unknown): string | null {
 }
 
 function readNumber(value: unknown): number | null {
-  if (typeof value === 'number' && Number.isFinite(value)) return value
-  if (typeof value === 'string' && value.trim().length > 0) {
-    const parsed = Number.parseFloat(value)
-    return Number.isFinite(parsed) ? parsed : null
-  }
-  return null
+  return finiteNumber(value)
 }
 
 function readBoolean(value: unknown): boolean {
@@ -263,13 +263,13 @@ function parseDashboardRow(raw: JsonRecord): EquityPublicationDashboardRow | nul
     valuation_as_of: readString(raw.valuation_as_of),
     last_event_type: readEventType(raw.last_event_type),
     last_event_label: readString(raw.last_event_label),
-    last_event_date: readString(raw.last_event_date),
+    last_event_date: publicationCivilDate(raw.last_event_date),
     last_event_status: readEventStatus(raw.last_event_status),
     last_event_source_provider: readString(raw.last_event_source_provider),
     last_event_source_url: readString(raw.last_event_source_url),
     next_event_type: readEventType(raw.next_event_type),
     next_event_label: readString(raw.next_event_label),
-    next_event_date: readString(raw.next_event_date),
+    next_event_date: publicationCivilDate(raw.next_event_date),
     next_event_time_utc: readString(raw.next_event_time_utc),
     next_event_status: readEventStatus(raw.next_event_status),
     next_event_source_provider: readString(raw.next_event_source_provider),
@@ -287,7 +287,7 @@ function parseEventRow(raw: JsonRecord): EquityReportingEventRow | null {
   const providerSymbol = readString(raw.provider_symbol)
   const sourceIndex = readString(raw.source_index)
   const eventType = readEventType(raw.event_type)
-  const eventDate = readString(raw.event_date)
+  const eventDate = publicationCivilDate(raw.event_date)
   const status = readEventStatus(raw.status)
   const sourceProvider = readString(raw.source_provider)
   if (
@@ -397,24 +397,6 @@ function isSchemaPending(error: { message?: string } | null | undefined): boolea
   return /could not find the table|relation .* does not exist|schema cache|PGRST205/i.test(message)
 }
 
-async function loadPagedRows(
-  supabase: SupabaseClient,
-  table: string,
-  selector: string
-): Promise<JsonRecord[]> {
-  const rows: JsonRecord[] = []
-  for (let offset = 0; ; offset += PAGE_SIZE) {
-    const { data, error } = await supabase
-      .from(table)
-      .select(selector)
-      .range(offset, offset + PAGE_SIZE - 1)
-    if (error) throw error
-    const page = (data ?? []) as unknown as JsonRecord[]
-    rows.push(...page)
-    if (page.length < PAGE_SIZE) break
-  }
-  return rows
-}
 
 function coverageFor(
   rows: EquityPublicationDashboardRow[],
@@ -442,11 +424,7 @@ function coverageFor(
 }
 
 function newestTimestamp(values: Array<string | null>): string | null {
-  return values.reduce<string | null>((latest, value) => {
-    if (!value) return latest
-    if (!latest) return value
-    return Date.parse(value) > Date.parse(latest) ? value : latest
-  }, null)
+  return latestSourceTimestamp(values)
 }
 
 function parseLastRun(raw: JsonRecord | null): EquityPublicationsLastRun | null {
@@ -466,18 +444,21 @@ export async function loadEquityPublicationsBundle(
   supabase: SupabaseClient
 ): Promise<EquityPublicationsBundle> {
   const today = new Date()
-  const start = new Date(today.getFullYear() - 1, today.getMonth(), today.getDate())
-  const end = new Date(today.getFullYear(), today.getMonth() + 6, today.getDate())
+  const start = new Date(today.getFullYear() - 1, today.getMonth(), 1)
+  const end = new Date(today.getFullYear(), today.getMonth() + 7, 0)
+  const calendarWindow = { start: publicationDateKey(start), end: publicationDateKey(end) }
   try {
     const [dashboardRaw, eventsResponse, runResponse] = await Promise.all([
-      loadPagedRows(supabase, 'equity_publication_dashboard_latest', DASHBOARD_SELECTOR),
-      supabase
+      readPublicationPages((offset, end) => supabase.from('equity_publication_dashboard_latest')
+        .select(DASHBOARD_SELECTOR, { count: 'exact' }).order('instrument_key', { ascending: true })
+        .range(offset, end), 'instrument_key'),
+      readPublicationPages((offset, end) => supabase
         .from('equity_reporting_calendar')
-        .select(CALENDAR_SELECTOR)
-        .gte('event_date', publicationDateKey(start))
-        .lte('event_date', publicationDateKey(end))
-        .order('event_date', { ascending: true })
-        .range(0, 4999),
+        .select(CALENDAR_SELECTOR, { count: 'exact' })
+        .gte('event_date', calendarWindow.start)
+        .lte('event_date', calendarWindow.end)
+        .order('event_key', { ascending: true })
+        .range(offset, end), 'event_key'),
       supabase
         .from('etl_runs')
         .select('status,started_at,finished_at,stats,error')
@@ -486,15 +467,15 @@ export async function loadEquityPublicationsBundle(
         .limit(1)
         .maybeSingle(),
     ])
-    if (eventsResponse.error) throw eventsResponse.error
     if (runResponse.error) throw runResponse.error
-    const rows = dashboardRaw
+    const rows = dashboardRaw.rows
       .map(parseDashboardRow)
       .filter((row): row is EquityPublicationDashboardRow => row !== null)
       .sort((left, right) => left.ticker.localeCompare(right.ticker, 'en'))
-    const events = ((eventsResponse.data ?? []) as unknown as JsonRecord[])
+    const events = eventsResponse.rows
       .map(parseEventRow)
       .filter((row): row is EquityReportingEventRow => row !== null)
+      .sort((a, b) => a.event_date.localeCompare(b.event_date) || a.event_key.localeCompare(b.event_key))
     return {
       status: 'READY',
       rows,
@@ -502,6 +483,9 @@ export async function loadEquityPublicationsBundle(
       coverage: coverageFor(rows, events),
       lastUpdateIso: newestTimestamp(rows.map((row) => row.updated_at)),
       lastBackendRun: parseLastRun((runResponse.data ?? null) as JsonRecord | null),
+      calendarWindow,
+      dashboardRead: parsedReceipt(dashboardRaw.receipt, rows.length),
+      calendarRead: parsedReceipt(eventsResponse.receipt, events.length),
     }
   } catch (error) {
     if (isSchemaPending(error as { message?: string })) {
@@ -512,6 +496,9 @@ export async function loadEquityPublicationsBundle(
         coverage: coverageFor([], []),
         lastUpdateIso: null,
         lastBackendRun: null,
+        calendarWindow,
+        dashboardRead: { state: 'PARTIAL', expected: null, received: 0, pages: 0, reasons: ['SCHEMA_PENDING'] },
+        calendarRead: { state: 'PARTIAL', expected: null, received: 0, pages: 0, reasons: ['SCHEMA_PENDING'] },
         message: 'Le contrat Supabase des publications doit être déployé.',
       }
     }
@@ -541,6 +528,7 @@ export async function loadEquityPublicationHistory(
       .select(CALENDAR_SELECTOR)
       .eq('instrument_key', instrumentKey)
       .order('event_date', { ascending: false })
+      .order('event_key', { ascending: true })
       .limit(24),
   ])
   if (annualResponse.error) throw annualResponse.error

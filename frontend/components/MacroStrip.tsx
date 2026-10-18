@@ -5,6 +5,7 @@ import useSWR from 'swr'
 import { supabase } from '../lib/supabase'
 import { TrendingUp, TrendingDown, AlertCircle, HelpCircle } from 'lucide-react'
 import { Tooltip } from './Tooltip'
+import { MACRO_PROVENANCE_NOTICE, macroInputState, macroVariationClass } from '../lib/macroState'
 import {
   MACRO_INDICATORS_REFRESH_MS,
   MACRO_INDICATORS_SWR_KEY,
@@ -47,7 +48,7 @@ const MACRO_CONFIG: Record<string, {
 }
 
 export function MacroStrip() {
-  const { data } = useSWR(
+  const { data, error, isLoading } = useSWR(
     MACRO_INDICATORS_SWR_KEY,
     () => loadMacroIndicators(supabase),
     { refreshInterval: MACRO_INDICATORS_REFRESH_MS, revalidateOnFocus: false }
@@ -66,12 +67,14 @@ export function MacroStrip() {
   })()
   const miseryIndex = getIndicator('MISERY_INDEX')?.value ?? null
   const jpyVolatility = getIndicator('JPY_VOLATILITY')?.value ?? null
+  const readState = macroInputState(['^VIX', 'DX-Y.NYB', '^MOVE', '^TNX', 'SPREAD_10Y_2Y', 'MISERY_INDEX', 'JPY_VOLATILITY'].map(getIndicator), isLoading, error)
 
   const getTrendColor = (indicator: MacroIndicator | undefined, config: typeof MACRO_CONFIG[string]): string => {
-    if (!indicator || indicator.value === null) return 'text-slate-400'
+    if (!indicator || indicator.value === null || macroInputState([indicator], isLoading, error) !== 'READY') return 'text-slate-400'
     
     const value = indicator.value
-    const change = indicator.change_pct ?? 0
+    const change = indicator.change_pct
+    if (change === null) return 'text-slate-500'
     
     // VIX: Red if > 20, amber if > 15
     if (indicator.id === '^VIX') {
@@ -102,7 +105,7 @@ export function MacroStrip() {
   }
 
   const getTrendIcon = (indicator: MacroIndicator | undefined) => {
-    if (!indicator || indicator.change_pct === null) return null
+    if (!indicator || indicator.change_pct === null || macroInputState([indicator], isLoading, error) !== 'READY') return null
     const change = indicator.change_pct
     if (change > 0.001) {
       return <TrendingUp className="w-3 h-3 text-red-400" />
@@ -117,6 +120,7 @@ export function MacroStrip() {
       <div className="flex items-center justify-between gap-6">
         <div className="flex items-center gap-2">
           <span className="text-[8px] font-black text-slate-400 dark:text-slate-500 uppercase tracking-[0.3em]">MACRO</span>
+          <span role="status" className="text-[9px] text-slate-500">{readState}</span>
         </div>
         
         <div className="flex items-center gap-4 flex-1 justify-center overflow-x-auto">
@@ -130,10 +134,9 @@ export function MacroStrip() {
               <div key={id} className="flex items-center gap-3 flex-shrink-0">
                 <Tooltip content={config.tooltip} side="bottom">
                   <div className="flex items-center gap-1.5">
-                    {/* Pulsing Live Dot */}
+                    {/* Read-state indicator, not a live market feed claim. */}
                     <div className="relative flex-shrink-0">
-                      <div className="absolute inset-0 rounded-full bg-green-500 animate-ping opacity-75"></div>
-                      <div className="relative w-1.5 h-1.5 rounded-full bg-green-500"></div>
+                      <div aria-label={readState} className={`relative h-1.5 w-1.5 rounded-full ${readState === 'READY' ? 'bg-green-500' : 'bg-slate-400'}`} />
                     </div>
                     <div className="flex flex-col">
                       <div className="flex items-baseline gap-1.5">
@@ -148,7 +151,7 @@ export function MacroStrip() {
                         </span>
                         {getTrendIcon(indicator)}
                         {change !== null && (
-                          <span className={`text-[8px] font-mono font-bold ${change >= 0 ? 'text-red-500 dark:text-red-400' : 'text-green-500 dark:text-green-400'}`}>
+                          <span data-macro-change={id} className={`text-[8px] font-mono font-bold ${macroVariationClass(indicator, isLoading, error)}`}>
                             {change >= 0 ? '+' : ''}{(change * 100).toFixed(2)}%
                           </span>
                         )}
@@ -165,8 +168,7 @@ export function MacroStrip() {
           <Tooltip content="10Y-2Y Yield Spread: Inversion (<0) signals recession risk" side="bottom">
             <div className="flex items-center gap-1.5 flex-shrink-0">
               <div className="relative flex-shrink-0">
-                <div className="absolute inset-0 rounded-full bg-green-500 animate-ping opacity-75"></div>
-                <div className="relative w-1.5 h-1.5 rounded-full bg-green-500"></div>
+                <div aria-label={readState} className={`relative h-1.5 w-1.5 rounded-full ${readState === 'READY' ? 'bg-green-500' : 'bg-slate-400'}`} />
               </div>
               <div className="flex flex-col">
                 <div className="flex items-center gap-1">
@@ -175,7 +177,7 @@ export function MacroStrip() {
                   </span>
                   <HelpCircle className="w-2.5 h-2.5 text-slate-400 dark:text-slate-500 cursor-help" />
                 </div>
-                <span className={`text-sm font-mono font-black ${yieldSpread !== null && yieldSpread < 0 ? 'text-red-500 dark:text-red-400' : 'text-slate-950 dark:text-white'}`}>
+                <span className={`text-sm font-mono font-black ${macroInputState([getIndicator('SPREAD_10Y_2Y')], isLoading, error) === 'READY' && yieldSpread !== null && yieldSpread < 0 ? 'text-red-500 dark:text-red-400' : 'text-slate-500'}`}>
                   {yieldSpread !== null ? `${yieldSpread >= 0 ? '+' : ''}${yieldSpread.toFixed(2)}%` : '--'}
                 </span>
               </div>
@@ -187,8 +189,7 @@ export function MacroStrip() {
           <Tooltip content="Misery Index: Inflation + Unemployment. Higher = Economic distress" side="bottom">
             <div className="flex items-center gap-1.5 flex-shrink-0">
               <div className="relative flex-shrink-0">
-                <div className="absolute inset-0 rounded-full bg-green-500 animate-ping opacity-75"></div>
-                <div className="relative w-1.5 h-1.5 rounded-full bg-green-500"></div>
+                <div aria-label={readState} className={`relative h-1.5 w-1.5 rounded-full ${readState === 'READY' ? 'bg-green-500' : 'bg-slate-400'}`} />
               </div>
               <div className="flex flex-col">
                 <div className="flex items-center gap-1">
@@ -197,7 +198,7 @@ export function MacroStrip() {
                   </span>
                   <HelpCircle className="w-2.5 h-2.5 text-slate-400 dark:text-slate-500 cursor-help" />
                 </div>
-                <span className={`text-sm font-mono font-black ${miseryIndex !== null && miseryIndex > 7 ? 'text-red-500 dark:text-red-400' : 'text-slate-950 dark:text-white'}`}>
+                <span className={`text-sm font-mono font-black ${macroInputState([getIndicator('MISERY_INDEX')], isLoading, error) === 'READY' && miseryIndex !== null && miseryIndex > 7 ? 'text-red-500 dark:text-red-400' : 'text-slate-500'}`}>
                   {miseryIndex !== null ? miseryIndex.toFixed(1) : '--'}
                 </span>
               </div>
@@ -209,8 +210,7 @@ export function MacroStrip() {
           <Tooltip content="JPY/USD Volatility: High volatility = Carry Trade Risk" side="bottom">
             <div className="flex items-center gap-1.5 flex-shrink-0">
               <div className="relative flex-shrink-0">
-                <div className="absolute inset-0 rounded-full bg-green-500 animate-ping opacity-75"></div>
-                <div className="relative w-1.5 h-1.5 rounded-full bg-green-500"></div>
+                <div aria-label={readState} className={`relative h-1.5 w-1.5 rounded-full ${readState === 'READY' ? 'bg-green-500' : 'bg-slate-400'}`} />
               </div>
               <div className="flex flex-col">
                 <div className="flex items-center gap-1">
@@ -219,7 +219,7 @@ export function MacroStrip() {
                   </span>
                   <HelpCircle className="w-2.5 h-2.5 text-slate-400 dark:text-slate-500 cursor-help" />
                 </div>
-                <span className={`text-sm font-mono font-black ${jpyVolatility !== null && jpyVolatility > 1.5 ? 'text-amber-500 dark:text-amber-400' : 'text-slate-950 dark:text-white'}`}>
+                <span className={`text-sm font-mono font-black ${macroInputState([getIndicator('JPY_VOLATILITY')], isLoading, error) === 'READY' && jpyVolatility !== null && jpyVolatility > 1.5 ? 'text-amber-500 dark:text-amber-400' : 'text-slate-500'}`}>
                   {jpyVolatility !== null ? `${jpyVolatility.toFixed(1)}%` : '--'}
                 </span>
               </div>
@@ -228,7 +228,7 @@ export function MacroStrip() {
         </div>
         
         <div className="flex items-center gap-2">
-          {indicators.some(i => i.value !== null && i.id === '^VIX' && i.value >= 20) && (
+          {readState === 'READY' && indicators.some(i => i.value !== null && i.id === '^VIX' && i.value >= 20) && (
             <div className="flex items-center gap-1 px-2 py-0.5 bg-red-500/10 dark:bg-red-500/20 border border-red-500/30 dark:border-red-500/50 rounded">
               <AlertCircle className="w-2.5 h-2.5 text-red-500 dark:text-red-400" />
               <span className="text-[8px] font-black text-red-500 dark:text-red-400 uppercase">RISK</span>
@@ -236,6 +236,7 @@ export function MacroStrip() {
           )}
         </div>
       </div>
+      <p className="mt-2 text-[10px] text-slate-500">{MACRO_PROVENANCE_NOTICE}</p>
     </div>
   )
 }
