@@ -1,5 +1,5 @@
 import type { SupabaseClient } from '@supabase/supabase-js'
-import {
+import type {
   TridentCategory,
   TridentCriterionRow,
   TridentCriterionStatus,
@@ -294,6 +294,7 @@ async function loadAllScreenerRows(
       .from('trident_screener_latest')
       .select(selector)
       .order('score', { ascending: false, nullsFirst: false })
+      .order('instrument_key', { ascending: true })
       .range(offset, offset + SCREENER_PAGE_SIZE - 1)
 
     if (error && selector === SCREENER_SELECTOR && isMissingProviderSymbolError(error)) {

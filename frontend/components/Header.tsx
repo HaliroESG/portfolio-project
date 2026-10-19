@@ -5,20 +5,20 @@ import { Menu } from 'lucide-react'
 import { ThemeToggle } from './ThemeToggle'
 import { CurrencyWidget } from './CurrencyWidget'
 import { LogoutButton } from './LogoutButton'
-import { formatSyncTime, resolveFreshness } from '../lib/dataFreshness'
+import { formatSyncTime } from '../lib/dataFreshness'
 
 interface HeaderProps {
   lastSync?: string;
   lastSyncIso?: string | null;
   coveragePct?: number | null;
   onMenuClick?: () => void;
+  menuOpen?: boolean;
+  contextLabel?: string;
 }
 
-export function Header({ lastSync, lastSyncIso, coveragePct, onMenuClick }: HeaderProps) {
+export function Header({ lastSync, lastSyncIso, coveragePct, onMenuClick, menuOpen, contextLabel }: HeaderProps) {
   const safeCoveragePct = coveragePct ?? 100
   const showCoverageWarning = safeCoveragePct < 90
-  const freshness = resolveFreshness(lastSyncIso, 36 * 60, { marketAware: true })
-  const isRecent = lastSyncIso ? freshness.state === 'LIVE' : Boolean(lastSync && lastSync !== '--:--:--')
   const displaySync = formatSyncTime(lastSyncIso, lastSync)
 
   return (
@@ -29,7 +29,7 @@ export function Header({ lastSync, lastSyncIso, coveragePct, onMenuClick }: Head
           <div className="flex items-center gap-2 text-sm font-bold text-amber-800 dark:text-amber-400">
             <span>!</span>
             <span>
-              Portfolio Coverage: {safeCoveragePct.toFixed(1)}% - Some assets are unpriced
+              Couverture du portefeuille : {safeCoveragePct.toFixed(1)} % — certains actifs ne sont pas valorisés
             </span>
           </div>
         </div>
@@ -39,7 +39,9 @@ export function Header({ lastSync, lastSyncIso, coveragePct, onMenuClick }: Head
         <div className="flex min-w-0 items-center gap-3 sm:gap-6">
           <button
             type="button"
-            aria-label="Open navigation"
+            aria-label="Ouvrir la navigation"
+            aria-controls="app-navigation"
+            aria-expanded={Boolean(menuOpen)}
             onClick={onMenuClick}
             className="inline-flex h-9 w-9 shrink-0 items-center justify-center rounded-lg border border-slate-200 bg-white text-slate-600 transition hover:bg-slate-100 dark:border-white/10 dark:bg-white/5 dark:text-gray-300 dark:hover:bg-white/10 md:hidden"
           >
@@ -48,31 +50,19 @@ export function Header({ lastSync, lastSyncIso, coveragePct, onMenuClick }: Head
 
           <div className="flex min-w-0 flex-col">
             <h2 className="truncate text-xs font-black uppercase tracking-widest text-slate-900 dark:text-white sm:text-sm">
-              Portfolio Office <span className="text-emerald-500">v2</span>
+              Portfolio Office
             </h2>
-            <span className="hidden text-[10px] font-mono text-slate-400 dark:text-gray-500 sm:inline">REGISTRE PATRIMONIAL PRIVÉ</span>
+            <span className="hidden text-[10px] text-slate-500 dark:text-gray-400 sm:inline">{contextLabel ?? 'Registre patrimonial privé · ASTROCYTE'}</span>
           </div>
 
           {/* DATA FRESHNESS INDICATOR */}
-          <div className="hidden md:flex flex-col border-l border-slate-200 dark:border-white/10 pl-6">
-            <span className="text-[9px] text-slate-500 dark:text-gray-500 font-black uppercase tracking-[0.2em]">Last Sync</span>
+          <div className="hidden lg:flex flex-col border-l border-slate-200 dark:border-white/10 pl-6" title="La collecte ne certifie pas la fraîcheur des observations. Consulter la date de chaque source.">
+            <span className="text-[9px] text-slate-500 dark:text-gray-500 font-semibold uppercase tracking-wider">Dernière collecte</span>
             <div className="flex items-center gap-2">
-              {isRecent ? (
-                <div className="relative">
-                  <div className="w-2 h-2 rounded-full bg-[#00FF88] animate-pulse"></div>
-                  <div className="absolute inset-0 w-2 h-2 rounded-full bg-[#00FF88] animate-ping opacity-75"></div>
-                </div>
-              ) : (
-                <div className="w-2 h-2 rounded-full bg-slate-400 dark:bg-gray-600"></div>
-              )}
+              <div className="h-1.5 w-1.5 rounded-full bg-slate-400 dark:bg-gray-600" />
               <span className="text-xs font-mono font-black text-slate-950 dark:text-gray-300">
                 {displaySync}
               </span>
-              {lastSyncIso && freshness.isMarketClosedGrace && (
-                <span className="text-[9px] font-mono font-bold uppercase text-slate-500 dark:text-gray-500">
-                  market closed
-                </span>
-              )}
             </div>
           </div>
         </div>

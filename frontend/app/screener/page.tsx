@@ -182,7 +182,7 @@ function matchesQualityValue(row: EquityScreenerRow): boolean {
   if (hasStrategyTag(row, 'QUALITY_VALUE') || (strategyScore(row, 'QUALITY_VALUE') ?? 0) >= 55) {
     return row.valuation_tag !== 'EXPENSIVE'
   }
-  return row.quality_value_score >= 55 && row.valuation_tag !== 'EXPENSIVE'
+  return row.quality_value_score !== null && row.quality_value_score >= 55 && row.valuation_tag !== 'EXPENSIVE'
 }
 
 function matchesSectorBoom(row: EquityScreenerRow): boolean {
@@ -425,7 +425,7 @@ export default function ScreenerPage() {
         if (sector !== 'ALL' && row.sector !== sector) return false
         if (theme !== 'ALL' && !row.themes.includes(theme)) return false
         if (tag !== 'ALL' && row.valuation_tag !== tag) return false
-        if (minScore !== null && row.quality_value_score < minScore) return false
+        if (minScore !== null && (row.quality_value_score === null || row.quality_value_score < minScore)) return false
         if (maxPe !== null && ((bestPe(row) ?? Number.POSITIVE_INFINITY) > maxPe)) return false
         if (minFcf !== null && ((row.fcf_yield ?? Number.NEGATIVE_INFINITY) < minFcf)) return false
         return true

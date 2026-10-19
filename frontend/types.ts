@@ -400,7 +400,7 @@ export interface EquityScreenerRow {
   momentum_3m_pct: number | null
   momentum_12m_pct: number | null
   price_coverage_pct: number | null
-  quality_value_score: number
+  quality_value_score: number | null
   valuation_tag: EquityScreenerValuationTag
   score_details: Record<string, unknown>
   data_state: string[]
