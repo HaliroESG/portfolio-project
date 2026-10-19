@@ -13,6 +13,7 @@ from oauth2client.service_account import ServiceAccountCredentials
 from scipy.stats import linregress
 
 from etl_stats import build_etl_stats
+from macro_contracts import parse_fred_csv
 from market_history_utils import (
     choose_indicator_series,
     pct_change,
@@ -76,13 +77,11 @@ def fetch_fred_series(series_id):
     response = requests.get(url, timeout=15)
     response.raise_for_status()
 
-    df = pd.read_csv(io.StringIO(response.text))
-    if 'DATE' not in df.columns or series_id not in df.columns:
-        return pd.DataFrame(columns=['DATE', 'VALUE'])
-
-    df['DATE'] = pd.to_datetime(df['DATE'], errors='coerce')
-    df['VALUE'] = pd.to_numeric(df[series_id], errors='coerce')
-    df = df.dropna(subset=['DATE', 'VALUE']).sort_values('DATE').reset_index(drop=True)
+    parsed = parse_fred_csv(response.text, series_id)
+    if parsed["status"] != "PARSED":
+        raise ValueError("FRED_" + parsed["status"])
+    df = pd.DataFrame(parsed["rows"]).rename(columns={"period_date": "DATE", "value": "VALUE"})
+    df['DATE'] = pd.to_datetime(df['DATE'])
     return df[['DATE', 'VALUE']]
 
 
@@ -223,8 +222,7 @@ def resolve_ticker_from_isin(isin):
 def update_macro_hub():
     # Liste des indicateurs : Ticker Yahoo -> [Nom, Catégorie]
     indicators = {
-        "^VIX": ["Indice de Peur (VIX)", "VOLATILITY"],
-        "^TNX": ["Taux US 10Y", "RATES"],
+        # VIX/US10Y belong to macro_sync, never to both producers.
         "GC=F": ["Or (Gold)", "COMMODITY"],
         "EURUSD=X": ["EUR/USD", "FOREX"],
         "BTC-USD": ["Bitcoin", "CRYPTO"]
@@ -259,127 +257,11 @@ def update_macro_hub():
             except Exception as e:
                 print(f"    ❌ Erreur macro {ticker}: {e}", flush=True)
     
-    # === CALCULS MACRO AVANCÉS ===
-    
-    # 1. Yield Spread (10Y-2Y)
-    yield_spread_10y2y = None
-    try:
-        # Récupérer 10Y Treasury rate
-        data_10y = yf.download("^TNX", period="5d", progress=False)
-        
-        # Yahoo Finance n'a pas de ticker direct pour 2Y Treasury
-        # Utiliser ^FVX (5Y) et ajuster approximativement pour 2Y
-        # Ou utiliser une approximation basée sur la courbe des taux
-        data_5y = None
-        try:
-            data_5y = yf.download("^FVX", period="5d", progress=False)  # 5Y Treasury
-        except:
-            pass
-        
-        if not data_10y.empty and len(data_10y) >= 1:
-            rate_10y = float(data_10y['Close'].iloc[-1].iloc[0]) if isinstance(data_10y['Close'].iloc[-1], pd.Series) else float(data_10y['Close'].iloc[-1])
-            
-            if data_5y is not None and not data_5y.empty and len(data_5y) >= 1:
-                rate_5y = float(data_5y['Close'].iloc[-1].iloc[0]) if isinstance(data_5y['Close'].iloc[-1], pd.Series) else float(data_5y['Close'].iloc[-1])
-                # Approximation: 2Y ≈ 5Y - 0.3% (ajustement empirique basé sur la courbe des taux)
-                rate_2y_approx = rate_5y - 0.3
-                yield_spread_10y2y = rate_10y - rate_2y_approx
-            else:
-                # Sans données 5Y, on ne peut pas calculer précisément le spread
-                # Mettre None plutôt qu'une valeur arbitraire
-                print(f"    ⚠️ Données 5Y manquantes pour calculer précisément le Yield Spread", flush=True)
-                yield_spread_10y2y = None
-            
-            # Sauvegarder dans macro_indicators seulement si calcul réussi
-            if yield_spread_10y2y is not None:
-                payload_spread = {
-                    "id": "SPREAD_10Y_2Y",
-                    "name": "Yield Spread (10Y-2Y)",
-                    "category": "RATES",
-                    "value": yield_spread_10y2y,
-                    "change_pct": None,
-                    "last_update": datetime.now().isoformat()
-                }
-                supabase.table("macro_indicators").upsert(payload_spread).execute()
-                print(f"    ✅ Yield Spread (10Y-2Y): {yield_spread_10y2y:.2f}%", flush=True)
-        else:
-            print(f"    ⚠️ Pas assez de données pour calculer Yield Spread", flush=True)
-    except Exception as e:
-        print(f"    ⚠️ Erreur calcul Yield Spread: {e}", flush=True)
-    
-    # 2. Carry Trade Monitor - Volatilité JPY/USD (5 jours)
-    jpy_volatility = None
-    try:
-        data_jpy = yf.download("JPYUSD=X", period="5d", progress=False)
-        if not data_jpy.empty and len(data_jpy) >= 5:
-            if isinstance(data_jpy.columns, pd.MultiIndex): 
-                data_jpy.columns = data_jpy.columns.get_level_values(0)
-            
-            # Calculer les rendements logarithmiques
-            returns = np.log(data_jpy['Close'] / data_jpy['Close'].shift(1)).dropna()
-            # Volatilité réalisée sur 5 jours, annualisée
-            std_dev = returns.std()
-            jpy_volatility = float(std_dev * np.sqrt(252) * 100)  # En pourcentage
-            
-            # Sauvegarder dans macro_indicators
-            payload_jpy = {
-                "id": "JPY_VOLATILITY",
-                "name": "JPY/USD Volatility (Carry Trade Risk)",
-                "category": "FOREX",
-                "value": jpy_volatility,
-                "change_pct": None,
-                "last_update": datetime.now().isoformat()
-            }
-            supabase.table("macro_indicators").upsert(payload_jpy).execute()
-            print(f"    ✅ JPY Volatility: {jpy_volatility:.2f}%", flush=True)
-        else:
-            print(f"    ⚠️ Pas assez de données pour calculer JPY volatility", flush=True)
-    except Exception as e:
-        print(f"    ⚠️ Erreur calcul JPY volatility: {e}", flush=True)
-    
-    # 3. Misery Index (Inflation + Unemployment)
-    misery_index = None
-    try:
-        # Source FRED publique (CSV, sans clé)
-        # Inflation YoY via CPIAUCSL, chômage via UNRATE
-        cpi_df = fetch_fred_series("CPIAUCSL")
-        unrate_df = fetch_fred_series("UNRATE")
-
-        inflation_estimate = None
-        unemployment_estimate = None
-
-        if len(cpi_df) >= 13:
-            latest_cpi = float(cpi_df.iloc[-1]['VALUE'])
-            cpi_12m_ago = float(cpi_df.iloc[-13]['VALUE'])
-            if cpi_12m_ago > 0:
-                inflation_estimate = ((latest_cpi / cpi_12m_ago) - 1) * 100
-
-        if len(unrate_df) >= 1:
-            unemployment_estimate = float(unrate_df.iloc[-1]['VALUE'])
-
-        if inflation_estimate is not None and unemployment_estimate is not None:
-            misery_index = inflation_estimate + unemployment_estimate
-        else:
-            # Fallback conservateur si FRED indisponible/incomplet
-            inflation_estimate = inflation_estimate if inflation_estimate is not None else 3.2
-            unemployment_estimate = unemployment_estimate if unemployment_estimate is not None else 3.7
-            misery_index = inflation_estimate + unemployment_estimate
-            print("    ⚠️ Misery Index calculé en mode dégradé (données partielles FRED)", flush=True)
-        
-        # Sauvegarder dans macro_indicators
-        payload_misery = {
-            "id": "MISERY_INDEX",
-            "name": "Misery Index (Inflation + Unemployment)",
-            "category": "ECONOMIC",
-            "value": misery_index,
-            "change_pct": None,
-            "last_update": datetime.now().isoformat()
-        }
-        supabase.table("macro_indicators").upsert(payload_misery).execute()
-        print(f"    ✅ Misery Index: {misery_index:.1f} (Inflation: {inflation_estimate:.1f}% + Unemployment: {unemployment_estimate:.1f}%)", flush=True)
-    except Exception as e:
-        print(f"    ⚠️ Erreur calcul Misery Index: {e}", flush=True)
-
+    # L2: derived macro writes are intentionally withheld on this legacy path.
+    # macro_contracts prepares the spread/Misery/realized-volatility evidence
+    # offline; a separately approved writer must preserve its provenance first.
+    # No 5Y proxy, hardcoded CPI/unemployment, or undated derived row is emitted.
+    print("    Macro derived indicators withheld: provenance writer not activated", flush=True)
 
 def calculate_data_status(last_price, last_trade_timestamp=None):
     """

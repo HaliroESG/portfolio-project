@@ -6,6 +6,7 @@ import { cn } from '../lib/utils'
 import { Activity, AlertTriangle, ChevronDown, Clock, Database, Minus, TrendingDown, TrendingUp, X } from 'lucide-react'
 import { resolveFreshness } from '../lib/dataFreshness'
 import { isSelectorSchemaError } from '../lib/supabaseSelectorErrors'
+import { buildEtlTrend, type EtlTrendPoint, type TrendBasis, type TrendDirection } from '../lib/etlTrend'
 
 interface HealthItem {
   id: string
@@ -36,8 +37,6 @@ interface EtlRun {
 }
 
 type EtlQualityState = 'OK' | 'WARNING' | 'CRITICAL' | 'UNKNOWN'
-type TrendDirection = 'UP' | 'FLAT' | 'DOWN' | 'NONE'
-type TrendBasis = 'success_rate' | 'coverage' | 'status'
 
 interface EtlRunMetrics {
   coveragePct: number | null
@@ -48,11 +47,6 @@ interface EtlRunMetrics {
   failRatePct: number | null
   technicalReady: number | null
   technicalBackfilled: number | null
-}
-
-interface EtlTrendPoint {
-  timestamp: string
-  score: number | null
 }
 
 interface EtlJobView {
@@ -81,7 +75,6 @@ const FRESHNESS_SOURCES = [
 ] as const
 
 const ETL_HISTORY_LIMIT = 120
-const ETL_TREND_POINTS = 8
 const GITHUB_ACTIONS_URL = 'https://github.com/HaliroESG/portfolio-project/actions'
 const VERCEL_DASHBOARD_URL = 'https://vercel.com/dashboard'
 
@@ -163,11 +156,6 @@ function toneClasses(tone: MetricTone): string {
   if (tone === 'WARN') return 'border-amber-400/60 bg-amber-50 dark:bg-amber-950/20'
   if (tone === 'BAD') return 'border-red-400/60 bg-red-50 dark:bg-red-950/20'
   return 'border-slate-300/60 bg-slate-50 dark:bg-slate-900/40'
-}
-
-function mean(values: number[]): number | null {
-  if (values.length === 0) return null
-  return values.reduce((sum, value) => sum + value, 0) / values.length
 }
 
 function clampPct(value: number): number {
@@ -262,55 +250,6 @@ function classifyEtlQuality(run: EtlRun, metrics: EtlRunMetrics): { state: EtlQu
   return { state, reason: reasons.join(' ') }
 }
 
-function scoreRunForTrend(run: EtlRun, metrics: EtlRunMetrics): { score: number | null; basis: TrendBasis } {
-  if (run.status === 'FAILED') return { score: 0, basis: 'status' }
-  if (metrics.successRatePct !== null) return { score: metrics.successRatePct, basis: 'success_rate' }
-  if (metrics.coveragePct !== null) return { score: metrics.coveragePct, basis: 'coverage' }
-  if (run.status === 'SUCCESS') return { score: 100, basis: 'status' }
-  return { score: null, basis: 'status' }
-}
-
-function resolveTrendBasis(runs: EtlRun[]): TrendBasis {
-  if (runs.some((run) => extractEtlMetrics(run).successRatePct !== null)) return 'success_rate'
-  if (runs.some((run) => extractEtlMetrics(run).coveragePct !== null)) return 'coverage'
-  return 'status'
-}
-
-function buildTrendForRuns(runs: EtlRun[]): {
-  points: EtlTrendPoint[]
-  direction: TrendDirection
-  delta: number | null
-  basis: TrendBasis
-} {
-  const recent = runs.slice(0, ETL_TREND_POINTS).reverse()
-  const basis = resolveTrendBasis(recent)
-  const points = recent.map((run) => {
-    const metrics = extractEtlMetrics(run)
-    const scored = scoreRunForTrend(run, metrics)
-    return { timestamp: run.started_at, score: scored.score }
-  })
-
-  const validScores = points
-    .map((point) => point.score)
-    .filter((score): score is number => score !== null)
-
-  if (validScores.length < 4) {
-    return { points, direction: 'NONE', delta: null, basis }
-  }
-
-  const half = Math.floor(validScores.length / 2)
-  const olderAvg = mean(validScores.slice(0, half))
-  const newerAvg = mean(validScores.slice(half))
-  if (olderAvg === null || newerAvg === null) {
-    return { points, direction: 'NONE', delta: null, basis }
-  }
-
-  const delta = newerAvg - olderAvg
-  if (delta > 2) return { points, direction: 'UP', delta, basis }
-  if (delta < -2) return { points, direction: 'DOWN', delta, basis }
-  return { points, direction: 'FLAT', delta, basis }
-}
-
 function buildEtlJobViews(runs: EtlRun[]): EtlJobView[] {
   const byJob = new Map<string, EtlRun[]>()
 
@@ -332,7 +271,11 @@ function buildEtlJobViews(runs: EtlRun[]): EtlJobView[] {
       const latest = jobRuns[0]
       const metrics = extractEtlMetrics(latest)
       const quality = classifyEtlQuality(latest, metrics)
-      const trend = buildTrendForRuns(jobRuns)
+      const trend = buildEtlTrend(jobRuns.map((run) => ({
+        timestamp: run.started_at,
+        status: run.status,
+        ...extractEtlMetrics(run),
+      })))
       return {
         run: { ...latest, job_name: jobName },
         metrics,
@@ -1060,6 +1003,7 @@ export function DataHealthPanel() {
               const failRate = view.metrics.failRatePct !== null ? `${view.metrics.failRatePct.toFixed(1)}%` : null
               const trendDeltaValue =
                 view.trendDelta !== null ? `${view.trendDelta >= 0 ? '+' : ''}${view.trendDelta.toFixed(1)} pts` : null
+              const missingTrendPoints = view.trendPoints.filter((point) => point.score === null).length
 
               return (
                 <div
@@ -1114,25 +1058,39 @@ export function DataHealthPanel() {
                     Action: {operationAction(view)}
                   </div>
                   <div className="mt-1">
-                    <div className="flex items-end gap-1 h-8">
-                      {view.trendPoints.map((point, index) => (
-                        <div
-                          key={`${run.job_name}-${point.timestamp}-${index}`}
-                          className={cn(
-                            'w-2 rounded-sm',
-                            point.score === null
-                              ? 'bg-slate-300 dark:bg-slate-700'
-                              : view.qualityState === 'CRITICAL'
-                              ? 'bg-red-400/80'
-                              : view.qualityState === 'WARNING'
-                              ? 'bg-amber-400/80'
-                              : 'bg-green-400/80'
-                          )}
-                          style={{ height: `${point.score === null ? 20 : Math.max(15, Math.round(clampPct(point.score)))}%` }}
-                          title={point.score === null ? 'n/a' : `${point.score.toFixed(1)}%`}
-                        />
-                      ))}
+                    <div role="list" aria-label={`${run.job_name}: ${trendBasisLabel(view.trendBasis)} history`} className="flex items-end gap-1 h-8">
+                      {view.trendPoints.map((point, index) => {
+                        const value = point.score === null ? 'not computable'
+                          : `${point.score.toFixed(1)}${view.trendBasis === 'status' ? '/100' : '%'}`
+                        const label = `${point.timestamp} · ${trendBasisLabel(view.trendBasis)}: ${value}`
+                        return (
+                          <div
+                            key={`${run.job_name}-${point.timestamp}-${index}`}
+                            role="listitem"
+                            aria-label={label}
+                            title={label}
+                            className="flex h-full w-2 items-end"
+                          >
+                            {point.score === null ? (
+                              <span aria-hidden="true" className="text-xs leading-none text-slate-500 dark:text-gray-400">—</span>
+                            ) : (
+                              <span
+                                aria-hidden="true"
+                                className={cn('w-full rounded-sm',
+                                  view.qualityState === 'CRITICAL' ? 'bg-red-400/80'
+                                    : view.qualityState === 'WARNING' ? 'bg-amber-400/80' : 'bg-green-400/80')}
+                                style={{ height: `${point.score}%`, minHeight: 2 }}
+                              />
+                            )}
+                          </div>
+                        )
+                      })}
                     </div>
+                    {missingTrendPoints > 0 ? (
+                      <div className="mt-1 text-[9px] font-mono text-slate-500 dark:text-gray-400">
+                        — not computable ({missingTrendPoints}/{view.trendPoints.length} runs); excluded from trend
+                      </div>
+                    ) : null}
                     <div className="mt-1 flex items-center gap-1 text-[9px] font-mono text-slate-500 dark:text-gray-400">
                       {view.trendDirection === 'UP' ? (
                         <TrendingUp className="w-3 h-3 text-green-500 dark:text-green-400" />

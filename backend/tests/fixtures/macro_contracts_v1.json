@@ -1,0 +1,3565 @@
+{
+  "scope": "OFFLINE_SYNTHETIC",
+  "version": "macro-fixtures-v1",
+  "now": "2026-10-18T18:00:00Z",
+  "cases": [
+    {
+      "id": "daily-index",
+      "kind": "series",
+      "series_id": "VIX",
+      "rows": [
+        {
+          "producer": "macro_sync",
+          "observation": {
+            "scope": "OFFLINE_SYNTHETIC",
+            "domain": "MACRO",
+            "key": "VIX",
+            "value": 20,
+            "unit": "INDEX_POINTS",
+            "currency": null,
+            "observed": {
+              "precision": "DATE",
+              "value": "2026-10-16"
+            },
+            "collected_at": "2026-10-18T10:00:00Z",
+            "run_id": "fixture-macro",
+            "frequency": "DAILY",
+            "period": null,
+            "source": {
+              "provider": "YAHOO",
+              "native_id": "^VIX",
+              "evidence_ref": "fixture-VIX-2026-10-16",
+              "adapter_version": "fixture-macro-v1"
+            },
+            "nature": "OBSERVED",
+            "formula_ref": null,
+            "input_refs": [],
+            "rights_ref": "fixture-rights-unverified"
+          }
+        }
+      ],
+      "policy": {
+        "scope": "OFFLINE_SYNTHETIC",
+        "id": "macro-cadence-fixture",
+        "version": "v1",
+        "series_id": "VIX",
+        "frequency": "DAILY",
+        "evaluated_on": "2026-10-18",
+        "expected_period": {
+          "start": "2026-10-16",
+          "end": "2026-10-16"
+        },
+        "publication_due_at": "2026-10-16T22:00:00Z",
+        "calendar_ref": "fixture-calendar-v1"
+      },
+      "expected": {
+        "status": "VALIDATED",
+        "value": 20
+      }
+    },
+    {
+      "id": "missing-policy",
+      "kind": "series",
+      "series_id": "VIX",
+      "rows": [
+        {
+          "producer": "macro_sync",
+          "observation": {
+            "scope": "OFFLINE_SYNTHETIC",
+            "domain": "MACRO",
+            "key": "VIX",
+            "value": 20,
+            "unit": "INDEX_POINTS",
+            "currency": null,
+            "observed": {
+              "precision": "DATE",
+              "value": "2026-10-16"
+            },
+            "collected_at": "2026-10-18T10:00:00Z",
+            "run_id": "fixture-macro",
+            "frequency": "DAILY",
+            "period": null,
+            "source": {
+              "provider": "YAHOO",
+              "native_id": "^VIX",
+              "evidence_ref": "fixture-VIX-2026-10-16",
+              "adapter_version": "fixture-macro-v1"
+            },
+            "nature": "OBSERVED",
+            "formula_ref": null,
+            "input_refs": [],
+            "rights_ref": "fixture-rights-unverified"
+          }
+        }
+      ],
+      "policy": null,
+      "expected": {
+        "status": "UNKNOWN",
+        "value": null,
+        "reason": "CADENCE_POLICY_MISSING"
+      }
+    },
+    {
+      "id": "stale-source-fresh-collection",
+      "kind": "series",
+      "series_id": "VIX",
+      "rows": [
+        {
+          "producer": "macro_sync",
+          "observation": {
+            "scope": "OFFLINE_SYNTHETIC",
+            "domain": "MACRO",
+            "key": "VIX",
+            "value": 19,
+            "unit": "INDEX_POINTS",
+            "currency": null,
+            "observed": {
+              "precision": "DATE",
+              "value": "2026-10-14"
+            },
+            "collected_at": "2026-10-18T10:00:00Z",
+            "run_id": "fixture-macro",
+            "frequency": "DAILY",
+            "period": null,
+            "source": {
+              "provider": "YAHOO",
+              "native_id": "^VIX",
+              "evidence_ref": "fixture-VIX-2026-10-14",
+              "adapter_version": "fixture-macro-v1"
+            },
+            "nature": "OBSERVED",
+            "formula_ref": null,
+            "input_refs": [],
+            "rights_ref": "fixture-rights-unverified"
+          }
+        }
+      ],
+      "policy": {
+        "scope": "OFFLINE_SYNTHETIC",
+        "id": "macro-cadence-fixture",
+        "version": "v1",
+        "series_id": "VIX",
+        "frequency": "DAILY",
+        "evaluated_on": "2026-10-18",
+        "expected_period": {
+          "start": "2026-10-16",
+          "end": "2026-10-16"
+        },
+        "publication_due_at": "2026-10-16T22:00:00Z",
+        "calendar_ref": "fixture-calendar-v1"
+      },
+      "expected": {
+        "status": "STALE",
+        "value": 19,
+        "reason": "EXPECTED_PERIOD_MISSING"
+      }
+    },
+    {
+      "id": "missing-value",
+      "kind": "series",
+      "series_id": "VIX",
+      "rows": [
+        {
+          "producer": "macro_sync",
+          "observation": {
+            "scope": "OFFLINE_SYNTHETIC",
+            "domain": "MACRO",
+            "key": "VIX",
+            "value": null,
+            "unit": "INDEX_POINTS",
+            "currency": null,
+            "observed": {
+              "precision": "DATE",
+              "value": "2026-10-16"
+            },
+            "collected_at": "2026-10-18T10:00:00Z",
+            "run_id": "fixture-macro",
+            "frequency": "DAILY",
+            "period": null,
+            "source": {
+              "provider": "YAHOO",
+              "native_id": "^VIX",
+              "evidence_ref": "fixture-VIX-2026-10-16",
+              "adapter_version": "fixture-macro-v1"
+            },
+            "nature": "OBSERVED",
+            "formula_ref": null,
+            "input_refs": [],
+            "rights_ref": "fixture-rights-unverified"
+          }
+        }
+      ],
+      "policy": {
+        "scope": "OFFLINE_SYNTHETIC",
+        "id": "macro-cadence-fixture",
+        "version": "v1",
+        "series_id": "VIX",
+        "frequency": "DAILY",
+        "evaluated_on": "2026-10-18",
+        "expected_period": {
+          "start": "2026-10-16",
+          "end": "2026-10-16"
+        },
+        "publication_due_at": "2026-10-16T22:00:00Z",
+        "calendar_ref": "fixture-calendar-v1"
+      },
+      "expected": {
+        "status": "MISSING",
+        "value": null
+      }
+    },
+    {
+      "id": "future-source",
+      "kind": "series",
+      "series_id": "VIX",
+      "rows": [
+        {
+          "producer": "macro_sync",
+          "observation": {
+            "scope": "OFFLINE_SYNTHETIC",
+            "domain": "MACRO",
+            "key": "VIX",
+            "value": 20,
+            "unit": "INDEX_POINTS",
+            "currency": null,
+            "observed": {
+              "precision": "DATE",
+              "value": "2026-10-19"
+            },
+            "collected_at": "2026-10-18T10:00:00Z",
+            "run_id": "fixture-macro",
+            "frequency": "DAILY",
+            "period": null,
+            "source": {
+              "provider": "YAHOO",
+              "native_id": "^VIX",
+              "evidence_ref": "fixture-VIX-2026-10-19",
+              "adapter_version": "fixture-macro-v1"
+            },
+            "nature": "OBSERVED",
+            "formula_ref": null,
+            "input_refs": [],
+            "rights_ref": "fixture-rights-unverified"
+          }
+        }
+      ],
+      "policy": {
+        "scope": "OFFLINE_SYNTHETIC",
+        "id": "macro-cadence-fixture",
+        "version": "v1",
+        "series_id": "VIX",
+        "frequency": "DAILY",
+        "evaluated_on": "2026-10-18",
+        "expected_period": {
+          "start": "2026-10-16",
+          "end": "2026-10-16"
+        },
+        "publication_due_at": "2026-10-16T22:00:00Z",
+        "calendar_ref": "fixture-calendar-v1"
+      },
+      "expected": {
+        "status": "UNKNOWN",
+        "value": null,
+        "reason": "OBSERVATION_FUTURE"
+      }
+    },
+    {
+      "id": "unit-PERCENT",
+      "kind": "series",
+      "series_id": "US10Y",
+      "rows": [
+        {
+          "producer": "macro_sync",
+          "observation": {
+            "scope": "OFFLINE_SYNTHETIC",
+            "domain": "MACRO",
+            "key": "US10Y",
+            "value": 4.2,
+            "unit": "PERCENT",
+            "currency": null,
+            "observed": {
+              "precision": "DATE",
+              "value": "2026-10-16"
+            },
+            "collected_at": "2026-10-18T10:00:00Z",
+            "run_id": "fixture-macro",
+            "frequency": "DAILY",
+            "period": null,
+            "source": {
+              "provider": "YAHOO",
+              "native_id": "^TNX",
+              "evidence_ref": "fixture-US10Y-2026-10-16",
+              "adapter_version": "fixture-macro-v1"
+            },
+            "nature": "OBSERVED",
+            "formula_ref": null,
+            "input_refs": [],
+            "rights_ref": "fixture-rights-unverified"
+          }
+        }
+      ],
+      "policy": {
+        "scope": "OFFLINE_SYNTHETIC",
+        "id": "macro-cadence-fixture",
+        "version": "v1",
+        "series_id": "US10Y",
+        "frequency": "DAILY",
+        "evaluated_on": "2026-10-18",
+        "expected_period": {
+          "start": "2026-10-16",
+          "end": "2026-10-16"
+        },
+        "publication_due_at": "2026-10-16T22:00:00Z",
+        "calendar_ref": "fixture-calendar-v1"
+      },
+      "expected": {
+        "status": "VALIDATED",
+        "value": 4.2
+      }
+    },
+    {
+      "id": "unit-RATIO",
+      "kind": "series",
+      "series_id": "US10Y",
+      "rows": [
+        {
+          "producer": "macro_sync",
+          "observation": {
+            "scope": "OFFLINE_SYNTHETIC",
+            "domain": "MACRO",
+            "key": "US10Y",
+            "value": 0.042,
+            "unit": "RATIO",
+            "currency": null,
+            "observed": {
+              "precision": "DATE",
+              "value": "2026-10-16"
+            },
+            "collected_at": "2026-10-18T10:00:00Z",
+            "run_id": "fixture-macro",
+            "frequency": "DAILY",
+            "period": null,
+            "source": {
+              "provider": "YAHOO",
+              "native_id": "^TNX",
+              "evidence_ref": "fixture-US10Y-2026-10-16",
+              "adapter_version": "fixture-macro-v1"
+            },
+            "nature": "OBSERVED",
+            "formula_ref": null,
+            "input_refs": [],
+            "rights_ref": "fixture-rights-unverified"
+          }
+        }
+      ],
+      "policy": {
+        "scope": "OFFLINE_SYNTHETIC",
+        "id": "macro-cadence-fixture",
+        "version": "v1",
+        "series_id": "US10Y",
+        "frequency": "DAILY",
+        "evaluated_on": "2026-10-18",
+        "expected_period": {
+          "start": "2026-10-16",
+          "end": "2026-10-16"
+        },
+        "publication_due_at": "2026-10-16T22:00:00Z",
+        "calendar_ref": "fixture-calendar-v1"
+      },
+      "expected": {
+        "status": "VALIDATED",
+        "value": 4.2
+      }
+    },
+    {
+      "id": "unit-BASIS_POINTS",
+      "kind": "series",
+      "series_id": "US10Y",
+      "rows": [
+        {
+          "producer": "macro_sync",
+          "observation": {
+            "scope": "OFFLINE_SYNTHETIC",
+            "domain": "MACRO",
+            "key": "US10Y",
+            "value": 420,
+            "unit": "BASIS_POINTS",
+            "currency": null,
+            "observed": {
+              "precision": "DATE",
+              "value": "2026-10-16"
+            },
+            "collected_at": "2026-10-18T10:00:00Z",
+            "run_id": "fixture-macro",
+            "frequency": "DAILY",
+            "period": null,
+            "source": {
+              "provider": "YAHOO",
+              "native_id": "^TNX",
+              "evidence_ref": "fixture-US10Y-2026-10-16",
+              "adapter_version": "fixture-macro-v1"
+            },
+            "nature": "OBSERVED",
+            "formula_ref": null,
+            "input_refs": [],
+            "rights_ref": "fixture-rights-unverified"
+          }
+        }
+      ],
+      "policy": {
+        "scope": "OFFLINE_SYNTHETIC",
+        "id": "macro-cadence-fixture",
+        "version": "v1",
+        "series_id": "US10Y",
+        "frequency": "DAILY",
+        "evaluated_on": "2026-10-18",
+        "expected_period": {
+          "start": "2026-10-16",
+          "end": "2026-10-16"
+        },
+        "publication_due_at": "2026-10-16T22:00:00Z",
+        "calendar_ref": "fixture-calendar-v1"
+      },
+      "expected": {
+        "status": "VALIDATED",
+        "value": 4.2
+      }
+    },
+    {
+      "id": "unit-missing",
+      "kind": "series",
+      "series_id": "US10Y",
+      "rows": [
+        {
+          "producer": "macro_sync",
+          "observation": {
+            "scope": "OFFLINE_SYNTHETIC",
+            "domain": "MACRO",
+            "key": "US10Y",
+            "value": 42,
+            "unit": null,
+            "currency": null,
+            "observed": {
+              "precision": "DATE",
+              "value": "2026-10-16"
+            },
+            "collected_at": "2026-10-18T10:00:00Z",
+            "run_id": "fixture-macro",
+            "frequency": "DAILY",
+            "period": null,
+            "source": {
+              "provider": "YAHOO",
+              "native_id": "^TNX",
+              "evidence_ref": "fixture-US10Y-2026-10-16",
+              "adapter_version": "fixture-macro-v1"
+            },
+            "nature": "OBSERVED",
+            "formula_ref": null,
+            "input_refs": [],
+            "rights_ref": "fixture-rights-unverified"
+          }
+        }
+      ],
+      "policy": {
+        "scope": "OFFLINE_SYNTHETIC",
+        "id": "macro-cadence-fixture",
+        "version": "v1",
+        "series_id": "US10Y",
+        "frequency": "DAILY",
+        "evaluated_on": "2026-10-18",
+        "expected_period": {
+          "start": "2026-10-16",
+          "end": "2026-10-16"
+        },
+        "publication_due_at": "2026-10-16T22:00:00Z",
+        "calendar_ref": "fixture-calendar-v1"
+      },
+      "expected": {
+        "status": "UNKNOWN",
+        "value": null
+      }
+    },
+    {
+      "id": "unit-INDEX_POINTS",
+      "kind": "series",
+      "series_id": "US10Y",
+      "rows": [
+        {
+          "producer": "macro_sync",
+          "observation": {
+            "scope": "OFFLINE_SYNTHETIC",
+            "domain": "MACRO",
+            "key": "US10Y",
+            "value": 42,
+            "unit": "INDEX_POINTS",
+            "currency": null,
+            "observed": {
+              "precision": "DATE",
+              "value": "2026-10-16"
+            },
+            "collected_at": "2026-10-18T10:00:00Z",
+            "run_id": "fixture-macro",
+            "frequency": "DAILY",
+            "period": null,
+            "source": {
+              "provider": "YAHOO",
+              "native_id": "^TNX",
+              "evidence_ref": "fixture-US10Y-2026-10-16",
+              "adapter_version": "fixture-macro-v1"
+            },
+            "nature": "OBSERVED",
+            "formula_ref": null,
+            "input_refs": [],
+            "rights_ref": "fixture-rights-unverified"
+          }
+        }
+      ],
+      "policy": {
+        "scope": "OFFLINE_SYNTHETIC",
+        "id": "macro-cadence-fixture",
+        "version": "v1",
+        "series_id": "US10Y",
+        "frequency": "DAILY",
+        "evaluated_on": "2026-10-18",
+        "expected_period": {
+          "start": "2026-10-16",
+          "end": "2026-10-16"
+        },
+        "publication_due_at": "2026-10-16T22:00:00Z",
+        "calendar_ref": "fixture-calendar-v1"
+      },
+      "expected": {
+        "status": "UNKNOWN",
+        "value": null
+      }
+    },
+    {
+      "id": "explicit-real-spread",
+      "kind": "series",
+      "series_id": "SPREAD_10Y_2Y",
+      "rows": [
+        {
+          "producer": "fred_observations",
+          "observation": {
+            "scope": "OFFLINE_SYNTHETIC",
+            "domain": "MACRO",
+            "key": "SPREAD_10Y_2Y",
+            "value": -0.3,
+            "unit": "PERCENTAGE_POINTS",
+            "currency": null,
+            "observed": {
+              "precision": "DATE",
+              "value": "2026-10-16"
+            },
+            "collected_at": "2026-10-18T10:00:00Z",
+            "run_id": "fixture-macro",
+            "frequency": "DAILY",
+            "period": null,
+            "source": {
+              "provider": "FRED",
+              "native_id": "T10Y2Y",
+              "evidence_ref": "fixture-SPREAD_10Y_2Y-2026-10-16",
+              "adapter_version": "fixture-macro-v1"
+            },
+            "nature": "OBSERVED",
+            "formula_ref": null,
+            "input_refs": [],
+            "rights_ref": "fixture-rights-unverified"
+          }
+        }
+      ],
+      "policy": {
+        "scope": "OFFLINE_SYNTHETIC",
+        "id": "macro-cadence-fixture",
+        "version": "v1",
+        "series_id": "SPREAD_10Y_2Y",
+        "frequency": "DAILY",
+        "evaluated_on": "2026-10-18",
+        "expected_period": {
+          "start": "2026-10-16",
+          "end": "2026-10-16"
+        },
+        "publication_due_at": "2026-10-16T22:00:00Z",
+        "calendar_ref": "fixture-calendar-v1"
+      },
+      "expected": {
+        "status": "VALIDATED",
+        "value": -0.3
+      }
+    },
+    {
+      "id": "spread-basis-points",
+      "kind": "series",
+      "series_id": "SPREAD_10Y_2Y",
+      "rows": [
+        {
+          "producer": "fred_observations",
+          "observation": {
+            "scope": "OFFLINE_SYNTHETIC",
+            "domain": "MACRO",
+            "key": "SPREAD_10Y_2Y",
+            "value": -30,
+            "unit": "BASIS_POINTS",
+            "currency": null,
+            "observed": {
+              "precision": "DATE",
+              "value": "2026-10-16"
+            },
+            "collected_at": "2026-10-18T10:00:00Z",
+            "run_id": "fixture-macro",
+            "frequency": "DAILY",
+            "period": null,
+            "source": {
+              "provider": "FRED",
+              "native_id": "T10Y2Y",
+              "evidence_ref": "fixture-SPREAD_10Y_2Y-2026-10-16",
+              "adapter_version": "fixture-macro-v1"
+            },
+            "nature": "OBSERVED",
+            "formula_ref": null,
+            "input_refs": [],
+            "rights_ref": "fixture-rights-unverified"
+          }
+        }
+      ],
+      "policy": {
+        "scope": "OFFLINE_SYNTHETIC",
+        "id": "macro-cadence-fixture",
+        "version": "v1",
+        "series_id": "SPREAD_10Y_2Y",
+        "frequency": "DAILY",
+        "evaluated_on": "2026-10-18",
+        "expected_period": {
+          "start": "2026-10-16",
+          "end": "2026-10-16"
+        },
+        "publication_due_at": "2026-10-16T22:00:00Z",
+        "calendar_ref": "fixture-calendar-v1"
+      },
+      "expected": {
+        "status": "VALIDATED",
+        "value": -0.3
+      }
+    },
+    {
+      "id": "five-year-not-two-year",
+      "kind": "series",
+      "series_id": "SPREAD_10Y_2Y",
+      "rows": [
+        {
+          "producer": "fred_observations",
+          "observation": {
+            "scope": "OFFLINE_SYNTHETIC",
+            "domain": "MACRO",
+            "key": "SPREAD_10Y_2Y",
+            "value": 4,
+            "unit": "PERCENTAGE_POINTS",
+            "currency": null,
+            "observed": {
+              "precision": "DATE",
+              "value": "2026-10-16"
+            },
+            "collected_at": "2026-10-18T10:00:00Z",
+            "run_id": "fixture-macro",
+            "frequency": "DAILY",
+            "period": null,
+            "source": {
+              "provider": "YAHOO",
+              "native_id": "^FVX",
+              "evidence_ref": "fixture-SPREAD_10Y_2Y-2026-10-16",
+              "adapter_version": "fixture-macro-v1"
+            },
+            "nature": "OBSERVED",
+            "formula_ref": null,
+            "input_refs": [],
+            "rights_ref": "fixture-rights-unverified"
+          }
+        }
+      ],
+      "policy": {
+        "scope": "OFFLINE_SYNTHETIC",
+        "id": "macro-cadence-fixture",
+        "version": "v1",
+        "series_id": "SPREAD_10Y_2Y",
+        "frequency": "DAILY",
+        "evaluated_on": "2026-10-18",
+        "expected_period": {
+          "start": "2026-10-16",
+          "end": "2026-10-16"
+        },
+        "publication_due_at": "2026-10-16T22:00:00Z",
+        "calendar_ref": "fixture-calendar-v1"
+      },
+      "expected": {
+        "status": "UNKNOWN",
+        "value": null,
+        "reason": "SOURCE_SERIES_MISMATCH"
+      }
+    },
+    {
+      "id": "competing-producers",
+      "kind": "series",
+      "series_id": "VIX",
+      "rows": [
+        {
+          "producer": "macro_sync",
+          "observation": {
+            "scope": "OFFLINE_SYNTHETIC",
+            "domain": "MACRO",
+            "key": "VIX",
+            "value": 20,
+            "unit": "INDEX_POINTS",
+            "currency": null,
+            "observed": {
+              "precision": "DATE",
+              "value": "2026-10-16"
+            },
+            "collected_at": "2026-10-18T10:00:00Z",
+            "run_id": "fixture-macro",
+            "frequency": "DAILY",
+            "period": null,
+            "source": {
+              "provider": "YAHOO",
+              "native_id": "^VIX",
+              "evidence_ref": "fixture-VIX-2026-10-16",
+              "adapter_version": "fixture-macro-v1"
+            },
+            "nature": "OBSERVED",
+            "formula_ref": null,
+            "input_refs": [],
+            "rights_ref": "fixture-rights-unverified"
+          }
+        },
+        {
+          "producer": "bridge",
+          "observation": {
+            "scope": "OFFLINE_SYNTHETIC",
+            "domain": "MACRO",
+            "key": "VIX",
+            "value": 23,
+            "unit": "INDEX_POINTS",
+            "currency": null,
+            "observed": {
+              "precision": "DATE",
+              "value": "2026-10-16"
+            },
+            "collected_at": "2026-10-18T10:00:00Z",
+            "run_id": "fixture-macro",
+            "frequency": "DAILY",
+            "period": null,
+            "source": {
+              "provider": "YAHOO",
+              "native_id": "^VIX",
+              "evidence_ref": "fixture-VIX-2026-10-16",
+              "adapter_version": "fixture-macro-v1"
+            },
+            "nature": "OBSERVED",
+            "formula_ref": null,
+            "input_refs": [],
+            "rights_ref": "fixture-rights-unverified"
+          }
+        }
+      ],
+      "policy": {
+        "scope": "OFFLINE_SYNTHETIC",
+        "id": "macro-cadence-fixture",
+        "version": "v1",
+        "series_id": "VIX",
+        "frequency": "DAILY",
+        "evaluated_on": "2026-10-18",
+        "expected_period": {
+          "start": "2026-10-16",
+          "end": "2026-10-16"
+        },
+        "publication_due_at": "2026-10-16T22:00:00Z",
+        "calendar_ref": "fixture-calendar-v1"
+      },
+      "expected": {
+        "status": "CONFLICT",
+        "value": null
+      }
+    },
+    {
+      "id": "conflicting-rights",
+      "kind": "series",
+      "series_id": "VIX",
+      "rows": [
+        {
+          "producer": "macro_sync",
+          "observation": {
+            "scope": "OFFLINE_SYNTHETIC",
+            "domain": "MACRO",
+            "key": "VIX",
+            "value": 20,
+            "unit": "INDEX_POINTS",
+            "currency": null,
+            "observed": {
+              "precision": "DATE",
+              "value": "2026-10-16"
+            },
+            "collected_at": "2026-10-18T10:00:00Z",
+            "run_id": "fixture-macro",
+            "frequency": "DAILY",
+            "period": null,
+            "source": {
+              "provider": "YAHOO",
+              "native_id": "^VIX",
+              "evidence_ref": "fixture-VIX-2026-10-16",
+              "adapter_version": "fixture-macro-v1"
+            },
+            "nature": "OBSERVED",
+            "formula_ref": null,
+            "input_refs": [],
+            "rights_ref": "fixture-rights-unverified"
+          }
+        },
+        {
+          "producer": "macro_sync",
+          "observation": {
+            "scope": "OFFLINE_SYNTHETIC",
+            "domain": "MACRO",
+            "key": "VIX",
+            "value": 20,
+            "unit": "INDEX_POINTS",
+            "currency": null,
+            "observed": {
+              "precision": "DATE",
+              "value": "2026-10-16"
+            },
+            "collected_at": "2026-10-18T10:00:00Z",
+            "run_id": "fixture-macro",
+            "frequency": "DAILY",
+            "period": null,
+            "source": {
+              "provider": "YAHOO",
+              "native_id": "^VIX",
+              "evidence_ref": "fixture-VIX-2026-10-16",
+              "adapter_version": "fixture-macro-v1"
+            },
+            "nature": "OBSERVED",
+            "formula_ref": null,
+            "input_refs": [],
+            "rights_ref": "other-rights"
+          }
+        }
+      ],
+      "policy": {
+        "scope": "OFFLINE_SYNTHETIC",
+        "id": "macro-cadence-fixture",
+        "version": "v1",
+        "series_id": "VIX",
+        "frequency": "DAILY",
+        "evaluated_on": "2026-10-18",
+        "expected_period": {
+          "start": "2026-10-16",
+          "end": "2026-10-16"
+        },
+        "publication_due_at": "2026-10-16T22:00:00Z",
+        "calendar_ref": "fixture-calendar-v1"
+      },
+      "expected": {
+        "status": "CONFLICT",
+        "value": null
+      }
+    },
+    {
+      "id": "revised-period",
+      "kind": "series",
+      "series_id": "VIX",
+      "rows": [
+        {
+          "producer": "macro_sync",
+          "observation": {
+            "scope": "OFFLINE_SYNTHETIC",
+            "domain": "MACRO",
+            "key": "VIX",
+            "value": 20,
+            "unit": "INDEX_POINTS",
+            "currency": null,
+            "observed": {
+              "precision": "DATE",
+              "value": "2026-10-16"
+            },
+            "collected_at": "2026-10-18T10:00:00Z",
+            "run_id": "fixture-macro",
+            "frequency": "DAILY",
+            "period": null,
+            "source": {
+              "provider": "YAHOO",
+              "native_id": "^VIX",
+              "evidence_ref": "fixture-VIX-2026-10-16",
+              "adapter_version": "fixture-macro-v1"
+            },
+            "nature": "OBSERVED",
+            "formula_ref": null,
+            "input_refs": [],
+            "rights_ref": "fixture-rights-unverified"
+          }
+        },
+        {
+          "producer": "macro_sync",
+          "observation": {
+            "scope": "OFFLINE_SYNTHETIC",
+            "domain": "MACRO",
+            "key": "VIX",
+            "value": 21,
+            "unit": "INDEX_POINTS",
+            "currency": null,
+            "observed": {
+              "precision": "DATE",
+              "value": "2026-10-16"
+            },
+            "collected_at": "2026-10-18T10:00:00Z",
+            "run_id": "fixture-macro",
+            "frequency": "DAILY",
+            "period": null,
+            "source": {
+              "provider": "YAHOO",
+              "native_id": "^VIX",
+              "evidence_ref": "fixture-VIX-2026-10-16",
+              "adapter_version": "fixture-macro-v1"
+            },
+            "nature": "OBSERVED",
+            "formula_ref": null,
+            "input_refs": [],
+            "rights_ref": "fixture-rights-unverified"
+          }
+        }
+      ],
+      "policy": {
+        "scope": "OFFLINE_SYNTHETIC",
+        "id": "macro-cadence-fixture",
+        "version": "v1",
+        "series_id": "VIX",
+        "frequency": "DAILY",
+        "evaluated_on": "2026-10-18",
+        "expected_period": {
+          "start": "2026-10-16",
+          "end": "2026-10-16"
+        },
+        "publication_due_at": "2026-10-16T22:00:00Z",
+        "calendar_ref": "fixture-calendar-v1"
+      },
+      "expected": {
+        "status": "CONFLICT",
+        "value": null
+      }
+    },
+    {
+      "id": "identical-replay",
+      "kind": "series",
+      "series_id": "VIX",
+      "rows": [
+        {
+          "producer": "macro_sync",
+          "observation": {
+            "scope": "OFFLINE_SYNTHETIC",
+            "domain": "MACRO",
+            "key": "VIX",
+            "value": 20,
+            "unit": "INDEX_POINTS",
+            "currency": null,
+            "observed": {
+              "precision": "DATE",
+              "value": "2026-10-16"
+            },
+            "collected_at": "2026-10-18T11:00:00Z",
+            "run_id": "fixture-macro",
+            "frequency": "DAILY",
+            "period": null,
+            "source": {
+              "provider": "YAHOO",
+              "native_id": "^VIX",
+              "evidence_ref": "fixture-VIX-2026-10-16",
+              "adapter_version": "fixture-macro-v1"
+            },
+            "nature": "OBSERVED",
+            "formula_ref": null,
+            "input_refs": [],
+            "rights_ref": "fixture-rights-unverified"
+          }
+        },
+        {
+          "producer": "macro_sync",
+          "observation": {
+            "scope": "OFFLINE_SYNTHETIC",
+            "domain": "MACRO",
+            "key": "VIX",
+            "value": 20,
+            "unit": "INDEX_POINTS",
+            "currency": null,
+            "observed": {
+              "precision": "DATE",
+              "value": "2026-10-16"
+            },
+            "collected_at": "2026-10-18T10:00:00Z",
+            "run_id": "fixture-macro",
+            "frequency": "DAILY",
+            "period": null,
+            "source": {
+              "provider": "YAHOO",
+              "native_id": "^VIX",
+              "evidence_ref": "fixture-VIX-2026-10-16",
+              "adapter_version": "fixture-macro-v1"
+            },
+            "nature": "OBSERVED",
+            "formula_ref": null,
+            "input_refs": [],
+            "rights_ref": "fixture-rights-unverified"
+          }
+        }
+      ],
+      "policy": {
+        "scope": "OFFLINE_SYNTHETIC",
+        "id": "macro-cadence-fixture",
+        "version": "v1",
+        "series_id": "VIX",
+        "frequency": "DAILY",
+        "evaluated_on": "2026-10-18",
+        "expected_period": {
+          "start": "2026-10-16",
+          "end": "2026-10-16"
+        },
+        "publication_due_at": "2026-10-16T22:00:00Z",
+        "calendar_ref": "fixture-calendar-v1"
+      },
+      "expected": {
+        "status": "VALIDATED",
+        "value": 20
+      }
+    },
+    {
+      "id": "pmi-no-proxy",
+      "kind": "series",
+      "series_id": "PMI_MANUFACTURING",
+      "rows": [],
+      "policy": null,
+      "expected": {
+        "status": "MISSING",
+        "value": null,
+        "reason": "PMI_SOURCE_USAGE_PERIOD_UNVERIFIED"
+      }
+    },
+    {
+      "id": "payroll-unit-not-supported",
+      "kind": "series",
+      "series_id": "PAYEMS",
+      "rows": [],
+      "policy": null,
+      "expected": {
+        "status": "MISSING",
+        "value": null,
+        "reason": "THOUSANDS_PERSONS_UNIT_NOT_IN_L0_V1"
+      }
+    },
+    {
+      "id": "monthly-calendar",
+      "kind": "series",
+      "series_id": "UNRATE",
+      "rows": [
+        {
+          "producer": "fred_observations",
+          "observation": {
+            "scope": "OFFLINE_SYNTHETIC",
+            "domain": "MACRO",
+            "key": "UNRATE",
+            "value": 4,
+            "unit": "PERCENT",
+            "currency": null,
+            "observed": {
+              "precision": "DATE",
+              "value": "2026-10-15"
+            },
+            "collected_at": "2026-10-18T10:00:00Z",
+            "run_id": "fixture-macro",
+            "frequency": "MONTHLY",
+            "period": {
+              "start": "2026-09-01",
+              "end": "2026-09-30"
+            },
+            "source": {
+              "provider": "FRED",
+              "native_id": "UNRATE",
+              "evidence_ref": "fixture-UNRATE-2026-09-01",
+              "adapter_version": "fixture-macro-v1"
+            },
+            "nature": "OBSERVED",
+            "formula_ref": null,
+            "input_refs": [],
+            "rights_ref": "fixture-rights-unverified"
+          }
+        }
+      ],
+      "policy": {
+        "scope": "OFFLINE_SYNTHETIC",
+        "id": "macro-cadence-fixture",
+        "version": "v1",
+        "series_id": "UNRATE",
+        "frequency": "MONTHLY",
+        "evaluated_on": "2026-10-18",
+        "expected_period": {
+          "start": "2026-09-01",
+          "end": "2026-09-30"
+        },
+        "publication_due_at": "2026-10-15T18:00:00Z",
+        "calendar_ref": "fixture-calendar-v1"
+      },
+      "expected": {
+        "status": "VALIDATED",
+        "value": 4
+      }
+    },
+    {
+      "id": "monthly-late-revision-not-fresh-period",
+      "kind": "series",
+      "series_id": "UNRATE",
+      "rows": [
+        {
+          "producer": "fred_observations",
+          "observation": {
+            "scope": "OFFLINE_SYNTHETIC",
+            "domain": "MACRO",
+            "key": "UNRATE",
+            "value": 4,
+            "unit": "PERCENT",
+            "currency": null,
+            "observed": {
+              "precision": "DATE",
+              "value": "2026-10-15"
+            },
+            "collected_at": "2026-10-18T10:00:00Z",
+            "run_id": "fixture-macro",
+            "frequency": "MONTHLY",
+            "period": {
+              "start": "2026-08-01",
+              "end": "2026-08-31"
+            },
+            "source": {
+              "provider": "FRED",
+              "native_id": "UNRATE",
+              "evidence_ref": "fixture-UNRATE-2026-08-01",
+              "adapter_version": "fixture-macro-v1"
+            },
+            "nature": "OBSERVED",
+            "formula_ref": null,
+            "input_refs": [],
+            "rights_ref": "fixture-rights-unverified"
+          }
+        }
+      ],
+      "policy": {
+        "scope": "OFFLINE_SYNTHETIC",
+        "id": "macro-cadence-fixture",
+        "version": "v1",
+        "series_id": "UNRATE",
+        "frequency": "MONTHLY",
+        "evaluated_on": "2026-10-18",
+        "expected_period": {
+          "start": "2026-09-01",
+          "end": "2026-09-30"
+        },
+        "publication_due_at": "2026-10-15T18:00:00Z",
+        "calendar_ref": "fixture-calendar-v1"
+      },
+      "expected": {
+        "status": "STALE",
+        "value": 4,
+        "reason": "EXPECTED_PERIOD_MISSING"
+      }
+    },
+    {
+      "id": "misery-exact-months",
+      "kind": "misery",
+      "cpi": [
+        {
+          "producer": "fred_observations",
+          "observation": {
+            "scope": "OFFLINE_SYNTHETIC",
+            "domain": "MACRO",
+            "key": "CPIAUCSL",
+            "value": 300,
+            "unit": "INDEX_POINTS",
+            "currency": null,
+            "observed": {
+              "precision": "DATE",
+              "value": "2025-10-15"
+            },
+            "collected_at": "2026-10-18T10:00:00Z",
+            "run_id": "fixture-macro",
+            "frequency": "MONTHLY",
+            "period": {
+              "start": "2025-09-01",
+              "end": "2025-09-30"
+            },
+            "source": {
+              "provider": "FRED",
+              "native_id": "CPIAUCSL",
+              "evidence_ref": "fixture-CPIAUCSL-2025-09-01",
+              "adapter_version": "fixture-macro-v1"
+            },
+            "nature": "OBSERVED",
+            "formula_ref": null,
+            "input_refs": [],
+            "rights_ref": "fixture-rights-unverified"
+          }
+        },
+        {
+          "producer": "fred_observations",
+          "observation": {
+            "scope": "OFFLINE_SYNTHETIC",
+            "domain": "MACRO",
+            "key": "CPIAUCSL",
+            "value": 300.5,
+            "unit": "INDEX_POINTS",
+            "currency": null,
+            "observed": {
+              "precision": "DATE",
+              "value": "2025-11-15"
+            },
+            "collected_at": "2026-10-18T10:00:00Z",
+            "run_id": "fixture-macro",
+            "frequency": "MONTHLY",
+            "period": {
+              "start": "2025-10-01",
+              "end": "2025-10-31"
+            },
+            "source": {
+              "provider": "FRED",
+              "native_id": "CPIAUCSL",
+              "evidence_ref": "fixture-CPIAUCSL-2025-10-01",
+              "adapter_version": "fixture-macro-v1"
+            },
+            "nature": "OBSERVED",
+            "formula_ref": null,
+            "input_refs": [],
+            "rights_ref": "fixture-rights-unverified"
+          }
+        },
+        {
+          "producer": "fred_observations",
+          "observation": {
+            "scope": "OFFLINE_SYNTHETIC",
+            "domain": "MACRO",
+            "key": "CPIAUCSL",
+            "value": 301,
+            "unit": "INDEX_POINTS",
+            "currency": null,
+            "observed": {
+              "precision": "DATE",
+              "value": "2025-12-15"
+            },
+            "collected_at": "2026-10-18T10:00:00Z",
+            "run_id": "fixture-macro",
+            "frequency": "MONTHLY",
+            "period": {
+              "start": "2025-11-01",
+              "end": "2025-11-30"
+            },
+            "source": {
+              "provider": "FRED",
+              "native_id": "CPIAUCSL",
+              "evidence_ref": "fixture-CPIAUCSL-2025-11-01",
+              "adapter_version": "fixture-macro-v1"
+            },
+            "nature": "OBSERVED",
+            "formula_ref": null,
+            "input_refs": [],
+            "rights_ref": "fixture-rights-unverified"
+          }
+        },
+        {
+          "producer": "fred_observations",
+          "observation": {
+            "scope": "OFFLINE_SYNTHETIC",
+            "domain": "MACRO",
+            "key": "CPIAUCSL",
+            "value": 301.5,
+            "unit": "INDEX_POINTS",
+            "currency": null,
+            "observed": {
+              "precision": "DATE",
+              "value": "2026-01-15"
+            },
+            "collected_at": "2026-10-18T10:00:00Z",
+            "run_id": "fixture-macro",
+            "frequency": "MONTHLY",
+            "period": {
+              "start": "2025-12-01",
+              "end": "2025-12-31"
+            },
+            "source": {
+              "provider": "FRED",
+              "native_id": "CPIAUCSL",
+              "evidence_ref": "fixture-CPIAUCSL-2025-12-01",
+              "adapter_version": "fixture-macro-v1"
+            },
+            "nature": "OBSERVED",
+            "formula_ref": null,
+            "input_refs": [],
+            "rights_ref": "fixture-rights-unverified"
+          }
+        },
+        {
+          "producer": "fred_observations",
+          "observation": {
+            "scope": "OFFLINE_SYNTHETIC",
+            "domain": "MACRO",
+            "key": "CPIAUCSL",
+            "value": 302,
+            "unit": "INDEX_POINTS",
+            "currency": null,
+            "observed": {
+              "precision": "DATE",
+              "value": "2026-02-15"
+            },
+            "collected_at": "2026-10-18T10:00:00Z",
+            "run_id": "fixture-macro",
+            "frequency": "MONTHLY",
+            "period": {
+              "start": "2026-01-01",
+              "end": "2026-01-31"
+            },
+            "source": {
+              "provider": "FRED",
+              "native_id": "CPIAUCSL",
+              "evidence_ref": "fixture-CPIAUCSL-2026-01-01",
+              "adapter_version": "fixture-macro-v1"
+            },
+            "nature": "OBSERVED",
+            "formula_ref": null,
+            "input_refs": [],
+            "rights_ref": "fixture-rights-unverified"
+          }
+        },
+        {
+          "producer": "fred_observations",
+          "observation": {
+            "scope": "OFFLINE_SYNTHETIC",
+            "domain": "MACRO",
+            "key": "CPIAUCSL",
+            "value": 302.5,
+            "unit": "INDEX_POINTS",
+            "currency": null,
+            "observed": {
+              "precision": "DATE",
+              "value": "2026-03-15"
+            },
+            "collected_at": "2026-10-18T10:00:00Z",
+            "run_id": "fixture-macro",
+            "frequency": "MONTHLY",
+            "period": {
+              "start": "2026-02-01",
+              "end": "2026-02-28"
+            },
+            "source": {
+              "provider": "FRED",
+              "native_id": "CPIAUCSL",
+              "evidence_ref": "fixture-CPIAUCSL-2026-02-01",
+              "adapter_version": "fixture-macro-v1"
+            },
+            "nature": "OBSERVED",
+            "formula_ref": null,
+            "input_refs": [],
+            "rights_ref": "fixture-rights-unverified"
+          }
+        },
+        {
+          "producer": "fred_observations",
+          "observation": {
+            "scope": "OFFLINE_SYNTHETIC",
+            "domain": "MACRO",
+            "key": "CPIAUCSL",
+            "value": 303,
+            "unit": "INDEX_POINTS",
+            "currency": null,
+            "observed": {
+              "precision": "DATE",
+              "value": "2026-04-15"
+            },
+            "collected_at": "2026-10-18T10:00:00Z",
+            "run_id": "fixture-macro",
+            "frequency": "MONTHLY",
+            "period": {
+              "start": "2026-03-01",
+              "end": "2026-03-31"
+            },
+            "source": {
+              "provider": "FRED",
+              "native_id": "CPIAUCSL",
+              "evidence_ref": "fixture-CPIAUCSL-2026-03-01",
+              "adapter_version": "fixture-macro-v1"
+            },
+            "nature": "OBSERVED",
+            "formula_ref": null,
+            "input_refs": [],
+            "rights_ref": "fixture-rights-unverified"
+          }
+        },
+        {
+          "producer": "fred_observations",
+          "observation": {
+            "scope": "OFFLINE_SYNTHETIC",
+            "domain": "MACRO",
+            "key": "CPIAUCSL",
+            "value": 303.5,
+            "unit": "INDEX_POINTS",
+            "currency": null,
+            "observed": {
+              "precision": "DATE",
+              "value": "2026-05-15"
+            },
+            "collected_at": "2026-10-18T10:00:00Z",
+            "run_id": "fixture-macro",
+            "frequency": "MONTHLY",
+            "period": {
+              "start": "2026-04-01",
+              "end": "2026-04-30"
+            },
+            "source": {
+              "provider": "FRED",
+              "native_id": "CPIAUCSL",
+              "evidence_ref": "fixture-CPIAUCSL-2026-04-01",
+              "adapter_version": "fixture-macro-v1"
+            },
+            "nature": "OBSERVED",
+            "formula_ref": null,
+            "input_refs": [],
+            "rights_ref": "fixture-rights-unverified"
+          }
+        },
+        {
+          "producer": "fred_observations",
+          "observation": {
+            "scope": "OFFLINE_SYNTHETIC",
+            "domain": "MACRO",
+            "key": "CPIAUCSL",
+            "value": 304,
+            "unit": "INDEX_POINTS",
+            "currency": null,
+            "observed": {
+              "precision": "DATE",
+              "value": "2026-06-15"
+            },
+            "collected_at": "2026-10-18T10:00:00Z",
+            "run_id": "fixture-macro",
+            "frequency": "MONTHLY",
+            "period": {
+              "start": "2026-05-01",
+              "end": "2026-05-31"
+            },
+            "source": {
+              "provider": "FRED",
+              "native_id": "CPIAUCSL",
+              "evidence_ref": "fixture-CPIAUCSL-2026-05-01",
+              "adapter_version": "fixture-macro-v1"
+            },
+            "nature": "OBSERVED",
+            "formula_ref": null,
+            "input_refs": [],
+            "rights_ref": "fixture-rights-unverified"
+          }
+        },
+        {
+          "producer": "fred_observations",
+          "observation": {
+            "scope": "OFFLINE_SYNTHETIC",
+            "domain": "MACRO",
+            "key": "CPIAUCSL",
+            "value": 304.5,
+            "unit": "INDEX_POINTS",
+            "currency": null,
+            "observed": {
+              "precision": "DATE",
+              "value": "2026-07-15"
+            },
+            "collected_at": "2026-10-18T10:00:00Z",
+            "run_id": "fixture-macro",
+            "frequency": "MONTHLY",
+            "period": {
+              "start": "2026-06-01",
+              "end": "2026-06-30"
+            },
+            "source": {
+              "provider": "FRED",
+              "native_id": "CPIAUCSL",
+              "evidence_ref": "fixture-CPIAUCSL-2026-06-01",
+              "adapter_version": "fixture-macro-v1"
+            },
+            "nature": "OBSERVED",
+            "formula_ref": null,
+            "input_refs": [],
+            "rights_ref": "fixture-rights-unverified"
+          }
+        },
+        {
+          "producer": "fred_observations",
+          "observation": {
+            "scope": "OFFLINE_SYNTHETIC",
+            "domain": "MACRO",
+            "key": "CPIAUCSL",
+            "value": 305,
+            "unit": "INDEX_POINTS",
+            "currency": null,
+            "observed": {
+              "precision": "DATE",
+              "value": "2026-08-15"
+            },
+            "collected_at": "2026-10-18T10:00:00Z",
+            "run_id": "fixture-macro",
+            "frequency": "MONTHLY",
+            "period": {
+              "start": "2026-07-01",
+              "end": "2026-07-31"
+            },
+            "source": {
+              "provider": "FRED",
+              "native_id": "CPIAUCSL",
+              "evidence_ref": "fixture-CPIAUCSL-2026-07-01",
+              "adapter_version": "fixture-macro-v1"
+            },
+            "nature": "OBSERVED",
+            "formula_ref": null,
+            "input_refs": [],
+            "rights_ref": "fixture-rights-unverified"
+          }
+        },
+        {
+          "producer": "fred_observations",
+          "observation": {
+            "scope": "OFFLINE_SYNTHETIC",
+            "domain": "MACRO",
+            "key": "CPIAUCSL",
+            "value": 305.5,
+            "unit": "INDEX_POINTS",
+            "currency": null,
+            "observed": {
+              "precision": "DATE",
+              "value": "2026-09-15"
+            },
+            "collected_at": "2026-10-18T10:00:00Z",
+            "run_id": "fixture-macro",
+            "frequency": "MONTHLY",
+            "period": {
+              "start": "2026-08-01",
+              "end": "2026-08-31"
+            },
+            "source": {
+              "provider": "FRED",
+              "native_id": "CPIAUCSL",
+              "evidence_ref": "fixture-CPIAUCSL-2026-08-01",
+              "adapter_version": "fixture-macro-v1"
+            },
+            "nature": "OBSERVED",
+            "formula_ref": null,
+            "input_refs": [],
+            "rights_ref": "fixture-rights-unverified"
+          }
+        },
+        {
+          "producer": "fred_observations",
+          "observation": {
+            "scope": "OFFLINE_SYNTHETIC",
+            "domain": "MACRO",
+            "key": "CPIAUCSL",
+            "value": 306,
+            "unit": "INDEX_POINTS",
+            "currency": null,
+            "observed": {
+              "precision": "DATE",
+              "value": "2026-10-15"
+            },
+            "collected_at": "2026-10-18T10:00:00Z",
+            "run_id": "fixture-macro",
+            "frequency": "MONTHLY",
+            "period": {
+              "start": "2026-09-01",
+              "end": "2026-09-30"
+            },
+            "source": {
+              "provider": "FRED",
+              "native_id": "CPIAUCSL",
+              "evidence_ref": "fixture-CPIAUCSL-2026-09-01",
+              "adapter_version": "fixture-macro-v1"
+            },
+            "nature": "OBSERVED",
+            "formula_ref": null,
+            "input_refs": [],
+            "rights_ref": "fixture-rights-unverified"
+          }
+        }
+      ],
+      "unrate": [
+        {
+          "producer": "fred_observations",
+          "observation": {
+            "scope": "OFFLINE_SYNTHETIC",
+            "domain": "MACRO",
+            "key": "UNRATE",
+            "value": 4,
+            "unit": "PERCENT",
+            "currency": null,
+            "observed": {
+              "precision": "DATE",
+              "value": "2026-10-15"
+            },
+            "collected_at": "2026-10-18T10:00:00Z",
+            "run_id": "fixture-macro",
+            "frequency": "MONTHLY",
+            "period": {
+              "start": "2026-09-01",
+              "end": "2026-09-30"
+            },
+            "source": {
+              "provider": "FRED",
+              "native_id": "UNRATE",
+              "evidence_ref": "fixture-UNRATE-2026-09-01",
+              "adapter_version": "fixture-macro-v1"
+            },
+            "nature": "OBSERVED",
+            "formula_ref": null,
+            "input_refs": [],
+            "rights_ref": "fixture-rights-unverified"
+          }
+        }
+      ],
+      "policies": {
+        "CPIAUCSL": {
+          "scope": "OFFLINE_SYNTHETIC",
+          "id": "macro-cadence-fixture",
+          "version": "v1",
+          "series_id": "CPIAUCSL",
+          "frequency": "MONTHLY",
+          "evaluated_on": "2026-10-18",
+          "expected_period": {
+            "start": "2026-09-01",
+            "end": "2026-09-30"
+          },
+          "publication_due_at": "2026-10-15T18:00:00Z",
+          "calendar_ref": "fixture-calendar-v1"
+        },
+        "UNRATE": {
+          "scope": "OFFLINE_SYNTHETIC",
+          "id": "macro-cadence-fixture",
+          "version": "v1",
+          "series_id": "UNRATE",
+          "frequency": "MONTHLY",
+          "evaluated_on": "2026-10-18",
+          "expected_period": {
+            "start": "2026-09-01",
+            "end": "2026-09-30"
+          },
+          "publication_due_at": "2026-10-15T18:00:00Z",
+          "calendar_ref": "fixture-calendar-v1"
+        },
+        "MISERY_INDEX": {
+          "scope": "OFFLINE_SYNTHETIC",
+          "id": "macro-cadence-fixture",
+          "version": "v1",
+          "series_id": "MISERY_INDEX",
+          "frequency": "MONTHLY",
+          "evaluated_on": "2026-10-18",
+          "expected_period": {
+            "start": "2026-09-01",
+            "end": "2026-09-30"
+          },
+          "publication_due_at": "2026-10-15T18:00:00Z",
+          "calendar_ref": "fixture-calendar-v1"
+        }
+      },
+      "expected": {
+        "status": "VALIDATED",
+        "value": 6
+      }
+    },
+    {
+      "id": "misery-no-cpi",
+      "kind": "misery",
+      "cpi": [],
+      "unrate": [
+        {
+          "producer": "fred_observations",
+          "observation": {
+            "scope": "OFFLINE_SYNTHETIC",
+            "domain": "MACRO",
+            "key": "UNRATE",
+            "value": 4,
+            "unit": "PERCENT",
+            "currency": null,
+            "observed": {
+              "precision": "DATE",
+              "value": "2026-10-15"
+            },
+            "collected_at": "2026-10-18T10:00:00Z",
+            "run_id": "fixture-macro",
+            "frequency": "MONTHLY",
+            "period": {
+              "start": "2026-09-01",
+              "end": "2026-09-30"
+            },
+            "source": {
+              "provider": "FRED",
+              "native_id": "UNRATE",
+              "evidence_ref": "fixture-UNRATE-2026-09-01",
+              "adapter_version": "fixture-macro-v1"
+            },
+            "nature": "OBSERVED",
+            "formula_ref": null,
+            "input_refs": [],
+            "rights_ref": "fixture-rights-unverified"
+          }
+        }
+      ],
+      "policies": {
+        "CPIAUCSL": {
+          "scope": "OFFLINE_SYNTHETIC",
+          "id": "macro-cadence-fixture",
+          "version": "v1",
+          "series_id": "CPIAUCSL",
+          "frequency": "MONTHLY",
+          "evaluated_on": "2026-10-18",
+          "expected_period": {
+            "start": "2026-09-01",
+            "end": "2026-09-30"
+          },
+          "publication_due_at": "2026-10-15T18:00:00Z",
+          "calendar_ref": "fixture-calendar-v1"
+        },
+        "UNRATE": {
+          "scope": "OFFLINE_SYNTHETIC",
+          "id": "macro-cadence-fixture",
+          "version": "v1",
+          "series_id": "UNRATE",
+          "frequency": "MONTHLY",
+          "evaluated_on": "2026-10-18",
+          "expected_period": {
+            "start": "2026-09-01",
+            "end": "2026-09-30"
+          },
+          "publication_due_at": "2026-10-15T18:00:00Z",
+          "calendar_ref": "fixture-calendar-v1"
+        },
+        "MISERY_INDEX": {
+          "scope": "OFFLINE_SYNTHETIC",
+          "id": "macro-cadence-fixture",
+          "version": "v1",
+          "series_id": "MISERY_INDEX",
+          "frequency": "MONTHLY",
+          "evaluated_on": "2026-10-18",
+          "expected_period": {
+            "start": "2026-09-01",
+            "end": "2026-09-30"
+          },
+          "publication_due_at": "2026-10-15T18:00:00Z",
+          "calendar_ref": "fixture-calendar-v1"
+        }
+      },
+      "expected": {
+        "status": "MISSING",
+        "value": null
+      }
+    },
+    {
+      "id": "misery-no-unemployment",
+      "kind": "misery",
+      "cpi": [
+        {
+          "producer": "fred_observations",
+          "observation": {
+            "scope": "OFFLINE_SYNTHETIC",
+            "domain": "MACRO",
+            "key": "CPIAUCSL",
+            "value": 300,
+            "unit": "INDEX_POINTS",
+            "currency": null,
+            "observed": {
+              "precision": "DATE",
+              "value": "2025-10-15"
+            },
+            "collected_at": "2026-10-18T10:00:00Z",
+            "run_id": "fixture-macro",
+            "frequency": "MONTHLY",
+            "period": {
+              "start": "2025-09-01",
+              "end": "2025-09-30"
+            },
+            "source": {
+              "provider": "FRED",
+              "native_id": "CPIAUCSL",
+              "evidence_ref": "fixture-CPIAUCSL-2025-09-01",
+              "adapter_version": "fixture-macro-v1"
+            },
+            "nature": "OBSERVED",
+            "formula_ref": null,
+            "input_refs": [],
+            "rights_ref": "fixture-rights-unverified"
+          }
+        },
+        {
+          "producer": "fred_observations",
+          "observation": {
+            "scope": "OFFLINE_SYNTHETIC",
+            "domain": "MACRO",
+            "key": "CPIAUCSL",
+            "value": 300.5,
+            "unit": "INDEX_POINTS",
+            "currency": null,
+            "observed": {
+              "precision": "DATE",
+              "value": "2025-11-15"
+            },
+            "collected_at": "2026-10-18T10:00:00Z",
+            "run_id": "fixture-macro",
+            "frequency": "MONTHLY",
+            "period": {
+              "start": "2025-10-01",
+              "end": "2025-10-31"
+            },
+            "source": {
+              "provider": "FRED",
+              "native_id": "CPIAUCSL",
+              "evidence_ref": "fixture-CPIAUCSL-2025-10-01",
+              "adapter_version": "fixture-macro-v1"
+            },
+            "nature": "OBSERVED",
+            "formula_ref": null,
+            "input_refs": [],
+            "rights_ref": "fixture-rights-unverified"
+          }
+        },
+        {
+          "producer": "fred_observations",
+          "observation": {
+            "scope": "OFFLINE_SYNTHETIC",
+            "domain": "MACRO",
+            "key": "CPIAUCSL",
+            "value": 301,
+            "unit": "INDEX_POINTS",
+            "currency": null,
+            "observed": {
+              "precision": "DATE",
+              "value": "2025-12-15"
+            },
+            "collected_at": "2026-10-18T10:00:00Z",
+            "run_id": "fixture-macro",
+            "frequency": "MONTHLY",
+            "period": {
+              "start": "2025-11-01",
+              "end": "2025-11-30"
+            },
+            "source": {
+              "provider": "FRED",
+              "native_id": "CPIAUCSL",
+              "evidence_ref": "fixture-CPIAUCSL-2025-11-01",
+              "adapter_version": "fixture-macro-v1"
+            },
+            "nature": "OBSERVED",
+            "formula_ref": null,
+            "input_refs": [],
+            "rights_ref": "fixture-rights-unverified"
+          }
+        },
+        {
+          "producer": "fred_observations",
+          "observation": {
+            "scope": "OFFLINE_SYNTHETIC",
+            "domain": "MACRO",
+            "key": "CPIAUCSL",
+            "value": 301.5,
+            "unit": "INDEX_POINTS",
+            "currency": null,
+            "observed": {
+              "precision": "DATE",
+              "value": "2026-01-15"
+            },
+            "collected_at": "2026-10-18T10:00:00Z",
+            "run_id": "fixture-macro",
+            "frequency": "MONTHLY",
+            "period": {
+              "start": "2025-12-01",
+              "end": "2025-12-31"
+            },
+            "source": {
+              "provider": "FRED",
+              "native_id": "CPIAUCSL",
+              "evidence_ref": "fixture-CPIAUCSL-2025-12-01",
+              "adapter_version": "fixture-macro-v1"
+            },
+            "nature": "OBSERVED",
+            "formula_ref": null,
+            "input_refs": [],
+            "rights_ref": "fixture-rights-unverified"
+          }
+        },
+        {
+          "producer": "fred_observations",
+          "observation": {
+            "scope": "OFFLINE_SYNTHETIC",
+            "domain": "MACRO",
+            "key": "CPIAUCSL",
+            "value": 302,
+            "unit": "INDEX_POINTS",
+            "currency": null,
+            "observed": {
+              "precision": "DATE",
+              "value": "2026-02-15"
+            },
+            "collected_at": "2026-10-18T10:00:00Z",
+            "run_id": "fixture-macro",
+            "frequency": "MONTHLY",
+            "period": {
+              "start": "2026-01-01",
+              "end": "2026-01-31"
+            },
+            "source": {
+              "provider": "FRED",
+              "native_id": "CPIAUCSL",
+              "evidence_ref": "fixture-CPIAUCSL-2026-01-01",
+              "adapter_version": "fixture-macro-v1"
+            },
+            "nature": "OBSERVED",
+            "formula_ref": null,
+            "input_refs": [],
+            "rights_ref": "fixture-rights-unverified"
+          }
+        },
+        {
+          "producer": "fred_observations",
+          "observation": {
+            "scope": "OFFLINE_SYNTHETIC",
+            "domain": "MACRO",
+            "key": "CPIAUCSL",
+            "value": 302.5,
+            "unit": "INDEX_POINTS",
+            "currency": null,
+            "observed": {
+              "precision": "DATE",
+              "value": "2026-03-15"
+            },
+            "collected_at": "2026-10-18T10:00:00Z",
+            "run_id": "fixture-macro",
+            "frequency": "MONTHLY",
+            "period": {
+              "start": "2026-02-01",
+              "end": "2026-02-28"
+            },
+            "source": {
+              "provider": "FRED",
+              "native_id": "CPIAUCSL",
+              "evidence_ref": "fixture-CPIAUCSL-2026-02-01",
+              "adapter_version": "fixture-macro-v1"
+            },
+            "nature": "OBSERVED",
+            "formula_ref": null,
+            "input_refs": [],
+            "rights_ref": "fixture-rights-unverified"
+          }
+        },
+        {
+          "producer": "fred_observations",
+          "observation": {
+            "scope": "OFFLINE_SYNTHETIC",
+            "domain": "MACRO",
+            "key": "CPIAUCSL",
+            "value": 303,
+            "unit": "INDEX_POINTS",
+            "currency": null,
+            "observed": {
+              "precision": "DATE",
+              "value": "2026-04-15"
+            },
+            "collected_at": "2026-10-18T10:00:00Z",
+            "run_id": "fixture-macro",
+            "frequency": "MONTHLY",
+            "period": {
+              "start": "2026-03-01",
+              "end": "2026-03-31"
+            },
+            "source": {
+              "provider": "FRED",
+              "native_id": "CPIAUCSL",
+              "evidence_ref": "fixture-CPIAUCSL-2026-03-01",
+              "adapter_version": "fixture-macro-v1"
+            },
+            "nature": "OBSERVED",
+            "formula_ref": null,
+            "input_refs": [],
+            "rights_ref": "fixture-rights-unverified"
+          }
+        },
+        {
+          "producer": "fred_observations",
+          "observation": {
+            "scope": "OFFLINE_SYNTHETIC",
+            "domain": "MACRO",
+            "key": "CPIAUCSL",
+            "value": 303.5,
+            "unit": "INDEX_POINTS",
+            "currency": null,
+            "observed": {
+              "precision": "DATE",
+              "value": "2026-05-15"
+            },
+            "collected_at": "2026-10-18T10:00:00Z",
+            "run_id": "fixture-macro",
+            "frequency": "MONTHLY",
+            "period": {
+              "start": "2026-04-01",
+              "end": "2026-04-30"
+            },
+            "source": {
+              "provider": "FRED",
+              "native_id": "CPIAUCSL",
+              "evidence_ref": "fixture-CPIAUCSL-2026-04-01",
+              "adapter_version": "fixture-macro-v1"
+            },
+            "nature": "OBSERVED",
+            "formula_ref": null,
+            "input_refs": [],
+            "rights_ref": "fixture-rights-unverified"
+          }
+        },
+        {
+          "producer": "fred_observations",
+          "observation": {
+            "scope": "OFFLINE_SYNTHETIC",
+            "domain": "MACRO",
+            "key": "CPIAUCSL",
+            "value": 304,
+            "unit": "INDEX_POINTS",
+            "currency": null,
+            "observed": {
+              "precision": "DATE",
+              "value": "2026-06-15"
+            },
+            "collected_at": "2026-10-18T10:00:00Z",
+            "run_id": "fixture-macro",
+            "frequency": "MONTHLY",
+            "period": {
+              "start": "2026-05-01",
+              "end": "2026-05-31"
+            },
+            "source": {
+              "provider": "FRED",
+              "native_id": "CPIAUCSL",
+              "evidence_ref": "fixture-CPIAUCSL-2026-05-01",
+              "adapter_version": "fixture-macro-v1"
+            },
+            "nature": "OBSERVED",
+            "formula_ref": null,
+            "input_refs": [],
+            "rights_ref": "fixture-rights-unverified"
+          }
+        },
+        {
+          "producer": "fred_observations",
+          "observation": {
+            "scope": "OFFLINE_SYNTHETIC",
+            "domain": "MACRO",
+            "key": "CPIAUCSL",
+            "value": 304.5,
+            "unit": "INDEX_POINTS",
+            "currency": null,
+            "observed": {
+              "precision": "DATE",
+              "value": "2026-07-15"
+            },
+            "collected_at": "2026-10-18T10:00:00Z",
+            "run_id": "fixture-macro",
+            "frequency": "MONTHLY",
+            "period": {
+              "start": "2026-06-01",
+              "end": "2026-06-30"
+            },
+            "source": {
+              "provider": "FRED",
+              "native_id": "CPIAUCSL",
+              "evidence_ref": "fixture-CPIAUCSL-2026-06-01",
+              "adapter_version": "fixture-macro-v1"
+            },
+            "nature": "OBSERVED",
+            "formula_ref": null,
+            "input_refs": [],
+            "rights_ref": "fixture-rights-unverified"
+          }
+        },
+        {
+          "producer": "fred_observations",
+          "observation": {
+            "scope": "OFFLINE_SYNTHETIC",
+            "domain": "MACRO",
+            "key": "CPIAUCSL",
+            "value": 305,
+            "unit": "INDEX_POINTS",
+            "currency": null,
+            "observed": {
+              "precision": "DATE",
+              "value": "2026-08-15"
+            },
+            "collected_at": "2026-10-18T10:00:00Z",
+            "run_id": "fixture-macro",
+            "frequency": "MONTHLY",
+            "period": {
+              "start": "2026-07-01",
+              "end": "2026-07-31"
+            },
+            "source": {
+              "provider": "FRED",
+              "native_id": "CPIAUCSL",
+              "evidence_ref": "fixture-CPIAUCSL-2026-07-01",
+              "adapter_version": "fixture-macro-v1"
+            },
+            "nature": "OBSERVED",
+            "formula_ref": null,
+            "input_refs": [],
+            "rights_ref": "fixture-rights-unverified"
+          }
+        },
+        {
+          "producer": "fred_observations",
+          "observation": {
+            "scope": "OFFLINE_SYNTHETIC",
+            "domain": "MACRO",
+            "key": "CPIAUCSL",
+            "value": 305.5,
+            "unit": "INDEX_POINTS",
+            "currency": null,
+            "observed": {
+              "precision": "DATE",
+              "value": "2026-09-15"
+            },
+            "collected_at": "2026-10-18T10:00:00Z",
+            "run_id": "fixture-macro",
+            "frequency": "MONTHLY",
+            "period": {
+              "start": "2026-08-01",
+              "end": "2026-08-31"
+            },
+            "source": {
+              "provider": "FRED",
+              "native_id": "CPIAUCSL",
+              "evidence_ref": "fixture-CPIAUCSL-2026-08-01",
+              "adapter_version": "fixture-macro-v1"
+            },
+            "nature": "OBSERVED",
+            "formula_ref": null,
+            "input_refs": [],
+            "rights_ref": "fixture-rights-unverified"
+          }
+        },
+        {
+          "producer": "fred_observations",
+          "observation": {
+            "scope": "OFFLINE_SYNTHETIC",
+            "domain": "MACRO",
+            "key": "CPIAUCSL",
+            "value": 306,
+            "unit": "INDEX_POINTS",
+            "currency": null,
+            "observed": {
+              "precision": "DATE",
+              "value": "2026-10-15"
+            },
+            "collected_at": "2026-10-18T10:00:00Z",
+            "run_id": "fixture-macro",
+            "frequency": "MONTHLY",
+            "period": {
+              "start": "2026-09-01",
+              "end": "2026-09-30"
+            },
+            "source": {
+              "provider": "FRED",
+              "native_id": "CPIAUCSL",
+              "evidence_ref": "fixture-CPIAUCSL-2026-09-01",
+              "adapter_version": "fixture-macro-v1"
+            },
+            "nature": "OBSERVED",
+            "formula_ref": null,
+            "input_refs": [],
+            "rights_ref": "fixture-rights-unverified"
+          }
+        }
+      ],
+      "unrate": [],
+      "policies": {
+        "CPIAUCSL": {
+          "scope": "OFFLINE_SYNTHETIC",
+          "id": "macro-cadence-fixture",
+          "version": "v1",
+          "series_id": "CPIAUCSL",
+          "frequency": "MONTHLY",
+          "evaluated_on": "2026-10-18",
+          "expected_period": {
+            "start": "2026-09-01",
+            "end": "2026-09-30"
+          },
+          "publication_due_at": "2026-10-15T18:00:00Z",
+          "calendar_ref": "fixture-calendar-v1"
+        },
+        "UNRATE": {
+          "scope": "OFFLINE_SYNTHETIC",
+          "id": "macro-cadence-fixture",
+          "version": "v1",
+          "series_id": "UNRATE",
+          "frequency": "MONTHLY",
+          "evaluated_on": "2026-10-18",
+          "expected_period": {
+            "start": "2026-09-01",
+            "end": "2026-09-30"
+          },
+          "publication_due_at": "2026-10-15T18:00:00Z",
+          "calendar_ref": "fixture-calendar-v1"
+        },
+        "MISERY_INDEX": {
+          "scope": "OFFLINE_SYNTHETIC",
+          "id": "macro-cadence-fixture",
+          "version": "v1",
+          "series_id": "MISERY_INDEX",
+          "frequency": "MONTHLY",
+          "evaluated_on": "2026-10-18",
+          "expected_period": {
+            "start": "2026-09-01",
+            "end": "2026-09-30"
+          },
+          "publication_due_at": "2026-10-15T18:00:00Z",
+          "calendar_ref": "fixture-calendar-v1"
+        }
+      },
+      "expected": {
+        "status": "MISSING",
+        "value": null
+      }
+    },
+    {
+      "id": "misery-hole",
+      "kind": "misery",
+      "cpi": [
+        {
+          "producer": "fred_observations",
+          "observation": {
+            "scope": "OFFLINE_SYNTHETIC",
+            "domain": "MACRO",
+            "key": "CPIAUCSL",
+            "value": 300,
+            "unit": "INDEX_POINTS",
+            "currency": null,
+            "observed": {
+              "precision": "DATE",
+              "value": "2025-10-15"
+            },
+            "collected_at": "2026-10-18T10:00:00Z",
+            "run_id": "fixture-macro",
+            "frequency": "MONTHLY",
+            "period": {
+              "start": "2025-09-01",
+              "end": "2025-09-30"
+            },
+            "source": {
+              "provider": "FRED",
+              "native_id": "CPIAUCSL",
+              "evidence_ref": "fixture-CPIAUCSL-2025-09-01",
+              "adapter_version": "fixture-macro-v1"
+            },
+            "nature": "OBSERVED",
+            "formula_ref": null,
+            "input_refs": [],
+            "rights_ref": "fixture-rights-unverified"
+          }
+        },
+        {
+          "producer": "fred_observations",
+          "observation": {
+            "scope": "OFFLINE_SYNTHETIC",
+            "domain": "MACRO",
+            "key": "CPIAUCSL",
+            "value": 300.5,
+            "unit": "INDEX_POINTS",
+            "currency": null,
+            "observed": {
+              "precision": "DATE",
+              "value": "2025-11-15"
+            },
+            "collected_at": "2026-10-18T10:00:00Z",
+            "run_id": "fixture-macro",
+            "frequency": "MONTHLY",
+            "period": {
+              "start": "2025-10-01",
+              "end": "2025-10-31"
+            },
+            "source": {
+              "provider": "FRED",
+              "native_id": "CPIAUCSL",
+              "evidence_ref": "fixture-CPIAUCSL-2025-10-01",
+              "adapter_version": "fixture-macro-v1"
+            },
+            "nature": "OBSERVED",
+            "formula_ref": null,
+            "input_refs": [],
+            "rights_ref": "fixture-rights-unverified"
+          }
+        },
+        {
+          "producer": "fred_observations",
+          "observation": {
+            "scope": "OFFLINE_SYNTHETIC",
+            "domain": "MACRO",
+            "key": "CPIAUCSL",
+            "value": 301,
+            "unit": "INDEX_POINTS",
+            "currency": null,
+            "observed": {
+              "precision": "DATE",
+              "value": "2025-12-15"
+            },
+            "collected_at": "2026-10-18T10:00:00Z",
+            "run_id": "fixture-macro",
+            "frequency": "MONTHLY",
+            "period": {
+              "start": "2025-11-01",
+              "end": "2025-11-30"
+            },
+            "source": {
+              "provider": "FRED",
+              "native_id": "CPIAUCSL",
+              "evidence_ref": "fixture-CPIAUCSL-2025-11-01",
+              "adapter_version": "fixture-macro-v1"
+            },
+            "nature": "OBSERVED",
+            "formula_ref": null,
+            "input_refs": [],
+            "rights_ref": "fixture-rights-unverified"
+          }
+        },
+        {
+          "producer": "fred_observations",
+          "observation": {
+            "scope": "OFFLINE_SYNTHETIC",
+            "domain": "MACRO",
+            "key": "CPIAUCSL",
+            "value": 301.5,
+            "unit": "INDEX_POINTS",
+            "currency": null,
+            "observed": {
+              "precision": "DATE",
+              "value": "2026-01-15"
+            },
+            "collected_at": "2026-10-18T10:00:00Z",
+            "run_id": "fixture-macro",
+            "frequency": "MONTHLY",
+            "period": {
+              "start": "2025-12-01",
+              "end": "2025-12-31"
+            },
+            "source": {
+              "provider": "FRED",
+              "native_id": "CPIAUCSL",
+              "evidence_ref": "fixture-CPIAUCSL-2025-12-01",
+              "adapter_version": "fixture-macro-v1"
+            },
+            "nature": "OBSERVED",
+            "formula_ref": null,
+            "input_refs": [],
+            "rights_ref": "fixture-rights-unverified"
+          }
+        },
+        {
+          "producer": "fred_observations",
+          "observation": {
+            "scope": "OFFLINE_SYNTHETIC",
+            "domain": "MACRO",
+            "key": "CPIAUCSL",
+            "value": 302,
+            "unit": "INDEX_POINTS",
+            "currency": null,
+            "observed": {
+              "precision": "DATE",
+              "value": "2026-02-15"
+            },
+            "collected_at": "2026-10-18T10:00:00Z",
+            "run_id": "fixture-macro",
+            "frequency": "MONTHLY",
+            "period": {
+              "start": "2026-01-01",
+              "end": "2026-01-31"
+            },
+            "source": {
+              "provider": "FRED",
+              "native_id": "CPIAUCSL",
+              "evidence_ref": "fixture-CPIAUCSL-2026-01-01",
+              "adapter_version": "fixture-macro-v1"
+            },
+            "nature": "OBSERVED",
+            "formula_ref": null,
+            "input_refs": [],
+            "rights_ref": "fixture-rights-unverified"
+          }
+        },
+        {
+          "producer": "fred_observations",
+          "observation": {
+            "scope": "OFFLINE_SYNTHETIC",
+            "domain": "MACRO",
+            "key": "CPIAUCSL",
+            "value": 303,
+            "unit": "INDEX_POINTS",
+            "currency": null,
+            "observed": {
+              "precision": "DATE",
+              "value": "2026-04-15"
+            },
+            "collected_at": "2026-10-18T10:00:00Z",
+            "run_id": "fixture-macro",
+            "frequency": "MONTHLY",
+            "period": {
+              "start": "2026-03-01",
+              "end": "2026-03-31"
+            },
+            "source": {
+              "provider": "FRED",
+              "native_id": "CPIAUCSL",
+              "evidence_ref": "fixture-CPIAUCSL-2026-03-01",
+              "adapter_version": "fixture-macro-v1"
+            },
+            "nature": "OBSERVED",
+            "formula_ref": null,
+            "input_refs": [],
+            "rights_ref": "fixture-rights-unverified"
+          }
+        },
+        {
+          "producer": "fred_observations",
+          "observation": {
+            "scope": "OFFLINE_SYNTHETIC",
+            "domain": "MACRO",
+            "key": "CPIAUCSL",
+            "value": 303.5,
+            "unit": "INDEX_POINTS",
+            "currency": null,
+            "observed": {
+              "precision": "DATE",
+              "value": "2026-05-15"
+            },
+            "collected_at": "2026-10-18T10:00:00Z",
+            "run_id": "fixture-macro",
+            "frequency": "MONTHLY",
+            "period": {
+              "start": "2026-04-01",
+              "end": "2026-04-30"
+            },
+            "source": {
+              "provider": "FRED",
+              "native_id": "CPIAUCSL",
+              "evidence_ref": "fixture-CPIAUCSL-2026-04-01",
+              "adapter_version": "fixture-macro-v1"
+            },
+            "nature": "OBSERVED",
+            "formula_ref": null,
+            "input_refs": [],
+            "rights_ref": "fixture-rights-unverified"
+          }
+        },
+        {
+          "producer": "fred_observations",
+          "observation": {
+            "scope": "OFFLINE_SYNTHETIC",
+            "domain": "MACRO",
+            "key": "CPIAUCSL",
+            "value": 304,
+            "unit": "INDEX_POINTS",
+            "currency": null,
+            "observed": {
+              "precision": "DATE",
+              "value": "2026-06-15"
+            },
+            "collected_at": "2026-10-18T10:00:00Z",
+            "run_id": "fixture-macro",
+            "frequency": "MONTHLY",
+            "period": {
+              "start": "2026-05-01",
+              "end": "2026-05-31"
+            },
+            "source": {
+              "provider": "FRED",
+              "native_id": "CPIAUCSL",
+              "evidence_ref": "fixture-CPIAUCSL-2026-05-01",
+              "adapter_version": "fixture-macro-v1"
+            },
+            "nature": "OBSERVED",
+            "formula_ref": null,
+            "input_refs": [],
+            "rights_ref": "fixture-rights-unverified"
+          }
+        },
+        {
+          "producer": "fred_observations",
+          "observation": {
+            "scope": "OFFLINE_SYNTHETIC",
+            "domain": "MACRO",
+            "key": "CPIAUCSL",
+            "value": 304.5,
+            "unit": "INDEX_POINTS",
+            "currency": null,
+            "observed": {
+              "precision": "DATE",
+              "value": "2026-07-15"
+            },
+            "collected_at": "2026-10-18T10:00:00Z",
+            "run_id": "fixture-macro",
+            "frequency": "MONTHLY",
+            "period": {
+              "start": "2026-06-01",
+              "end": "2026-06-30"
+            },
+            "source": {
+              "provider": "FRED",
+              "native_id": "CPIAUCSL",
+              "evidence_ref": "fixture-CPIAUCSL-2026-06-01",
+              "adapter_version": "fixture-macro-v1"
+            },
+            "nature": "OBSERVED",
+            "formula_ref": null,
+            "input_refs": [],
+            "rights_ref": "fixture-rights-unverified"
+          }
+        },
+        {
+          "producer": "fred_observations",
+          "observation": {
+            "scope": "OFFLINE_SYNTHETIC",
+            "domain": "MACRO",
+            "key": "CPIAUCSL",
+            "value": 305,
+            "unit": "INDEX_POINTS",
+            "currency": null,
+            "observed": {
+              "precision": "DATE",
+              "value": "2026-08-15"
+            },
+            "collected_at": "2026-10-18T10:00:00Z",
+            "run_id": "fixture-macro",
+            "frequency": "MONTHLY",
+            "period": {
+              "start": "2026-07-01",
+              "end": "2026-07-31"
+            },
+            "source": {
+              "provider": "FRED",
+              "native_id": "CPIAUCSL",
+              "evidence_ref": "fixture-CPIAUCSL-2026-07-01",
+              "adapter_version": "fixture-macro-v1"
+            },
+            "nature": "OBSERVED",
+            "formula_ref": null,
+            "input_refs": [],
+            "rights_ref": "fixture-rights-unverified"
+          }
+        },
+        {
+          "producer": "fred_observations",
+          "observation": {
+            "scope": "OFFLINE_SYNTHETIC",
+            "domain": "MACRO",
+            "key": "CPIAUCSL",
+            "value": 305.5,
+            "unit": "INDEX_POINTS",
+            "currency": null,
+            "observed": {
+              "precision": "DATE",
+              "value": "2026-09-15"
+            },
+            "collected_at": "2026-10-18T10:00:00Z",
+            "run_id": "fixture-macro",
+            "frequency": "MONTHLY",
+            "period": {
+              "start": "2026-08-01",
+              "end": "2026-08-31"
+            },
+            "source": {
+              "provider": "FRED",
+              "native_id": "CPIAUCSL",
+              "evidence_ref": "fixture-CPIAUCSL-2026-08-01",
+              "adapter_version": "fixture-macro-v1"
+            },
+            "nature": "OBSERVED",
+            "formula_ref": null,
+            "input_refs": [],
+            "rights_ref": "fixture-rights-unverified"
+          }
+        },
+        {
+          "producer": "fred_observations",
+          "observation": {
+            "scope": "OFFLINE_SYNTHETIC",
+            "domain": "MACRO",
+            "key": "CPIAUCSL",
+            "value": 306,
+            "unit": "INDEX_POINTS",
+            "currency": null,
+            "observed": {
+              "precision": "DATE",
+              "value": "2026-10-15"
+            },
+            "collected_at": "2026-10-18T10:00:00Z",
+            "run_id": "fixture-macro",
+            "frequency": "MONTHLY",
+            "period": {
+              "start": "2026-09-01",
+              "end": "2026-09-30"
+            },
+            "source": {
+              "provider": "FRED",
+              "native_id": "CPIAUCSL",
+              "evidence_ref": "fixture-CPIAUCSL-2026-09-01",
+              "adapter_version": "fixture-macro-v1"
+            },
+            "nature": "OBSERVED",
+            "formula_ref": null,
+            "input_refs": [],
+            "rights_ref": "fixture-rights-unverified"
+          }
+        }
+      ],
+      "unrate": [
+        {
+          "producer": "fred_observations",
+          "observation": {
+            "scope": "OFFLINE_SYNTHETIC",
+            "domain": "MACRO",
+            "key": "UNRATE",
+            "value": 4,
+            "unit": "PERCENT",
+            "currency": null,
+            "observed": {
+              "precision": "DATE",
+              "value": "2026-10-15"
+            },
+            "collected_at": "2026-10-18T10:00:00Z",
+            "run_id": "fixture-macro",
+            "frequency": "MONTHLY",
+            "period": {
+              "start": "2026-09-01",
+              "end": "2026-09-30"
+            },
+            "source": {
+              "provider": "FRED",
+              "native_id": "UNRATE",
+              "evidence_ref": "fixture-UNRATE-2026-09-01",
+              "adapter_version": "fixture-macro-v1"
+            },
+            "nature": "OBSERVED",
+            "formula_ref": null,
+            "input_refs": [],
+            "rights_ref": "fixture-rights-unverified"
+          }
+        }
+      ],
+      "policies": {
+        "CPIAUCSL": {
+          "scope": "OFFLINE_SYNTHETIC",
+          "id": "macro-cadence-fixture",
+          "version": "v1",
+          "series_id": "CPIAUCSL",
+          "frequency": "MONTHLY",
+          "evaluated_on": "2026-10-18",
+          "expected_period": {
+            "start": "2026-09-01",
+            "end": "2026-09-30"
+          },
+          "publication_due_at": "2026-10-15T18:00:00Z",
+          "calendar_ref": "fixture-calendar-v1"
+        },
+        "UNRATE": {
+          "scope": "OFFLINE_SYNTHETIC",
+          "id": "macro-cadence-fixture",
+          "version": "v1",
+          "series_id": "UNRATE",
+          "frequency": "MONTHLY",
+          "evaluated_on": "2026-10-18",
+          "expected_period": {
+            "start": "2026-09-01",
+            "end": "2026-09-30"
+          },
+          "publication_due_at": "2026-10-15T18:00:00Z",
+          "calendar_ref": "fixture-calendar-v1"
+        },
+        "MISERY_INDEX": {
+          "scope": "OFFLINE_SYNTHETIC",
+          "id": "macro-cadence-fixture",
+          "version": "v1",
+          "series_id": "MISERY_INDEX",
+          "frequency": "MONTHLY",
+          "evaluated_on": "2026-10-18",
+          "expected_period": {
+            "start": "2026-09-01",
+            "end": "2026-09-30"
+          },
+          "publication_due_at": "2026-10-15T18:00:00Z",
+          "calendar_ref": "fixture-calendar-v1"
+        }
+      },
+      "expected": {
+        "status": "MISSING",
+        "value": null,
+        "reason": "CPI_CALENDAR_GAP"
+      }
+    },
+    {
+      "id": "misery-period-mismatch",
+      "kind": "misery",
+      "cpi": [
+        {
+          "producer": "fred_observations",
+          "observation": {
+            "scope": "OFFLINE_SYNTHETIC",
+            "domain": "MACRO",
+            "key": "CPIAUCSL",
+            "value": 300,
+            "unit": "INDEX_POINTS",
+            "currency": null,
+            "observed": {
+              "precision": "DATE",
+              "value": "2025-10-15"
+            },
+            "collected_at": "2026-10-18T10:00:00Z",
+            "run_id": "fixture-macro",
+            "frequency": "MONTHLY",
+            "period": {
+              "start": "2025-09-01",
+              "end": "2025-09-30"
+            },
+            "source": {
+              "provider": "FRED",
+              "native_id": "CPIAUCSL",
+              "evidence_ref": "fixture-CPIAUCSL-2025-09-01",
+              "adapter_version": "fixture-macro-v1"
+            },
+            "nature": "OBSERVED",
+            "formula_ref": null,
+            "input_refs": [],
+            "rights_ref": "fixture-rights-unverified"
+          }
+        },
+        {
+          "producer": "fred_observations",
+          "observation": {
+            "scope": "OFFLINE_SYNTHETIC",
+            "domain": "MACRO",
+            "key": "CPIAUCSL",
+            "value": 300.5,
+            "unit": "INDEX_POINTS",
+            "currency": null,
+            "observed": {
+              "precision": "DATE",
+              "value": "2025-11-15"
+            },
+            "collected_at": "2026-10-18T10:00:00Z",
+            "run_id": "fixture-macro",
+            "frequency": "MONTHLY",
+            "period": {
+              "start": "2025-10-01",
+              "end": "2025-10-31"
+            },
+            "source": {
+              "provider": "FRED",
+              "native_id": "CPIAUCSL",
+              "evidence_ref": "fixture-CPIAUCSL-2025-10-01",
+              "adapter_version": "fixture-macro-v1"
+            },
+            "nature": "OBSERVED",
+            "formula_ref": null,
+            "input_refs": [],
+            "rights_ref": "fixture-rights-unverified"
+          }
+        },
+        {
+          "producer": "fred_observations",
+          "observation": {
+            "scope": "OFFLINE_SYNTHETIC",
+            "domain": "MACRO",
+            "key": "CPIAUCSL",
+            "value": 301,
+            "unit": "INDEX_POINTS",
+            "currency": null,
+            "observed": {
+              "precision": "DATE",
+              "value": "2025-12-15"
+            },
+            "collected_at": "2026-10-18T10:00:00Z",
+            "run_id": "fixture-macro",
+            "frequency": "MONTHLY",
+            "period": {
+              "start": "2025-11-01",
+              "end": "2025-11-30"
+            },
+            "source": {
+              "provider": "FRED",
+              "native_id": "CPIAUCSL",
+              "evidence_ref": "fixture-CPIAUCSL-2025-11-01",
+              "adapter_version": "fixture-macro-v1"
+            },
+            "nature": "OBSERVED",
+            "formula_ref": null,
+            "input_refs": [],
+            "rights_ref": "fixture-rights-unverified"
+          }
+        },
+        {
+          "producer": "fred_observations",
+          "observation": {
+            "scope": "OFFLINE_SYNTHETIC",
+            "domain": "MACRO",
+            "key": "CPIAUCSL",
+            "value": 301.5,
+            "unit": "INDEX_POINTS",
+            "currency": null,
+            "observed": {
+              "precision": "DATE",
+              "value": "2026-01-15"
+            },
+            "collected_at": "2026-10-18T10:00:00Z",
+            "run_id": "fixture-macro",
+            "frequency": "MONTHLY",
+            "period": {
+              "start": "2025-12-01",
+              "end": "2025-12-31"
+            },
+            "source": {
+              "provider": "FRED",
+              "native_id": "CPIAUCSL",
+              "evidence_ref": "fixture-CPIAUCSL-2025-12-01",
+              "adapter_version": "fixture-macro-v1"
+            },
+            "nature": "OBSERVED",
+            "formula_ref": null,
+            "input_refs": [],
+            "rights_ref": "fixture-rights-unverified"
+          }
+        },
+        {
+          "producer": "fred_observations",
+          "observation": {
+            "scope": "OFFLINE_SYNTHETIC",
+            "domain": "MACRO",
+            "key": "CPIAUCSL",
+            "value": 302,
+            "unit": "INDEX_POINTS",
+            "currency": null,
+            "observed": {
+              "precision": "DATE",
+              "value": "2026-02-15"
+            },
+            "collected_at": "2026-10-18T10:00:00Z",
+            "run_id": "fixture-macro",
+            "frequency": "MONTHLY",
+            "period": {
+              "start": "2026-01-01",
+              "end": "2026-01-31"
+            },
+            "source": {
+              "provider": "FRED",
+              "native_id": "CPIAUCSL",
+              "evidence_ref": "fixture-CPIAUCSL-2026-01-01",
+              "adapter_version": "fixture-macro-v1"
+            },
+            "nature": "OBSERVED",
+            "formula_ref": null,
+            "input_refs": [],
+            "rights_ref": "fixture-rights-unverified"
+          }
+        },
+        {
+          "producer": "fred_observations",
+          "observation": {
+            "scope": "OFFLINE_SYNTHETIC",
+            "domain": "MACRO",
+            "key": "CPIAUCSL",
+            "value": 302.5,
+            "unit": "INDEX_POINTS",
+            "currency": null,
+            "observed": {
+              "precision": "DATE",
+              "value": "2026-03-15"
+            },
+            "collected_at": "2026-10-18T10:00:00Z",
+            "run_id": "fixture-macro",
+            "frequency": "MONTHLY",
+            "period": {
+              "start": "2026-02-01",
+              "end": "2026-02-28"
+            },
+            "source": {
+              "provider": "FRED",
+              "native_id": "CPIAUCSL",
+              "evidence_ref": "fixture-CPIAUCSL-2026-02-01",
+              "adapter_version": "fixture-macro-v1"
+            },
+            "nature": "OBSERVED",
+            "formula_ref": null,
+            "input_refs": [],
+            "rights_ref": "fixture-rights-unverified"
+          }
+        },
+        {
+          "producer": "fred_observations",
+          "observation": {
+            "scope": "OFFLINE_SYNTHETIC",
+            "domain": "MACRO",
+            "key": "CPIAUCSL",
+            "value": 303,
+            "unit": "INDEX_POINTS",
+            "currency": null,
+            "observed": {
+              "precision": "DATE",
+              "value": "2026-04-15"
+            },
+            "collected_at": "2026-10-18T10:00:00Z",
+            "run_id": "fixture-macro",
+            "frequency": "MONTHLY",
+            "period": {
+              "start": "2026-03-01",
+              "end": "2026-03-31"
+            },
+            "source": {
+              "provider": "FRED",
+              "native_id": "CPIAUCSL",
+              "evidence_ref": "fixture-CPIAUCSL-2026-03-01",
+              "adapter_version": "fixture-macro-v1"
+            },
+            "nature": "OBSERVED",
+            "formula_ref": null,
+            "input_refs": [],
+            "rights_ref": "fixture-rights-unverified"
+          }
+        },
+        {
+          "producer": "fred_observations",
+          "observation": {
+            "scope": "OFFLINE_SYNTHETIC",
+            "domain": "MACRO",
+            "key": "CPIAUCSL",
+            "value": 303.5,
+            "unit": "INDEX_POINTS",
+            "currency": null,
+            "observed": {
+              "precision": "DATE",
+              "value": "2026-05-15"
+            },
+            "collected_at": "2026-10-18T10:00:00Z",
+            "run_id": "fixture-macro",
+            "frequency": "MONTHLY",
+            "period": {
+              "start": "2026-04-01",
+              "end": "2026-04-30"
+            },
+            "source": {
+              "provider": "FRED",
+              "native_id": "CPIAUCSL",
+              "evidence_ref": "fixture-CPIAUCSL-2026-04-01",
+              "adapter_version": "fixture-macro-v1"
+            },
+            "nature": "OBSERVED",
+            "formula_ref": null,
+            "input_refs": [],
+            "rights_ref": "fixture-rights-unverified"
+          }
+        },
+        {
+          "producer": "fred_observations",
+          "observation": {
+            "scope": "OFFLINE_SYNTHETIC",
+            "domain": "MACRO",
+            "key": "CPIAUCSL",
+            "value": 304,
+            "unit": "INDEX_POINTS",
+            "currency": null,
+            "observed": {
+              "precision": "DATE",
+              "value": "2026-06-15"
+            },
+            "collected_at": "2026-10-18T10:00:00Z",
+            "run_id": "fixture-macro",
+            "frequency": "MONTHLY",
+            "period": {
+              "start": "2026-05-01",
+              "end": "2026-05-31"
+            },
+            "source": {
+              "provider": "FRED",
+              "native_id": "CPIAUCSL",
+              "evidence_ref": "fixture-CPIAUCSL-2026-05-01",
+              "adapter_version": "fixture-macro-v1"
+            },
+            "nature": "OBSERVED",
+            "formula_ref": null,
+            "input_refs": [],
+            "rights_ref": "fixture-rights-unverified"
+          }
+        },
+        {
+          "producer": "fred_observations",
+          "observation": {
+            "scope": "OFFLINE_SYNTHETIC",
+            "domain": "MACRO",
+            "key": "CPIAUCSL",
+            "value": 304.5,
+            "unit": "INDEX_POINTS",
+            "currency": null,
+            "observed": {
+              "precision": "DATE",
+              "value": "2026-07-15"
+            },
+            "collected_at": "2026-10-18T10:00:00Z",
+            "run_id": "fixture-macro",
+            "frequency": "MONTHLY",
+            "period": {
+              "start": "2026-06-01",
+              "end": "2026-06-30"
+            },
+            "source": {
+              "provider": "FRED",
+              "native_id": "CPIAUCSL",
+              "evidence_ref": "fixture-CPIAUCSL-2026-06-01",
+              "adapter_version": "fixture-macro-v1"
+            },
+            "nature": "OBSERVED",
+            "formula_ref": null,
+            "input_refs": [],
+            "rights_ref": "fixture-rights-unverified"
+          }
+        },
+        {
+          "producer": "fred_observations",
+          "observation": {
+            "scope": "OFFLINE_SYNTHETIC",
+            "domain": "MACRO",
+            "key": "CPIAUCSL",
+            "value": 305,
+            "unit": "INDEX_POINTS",
+            "currency": null,
+            "observed": {
+              "precision": "DATE",
+              "value": "2026-08-15"
+            },
+            "collected_at": "2026-10-18T10:00:00Z",
+            "run_id": "fixture-macro",
+            "frequency": "MONTHLY",
+            "period": {
+              "start": "2026-07-01",
+              "end": "2026-07-31"
+            },
+            "source": {
+              "provider": "FRED",
+              "native_id": "CPIAUCSL",
+              "evidence_ref": "fixture-CPIAUCSL-2026-07-01",
+              "adapter_version": "fixture-macro-v1"
+            },
+            "nature": "OBSERVED",
+            "formula_ref": null,
+            "input_refs": [],
+            "rights_ref": "fixture-rights-unverified"
+          }
+        },
+        {
+          "producer": "fred_observations",
+          "observation": {
+            "scope": "OFFLINE_SYNTHETIC",
+            "domain": "MACRO",
+            "key": "CPIAUCSL",
+            "value": 305.5,
+            "unit": "INDEX_POINTS",
+            "currency": null,
+            "observed": {
+              "precision": "DATE",
+              "value": "2026-09-15"
+            },
+            "collected_at": "2026-10-18T10:00:00Z",
+            "run_id": "fixture-macro",
+            "frequency": "MONTHLY",
+            "period": {
+              "start": "2026-08-01",
+              "end": "2026-08-31"
+            },
+            "source": {
+              "provider": "FRED",
+              "native_id": "CPIAUCSL",
+              "evidence_ref": "fixture-CPIAUCSL-2026-08-01",
+              "adapter_version": "fixture-macro-v1"
+            },
+            "nature": "OBSERVED",
+            "formula_ref": null,
+            "input_refs": [],
+            "rights_ref": "fixture-rights-unverified"
+          }
+        },
+        {
+          "producer": "fred_observations",
+          "observation": {
+            "scope": "OFFLINE_SYNTHETIC",
+            "domain": "MACRO",
+            "key": "CPIAUCSL",
+            "value": 306,
+            "unit": "INDEX_POINTS",
+            "currency": null,
+            "observed": {
+              "precision": "DATE",
+              "value": "2026-10-15"
+            },
+            "collected_at": "2026-10-18T10:00:00Z",
+            "run_id": "fixture-macro",
+            "frequency": "MONTHLY",
+            "period": {
+              "start": "2026-09-01",
+              "end": "2026-09-30"
+            },
+            "source": {
+              "provider": "FRED",
+              "native_id": "CPIAUCSL",
+              "evidence_ref": "fixture-CPIAUCSL-2026-09-01",
+              "adapter_version": "fixture-macro-v1"
+            },
+            "nature": "OBSERVED",
+            "formula_ref": null,
+            "input_refs": [],
+            "rights_ref": "fixture-rights-unverified"
+          }
+        }
+      ],
+      "unrate": [
+        {
+          "producer": "fred_observations",
+          "observation": {
+            "scope": "OFFLINE_SYNTHETIC",
+            "domain": "MACRO",
+            "key": "UNRATE",
+            "value": 4,
+            "unit": "PERCENT",
+            "currency": null,
+            "observed": {
+              "precision": "DATE",
+              "value": "2026-09-15"
+            },
+            "collected_at": "2026-10-18T10:00:00Z",
+            "run_id": "fixture-macro",
+            "frequency": "MONTHLY",
+            "period": {
+              "start": "2026-08-01",
+              "end": "2026-08-31"
+            },
+            "source": {
+              "provider": "FRED",
+              "native_id": "UNRATE",
+              "evidence_ref": "fixture-UNRATE-2026-08-01",
+              "adapter_version": "fixture-macro-v1"
+            },
+            "nature": "OBSERVED",
+            "formula_ref": null,
+            "input_refs": [],
+            "rights_ref": "fixture-rights-unverified"
+          }
+        }
+      ],
+      "policies": {
+        "CPIAUCSL": {
+          "scope": "OFFLINE_SYNTHETIC",
+          "id": "macro-cadence-fixture",
+          "version": "v1",
+          "series_id": "CPIAUCSL",
+          "frequency": "MONTHLY",
+          "evaluated_on": "2026-10-18",
+          "expected_period": {
+            "start": "2026-09-01",
+            "end": "2026-09-30"
+          },
+          "publication_due_at": "2026-10-15T18:00:00Z",
+          "calendar_ref": "fixture-calendar-v1"
+        },
+        "UNRATE": {
+          "scope": "OFFLINE_SYNTHETIC",
+          "id": "macro-cadence-fixture",
+          "version": "v1",
+          "series_id": "UNRATE",
+          "frequency": "MONTHLY",
+          "evaluated_on": "2026-10-18",
+          "expected_period": {
+            "start": "2026-08-01",
+            "end": "2026-08-31"
+          },
+          "publication_due_at": "2026-10-15T18:00:00Z",
+          "calendar_ref": "fixture-calendar-v1"
+        },
+        "MISERY_INDEX": {
+          "scope": "OFFLINE_SYNTHETIC",
+          "id": "macro-cadence-fixture",
+          "version": "v1",
+          "series_id": "MISERY_INDEX",
+          "frequency": "MONTHLY",
+          "evaluated_on": "2026-10-18",
+          "expected_period": {
+            "start": "2026-09-01",
+            "end": "2026-09-30"
+          },
+          "publication_due_at": "2026-10-15T18:00:00Z",
+          "calendar_ref": "fixture-calendar-v1"
+        }
+      },
+      "expected": {
+        "status": "MISSING",
+        "value": null,
+        "reason": "PERIOD_MISMATCH"
+      }
+    },
+    {
+      "id": "jpy-realized",
+      "kind": "jpy",
+      "rows": [
+        {
+          "producer": "macro_sync",
+          "observation": {
+            "scope": "OFFLINE_SYNTHETIC",
+            "domain": "MACRO",
+            "key": "JPYUSD",
+            "value": 0.0065,
+            "unit": "RATIO",
+            "currency": null,
+            "observed": {
+              "precision": "DATE",
+              "value": "2026-10-12"
+            },
+            "collected_at": "2026-10-18T10:00:00Z",
+            "run_id": "fixture-macro",
+            "frequency": "DAILY",
+            "period": null,
+            "source": {
+              "provider": "YAHOO",
+              "native_id": "JPYUSD=X",
+              "evidence_ref": "fixture-JPYUSD-2026-10-12",
+              "adapter_version": "fixture-macro-v1"
+            },
+            "nature": "OBSERVED",
+            "formula_ref": null,
+            "input_refs": [],
+            "rights_ref": "fixture-rights-unverified"
+          }
+        },
+        {
+          "producer": "macro_sync",
+          "observation": {
+            "scope": "OFFLINE_SYNTHETIC",
+            "domain": "MACRO",
+            "key": "JPYUSD",
+            "value": 0.0066,
+            "unit": "RATIO",
+            "currency": null,
+            "observed": {
+              "precision": "DATE",
+              "value": "2026-10-13"
+            },
+            "collected_at": "2026-10-18T10:00:00Z",
+            "run_id": "fixture-macro",
+            "frequency": "DAILY",
+            "period": null,
+            "source": {
+              "provider": "YAHOO",
+              "native_id": "JPYUSD=X",
+              "evidence_ref": "fixture-JPYUSD-2026-10-13",
+              "adapter_version": "fixture-macro-v1"
+            },
+            "nature": "OBSERVED",
+            "formula_ref": null,
+            "input_refs": [],
+            "rights_ref": "fixture-rights-unverified"
+          }
+        },
+        {
+          "producer": "macro_sync",
+          "observation": {
+            "scope": "OFFLINE_SYNTHETIC",
+            "domain": "MACRO",
+            "key": "JPYUSD",
+            "value": 0.0064,
+            "unit": "RATIO",
+            "currency": null,
+            "observed": {
+              "precision": "DATE",
+              "value": "2026-10-14"
+            },
+            "collected_at": "2026-10-18T10:00:00Z",
+            "run_id": "fixture-macro",
+            "frequency": "DAILY",
+            "period": null,
+            "source": {
+              "provider": "YAHOO",
+              "native_id": "JPYUSD=X",
+              "evidence_ref": "fixture-JPYUSD-2026-10-14",
+              "adapter_version": "fixture-macro-v1"
+            },
+            "nature": "OBSERVED",
+            "formula_ref": null,
+            "input_refs": [],
+            "rights_ref": "fixture-rights-unverified"
+          }
+        },
+        {
+          "producer": "macro_sync",
+          "observation": {
+            "scope": "OFFLINE_SYNTHETIC",
+            "domain": "MACRO",
+            "key": "JPYUSD",
+            "value": 0.0067,
+            "unit": "RATIO",
+            "currency": null,
+            "observed": {
+              "precision": "DATE",
+              "value": "2026-10-15"
+            },
+            "collected_at": "2026-10-18T10:00:00Z",
+            "run_id": "fixture-macro",
+            "frequency": "DAILY",
+            "period": null,
+            "source": {
+              "provider": "YAHOO",
+              "native_id": "JPYUSD=X",
+              "evidence_ref": "fixture-JPYUSD-2026-10-15",
+              "adapter_version": "fixture-macro-v1"
+            },
+            "nature": "OBSERVED",
+            "formula_ref": null,
+            "input_refs": [],
+            "rights_ref": "fixture-rights-unverified"
+          }
+        },
+        {
+          "producer": "macro_sync",
+          "observation": {
+            "scope": "OFFLINE_SYNTHETIC",
+            "domain": "MACRO",
+            "key": "JPYUSD",
+            "value": 0.00655,
+            "unit": "RATIO",
+            "currency": null,
+            "observed": {
+              "precision": "DATE",
+              "value": "2026-10-16"
+            },
+            "collected_at": "2026-10-18T10:00:00Z",
+            "run_id": "fixture-macro",
+            "frequency": "DAILY",
+            "period": null,
+            "source": {
+              "provider": "YAHOO",
+              "native_id": "JPYUSD=X",
+              "evidence_ref": "fixture-JPYUSD-2026-10-16",
+              "adapter_version": "fixture-macro-v1"
+            },
+            "nature": "OBSERVED",
+            "formula_ref": null,
+            "input_refs": [],
+            "rights_ref": "fixture-rights-unverified"
+          }
+        }
+      ],
+      "policy": {
+        "scope": "OFFLINE_SYNTHETIC",
+        "id": "macro-cadence-fixture",
+        "version": "v1",
+        "series_id": "JPYUSD",
+        "frequency": "DAILY",
+        "evaluated_on": "2026-10-18",
+        "expected_period": {
+          "start": "2026-10-16",
+          "end": "2026-10-16"
+        },
+        "publication_due_at": "2026-10-16T22:00:00Z",
+        "calendar_ref": "fixture-calendar-v1"
+      },
+      "result_policy": {
+        "scope": "OFFLINE_SYNTHETIC",
+        "id": "macro-cadence-fixture",
+        "version": "v1",
+        "series_id": "JPY_VOLATILITY",
+        "frequency": "DAILY",
+        "evaluated_on": "2026-10-18",
+        "expected_period": {
+          "start": "2026-10-16",
+          "end": "2026-10-16"
+        },
+        "publication_due_at": "2026-10-16T22:00:00Z",
+        "calendar_ref": "fixture-calendar-v1"
+      },
+      "sessions": [
+        "2026-10-12",
+        "2026-10-13",
+        "2026-10-14",
+        "2026-10-15",
+        "2026-10-16"
+      ],
+      "calendar_ref": "fixture-calendar-v1",
+      "expected": {
+        "status": "VALIDATED",
+        "value": 56.32286518690249
+      }
+    },
+    {
+      "id": "jpy-history-gap",
+      "kind": "jpy",
+      "rows": [
+        {
+          "producer": "macro_sync",
+          "observation": {
+            "scope": "OFFLINE_SYNTHETIC",
+            "domain": "MACRO",
+            "key": "JPYUSD",
+            "value": 0.0066,
+            "unit": "RATIO",
+            "currency": null,
+            "observed": {
+              "precision": "DATE",
+              "value": "2026-10-13"
+            },
+            "collected_at": "2026-10-18T10:00:00Z",
+            "run_id": "fixture-macro",
+            "frequency": "DAILY",
+            "period": null,
+            "source": {
+              "provider": "YAHOO",
+              "native_id": "JPYUSD=X",
+              "evidence_ref": "fixture-JPYUSD-2026-10-13",
+              "adapter_version": "fixture-macro-v1"
+            },
+            "nature": "OBSERVED",
+            "formula_ref": null,
+            "input_refs": [],
+            "rights_ref": "fixture-rights-unverified"
+          }
+        },
+        {
+          "producer": "macro_sync",
+          "observation": {
+            "scope": "OFFLINE_SYNTHETIC",
+            "domain": "MACRO",
+            "key": "JPYUSD",
+            "value": 0.0064,
+            "unit": "RATIO",
+            "currency": null,
+            "observed": {
+              "precision": "DATE",
+              "value": "2026-10-14"
+            },
+            "collected_at": "2026-10-18T10:00:00Z",
+            "run_id": "fixture-macro",
+            "frequency": "DAILY",
+            "period": null,
+            "source": {
+              "provider": "YAHOO",
+              "native_id": "JPYUSD=X",
+              "evidence_ref": "fixture-JPYUSD-2026-10-14",
+              "adapter_version": "fixture-macro-v1"
+            },
+            "nature": "OBSERVED",
+            "formula_ref": null,
+            "input_refs": [],
+            "rights_ref": "fixture-rights-unverified"
+          }
+        },
+        {
+          "producer": "macro_sync",
+          "observation": {
+            "scope": "OFFLINE_SYNTHETIC",
+            "domain": "MACRO",
+            "key": "JPYUSD",
+            "value": 0.0067,
+            "unit": "RATIO",
+            "currency": null,
+            "observed": {
+              "precision": "DATE",
+              "value": "2026-10-15"
+            },
+            "collected_at": "2026-10-18T10:00:00Z",
+            "run_id": "fixture-macro",
+            "frequency": "DAILY",
+            "period": null,
+            "source": {
+              "provider": "YAHOO",
+              "native_id": "JPYUSD=X",
+              "evidence_ref": "fixture-JPYUSD-2026-10-15",
+              "adapter_version": "fixture-macro-v1"
+            },
+            "nature": "OBSERVED",
+            "formula_ref": null,
+            "input_refs": [],
+            "rights_ref": "fixture-rights-unverified"
+          }
+        },
+        {
+          "producer": "macro_sync",
+          "observation": {
+            "scope": "OFFLINE_SYNTHETIC",
+            "domain": "MACRO",
+            "key": "JPYUSD",
+            "value": 0.00655,
+            "unit": "RATIO",
+            "currency": null,
+            "observed": {
+              "precision": "DATE",
+              "value": "2026-10-16"
+            },
+            "collected_at": "2026-10-18T10:00:00Z",
+            "run_id": "fixture-macro",
+            "frequency": "DAILY",
+            "period": null,
+            "source": {
+              "provider": "YAHOO",
+              "native_id": "JPYUSD=X",
+              "evidence_ref": "fixture-JPYUSD-2026-10-16",
+              "adapter_version": "fixture-macro-v1"
+            },
+            "nature": "OBSERVED",
+            "formula_ref": null,
+            "input_refs": [],
+            "rights_ref": "fixture-rights-unverified"
+          }
+        }
+      ],
+      "policy": {
+        "scope": "OFFLINE_SYNTHETIC",
+        "id": "macro-cadence-fixture",
+        "version": "v1",
+        "series_id": "JPYUSD",
+        "frequency": "DAILY",
+        "evaluated_on": "2026-10-18",
+        "expected_period": {
+          "start": "2026-10-16",
+          "end": "2026-10-16"
+        },
+        "publication_due_at": "2026-10-16T22:00:00Z",
+        "calendar_ref": "fixture-calendar-v1"
+      },
+      "result_policy": {
+        "scope": "OFFLINE_SYNTHETIC",
+        "id": "macro-cadence-fixture",
+        "version": "v1",
+        "series_id": "JPY_VOLATILITY",
+        "frequency": "DAILY",
+        "evaluated_on": "2026-10-18",
+        "expected_period": {
+          "start": "2026-10-16",
+          "end": "2026-10-16"
+        },
+        "publication_due_at": "2026-10-16T22:00:00Z",
+        "calendar_ref": "fixture-calendar-v1"
+      },
+      "sessions": [
+        "2026-10-12",
+        "2026-10-13",
+        "2026-10-14",
+        "2026-10-15",
+        "2026-10-16"
+      ],
+      "calendar_ref": "fixture-calendar-v1",
+      "expected": {
+        "status": "MISSING",
+        "value": null,
+        "reason": "VOLATILITY_SESSION_GAP"
+      }
+    }
+  ]
+}

@@ -1,52 +1,30 @@
 "use client"
 
-import React, { useEffect } from 'react'
-import useSWR from 'swr'
+import React from 'react'
 import { AppShell } from '../../components/AppShell'
 import { EmptyState } from '../../components/EmptyState'
-import { supabase } from '../../lib/supabase'
 import { ArrowRightLeft, TrendingDown, TrendingUp } from 'lucide-react'
 import { cn } from '../../lib/utils'
 import { stateLabel as dataStateLabel, UnifiedDataState } from '../../lib/dataStates'
-import { swrOptions, SWR_REFRESH } from '../../lib/swrConfig'
 import { formatSyncTime } from '../../lib/dataFreshness'
-import { FX_CACHE_KEY, FX_PAIRS_SWR_KEY, FX_RATES_SWR_KEY, currencyCollectionState, loadCurrencyRates, loadFxPairs, parseFxCache, rateDailyChange } from '../../lib/fxData'
-import { latestSourceTimestamp, observationState } from '../../lib/readerState'
-import type { CurrencyRateRow } from '../../types'
+import { latestSourceTimestamp } from '../../lib/readerState'
+import { useFxRates } from '../../hooks/useFxRates'
+import { FxRateDetails } from '../../components/FxRateDetails'
 
 export default function FXPage() {
-  const { data: rates, isLoading, error } = useSWR(FX_RATES_SWR_KEY, () => loadCurrencyRates(supabase), swrOptions(SWR_REFRESH.SLOW))
-  const { data: pairs, error: pairError } = useSWR(FX_PAIRS_SWR_KEY, () => loadFxPairs(supabase), swrOptions(SWR_REFRESH.SLOW))
-  const { data: cached = [] } = useSWR<CurrencyRateRow[]>(error ? FX_CACHE_KEY : null, () => {
-    try { return parseFxCache(window.localStorage.getItem(FX_CACHE_KEY)) } catch { return [] }
-  }, { revalidateOnFocus: false, revalidateOnReconnect: false })
-  useEffect(() => {
-    if (!rates) return
-    try { window.localStorage.setItem(FX_CACHE_KEY, JSON.stringify(rates)) } catch { /* Cache is optional. */ }
-  }, [rates])
-
-  const usingCache = Boolean(error && ((rates?.length ?? 0) > 0 || cached.length > 0))
-  const currencies = (error ? rates ?? cached : rates ?? []).map((rate) => ({
-    ...rate,
-    change_pct: error || pairError ? null : rateDailyChange(rate, pairs ?? []),
-  }))
+  const { rows: currencies, loading, error, usingCache, state: fxState } = useFxRates()
   const lastSyncIso = latestSourceTimestamp(currencies.map((row) => row.last_update))
   const lastSync = formatSyncTime(lastSyncIso, '')
-  const loading = isLoading && !rates && !error
-  const rowStates = currencies.map((row) => observationState(row.rate_to_eur, row.last_update))
-  const fxState = usingCache ? 'CACHED' : error ? 'ERROR' : loading ? 'LOADING'
-    : !currencies.length ? 'EMPTY' : rowStates.some((state) => state === 'MISSING' || state === 'UNKNOWN') ? 'UNKNOWN'
-    : rowStates.includes('STALE') ? 'STALE' : 'COLLECTED'
   const unifiedState: UnifiedDataState = error ? 'ERROR' : loading ? 'LOADING' : fxState === 'EMPTY' ? 'EMPTY'
-    : fxState === 'COLLECTED' ? 'OK' : 'STALE'
+    : fxState === 'IDENTITY' ? 'OK' : 'STALE'
   const stateLabel = {
     text: fxState,
-    color: fxState === 'COLLECTED' ? 'text-slate-700 dark:text-slate-300' : 'text-amber-700 dark:text-amber-400',
-    dot: fxState === 'COLLECTED' ? 'bg-slate-400' : 'bg-amber-400',
+    color: 'text-amber-700 dark:text-amber-400',
+    dot: 'bg-amber-400',
   }
-  const freshnessLabel = 'Collecte ≤ 72 h · fraîcheur de marché non certifiée'
+  const freshnessLabel = 'Cotation et séances sources non renseignées'
   const sourceLabel = usingCache ? 'Cache daté — lecture en erreur' : 'Supabase currencies'
-  const marketNote = '1 unité de devise = taux affiché en EUR. Variation fournie par une paire explicite déclarée OK par la source, orientée vs EUR, avec une collecte du même jour. La date exacte de cotation n’est pas fournie par ce contrat. Aucun cours LIVE certifié et aucune performance d’action utilisée. Source périmée, incomplète ou inconnue : variation N/A.'
+  const marketNote = '1 unité de devise = taux affiché en EUR. La table actuelle conserve le taux et la collecte, pas la date de cotation ni le calendrier de source. Ces valeurs restent consultables, non certifiées. La variation reste N/A : elle nécessite deux cours de même source et méthode, sur deux séances consécutives attestées. Aucune performance d’action ni rapprochement par date de collecte.'
 
   return (
     <AppShell lastSync={lastSync} lastSyncIso={lastSyncIso} className="bg-slate-50">
@@ -61,7 +39,7 @@ export default function FXPage() {
                 <div className="inline-flex w-fit max-w-full items-center gap-2 rounded-lg border border-slate-300 bg-slate-200 px-3 py-1 dark:border-white/10 dark:bg-white/10">
                   <span className={`h-2 w-2 rounded-full ${stateLabel.dot}`} />
                   <span className={`text-[10px] font-black uppercase tracking-wider ${stateLabel.color}`}>{stateLabel.text}</span>
-                  <span className="text-[10px] text-slate-500 dark:text-gray-400">· {fxState === 'COLLECTED' ? 'Collecte récente, date de marché inconnue' : fxState === 'UNKNOWN' ? 'Données ou dates incomplètes' : dataStateLabel(unifiedState)}</span>
+                  <span className="text-[10px] text-slate-500 dark:text-gray-400">· {fxState === 'UNKNOWN' ? 'Cotation non certifiée' : dataStateLabel(unifiedState)}</span>
                 </div>
               </div>
 
@@ -86,7 +64,6 @@ export default function FXPage() {
                 </div>
                 <div className="overflow-x-auto">
                   {error && <p role="alert" className="p-4 text-sm text-amber-700">Lecture des taux impossible. Les éventuelles valeurs conservées sont un cache, pas des cours à jour.</p>}
-                  {pairError && <p role="alert" className="p-4 text-sm text-amber-700">Variation quotidienne indisponible : lecture des paires en erreur.</p>}
                   <table className="w-full">
                     <thead className="bg-slate-50 dark:bg-[#080A0F]">
                       <tr>
@@ -125,7 +102,7 @@ export default function FXPage() {
 
                           return (
                             <tr
-                              key={currency.id}
+                              key={currency.id} data-fx-rate={currency.id}
                               className="hover:bg-slate-50/50 dark:hover:bg-white/5 transition-colors"
                             >
                               <td className="p-4">
@@ -137,10 +114,10 @@ export default function FXPage() {
                                     {currency.symbol}
                                   </span>
                                 </div>
-                                <div className="mt-1 text-[10px] text-slate-500">{error ? 'CACHED' : currencyCollectionState(currency)} · Collecte : {currency.last_update ? new Date(currency.last_update).toLocaleString('fr-FR') : 'date inconnue'}</div>
+                                <FxRateDetails rate={currency} cached={usingCache} />
                               </td>
                               <td className="p-4 text-right">
-                                <span className="text-sm font-mono font-black text-slate-950 dark:text-white">
+                                <span data-fx-value className="text-sm font-mono font-black text-slate-950 dark:text-white">
                                   {currency.rate_to_eur !== null ? currency.rate_to_eur.toFixed(4) : 'N/A'}
                                 </span>
                               </td>
@@ -152,7 +129,7 @@ export default function FXPage() {
                                     <TrendingDown className="w-3 h-3 text-red-600 dark:text-red-400" />
                                   )}
                                   <span
-                                    className={cn(
+                                    data-fx-change className={cn(
                                       'text-sm font-mono font-black',
                                       change === null ? 'text-slate-500' : isPositive ? 'text-green-600 dark:text-green-400' : 'text-red-600 dark:text-red-400'
                                     )}

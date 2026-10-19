@@ -4,6 +4,8 @@ import React, { useMemo } from 'react'
 import useSWR from 'swr'
 import { supabase } from '../lib/supabase'
 import { AlertTriangle, ShieldCheck, Zap, Activity, Bell } from 'lucide-react'
+import { MacroObservationDetails } from './MacroObservationDetails'
+import { projectLegacyMacro } from '../lib/macroTrace'
 import { MACRO_PROVENANCE_NOTICE, macroCollectionState, macroHealthState, macroInputState, macroVariationClass, thresholdState } from '../lib/macroState'
 import {
   MACRO_INDICATORS_REFRESH_MS,
@@ -131,8 +133,8 @@ export function MacroHealth({ indicators: indicatorsProp, loading = false, error
             !error && !pending && ['CAUTION', 'STRESS'].includes(thresholdState(ind))
           
           return (
-            <div key={ind.id} className={`p-3 rounded-xl border transition-all hover:bg-white/5 ${
-              isWarning ? 'border-amber-500/30 bg-amber-500/5' : 'border-white/5 bg-[#0D1117]/50'
+            <div key={ind.id} data-macro-card={ind.id} className={`p-3 min-w-0 rounded-xl border transition-all has-[details[open]]:col-span-2 ${
+              isWarning ? 'border-amber-500/30 bg-amber-500/5' : 'border-slate-200 bg-white dark:border-slate-800 dark:bg-slate-900'
             }`}>
               <div className="flex justify-between items-start mb-2">
                 <span className="text-[9px] font-bold text-gray-500 uppercase tracking-tighter">{ind.name}</span>
@@ -140,7 +142,7 @@ export function MacroHealth({ indicators: indicatorsProp, loading = false, error
               </div>
               <div className="flex items-baseline justify-between">
                 {/* BLINDAGE ICI : (safeValue).toFixed */}
-                <span className={`text-lg font-mono font-bold ${isWarning ? 'text-amber-500' : 'text-gray-200'}`}>
+                <span className={`text-lg font-mono font-bold ${isWarning ? 'text-amber-500' : 'text-slate-900 dark:text-slate-200'}`}>
                   {safeValue === null ? '--' : safeValue.toFixed(2)}
                 </span>
                 {/* BLINDAGE ICI : (safeChange * 100) */}
@@ -149,6 +151,7 @@ export function MacroHealth({ indicators: indicatorsProp, loading = false, error
                 </div>
               </div>
               <div className="mt-1 text-[9px] text-slate-500">{error ? 'ERROR · cache' : macroInputState([ind], pending)} · collecte {macroCollectionState(ind)} · {ind.last_update ? new Date(ind.last_update).toLocaleDateString('fr-FR') : 'Date inconnue'}</div>
+              <MacroObservationDetails view={projectLegacyMacro(ind)} />
             </div>
           )
         })}

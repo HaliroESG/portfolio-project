@@ -1,3 +1,98 @@
+// Logical L0 envelope only: no Supabase table/reader is wired to this contract.
+// All values are synthetic; VALIDATED never grants operational authority.
+export interface SourceObservationV1 {
+  contract_version: 'source-observation/v1';
+  scope: 'OFFLINE_SYNTHETIC';
+  observation_id: string;
+  revision_id: string;
+  identity: {
+    domain: 'FX' | 'MACRO' | 'PUBLICATION';
+    key: string;
+    provider: string | null;
+    native_id: string | null;
+    observed_date: string | null;
+    observed_at: string | null;
+    precision: 'DATE' | 'TIMESTAMP' | 'UNKNOWN';
+    frequency: 'DAILY' | 'MONTHLY' | 'QUARTERLY' | 'ANNUAL' | 'EVENT';
+    period: { start: string; end: string } | null;
+  };
+  // Finite binary64, abs(value) <= Number.MAX_SAFE_INTEGER; enforced by the
+  // Python normalizer before coercion, not by this compile-time-only type.
+  value: number | null;
+  unit: 'EUR_PER_UNIT' | 'PERCENT' | 'PERCENTAGE_POINTS' | 'BASIS_POINTS'
+    | 'INDEX_POINTS' | 'RATIO' | 'CURRENCY' | null;
+  currency: string | null;
+  collected_at: string;
+  run_id: string;
+  source: {
+    provider: string | null;
+    native_id: string | null;
+    evidence_ref: string | null;
+    adapter_version: string | null;
+  };
+  nature: 'OBSERVED' | 'DERIVED' | 'ESTIMATED' | 'UNKNOWN';
+  formula_ref: string | null;
+  input_refs: string[];
+  rights_ref: string | null;
+  quality: 'MISSING' | 'UNKNOWN' | 'STALE' | 'PARTIAL' | 'VALIDATED';
+  reason_codes: string[];
+  freshness: {
+    basis: 'SOURCE_DATE_FLOOR_V1';
+    policy: { id: string; version: string } | null;
+    calendar_ref: string | null;
+    evaluated_at: string;
+    source_age_calendar_days: number | null;
+    collection_age_seconds: number;
+  };
+  operational_authority: false;
+}
+
+// L1 logical fixture envelope. No live Supabase column or writer is implied.
+export interface FxTraceV1 {
+  contract_version: 'fx-trace/v1';
+  scope: 'OFFLINE_SYNTHETIC';
+  operational_authority: false;
+  currency: 'USD' | 'CHF' | 'GBP' | 'JPY';
+  quote: 'EUR';
+  unit: 'EUR_PER_UNIT';
+  ticker: string;
+  evaluated_at: string;
+  calendar: {
+    scope: 'OFFLINE_SYNTHETIC'; id: string; version: string; provider: string;
+    close_convention: string; date_basis: 'UTC_SOURCE_DATE'; evaluated_on: string;
+    expected_session: string; sessions: string[];
+  } | null;
+  status: SourceObservationV1['quality'] | 'CONFLICT';
+  current: FxTraceEntryV1 | null;
+  previous: FxTraceEntryV1 | null;
+  change_pct: number | null;
+  inverse_change_pct: number | null;
+  reason_codes: string[];
+  comparison_reason_codes: string[];
+  conflicts: { observed_date: string | null; revision_ids: string[] }[];
+  observations: FxTraceEntryV1[];
+}
+
+export interface FxTraceEntryV1 {
+  observation: SourceObservationV1;
+  close_convention: string | null;
+  session_age: number | null;
+}
+
+export interface FxRateView extends CurrencyRateRow {
+  quote: 'EUR';
+  provenance: 'LEGACY' | 'OFFLINE_SYNTHETIC' | 'MATHEMATICAL_IDENTITY';
+  status: FxTraceV1['status'] | 'IDENTITY';
+  observed_date: string | null;
+  observed_at: string | null;
+  provider: string | null;
+  session_age: number | null;
+  calendar_ref: string | null;
+  change_pct: number | null;
+  reason_codes: string[];
+  comparison_reason_codes: string[];
+}
+
 // Dans types.ts
 export type Period = '1D' | '1W' | '1M' | 'YTD';
 export type GeoTimeframe = 'day' | 'month' | 'ytd';
@@ -362,6 +457,54 @@ export type EquityPublicationDataState = 'READY' | 'PARTIAL' | 'STALE' | 'MISSIN
 export type EquityReportingEventType = 'EARNINGS' | 'REGULATORY_FILING'
 export type EquityReportingEventStatus = 'ESTIMATED' | 'CONFIRMED' | 'REPORTED' | 'CANCELLED'
 export type EquityReportingMatchConfidence = 'HIGH' | 'INFERRED' | 'UNKNOWN'
+// L3 logical preparation, deliberately NOT a Supabase row or activation contract.
+export interface PublicationTraceV1 {
+  version: 'publication-trace/v1'
+  scope: 'OFFLINE_SYNTHETIC'
+  evaluated_at: string
+  provider: string
+  issuer: string
+  event_id: string
+  event_key: string
+  event_type: EquityReportingEventType
+  revision_id: string
+  supersedes_revision_id: string | null
+  event_date: string | null
+  event_time: string | null
+  event_time_utc: string | null
+  status: EquityReportingEventStatus
+  effective_status: EquityReportingEventStatus | 'UNKNOWN'
+  proof_kind: 'NONE' | 'AGGREGATOR_RESULT' | 'OFFICIAL_DOCUMENT' | 'OFFICIAL_SCHEDULE' | 'OFFICIAL_CANCELLATION'
+  proof_state: Exclude<PublicationTraceV1['proof_kind'], 'NONE'> | 'UNATTESTED'
+  source_ref: string | null
+  observed_at: string | null
+  fiscal_year: number | null
+  period_kind: EquityReportingPeriodKind | null
+  period_end: string | null
+  filing_date: string | null
+  amends_event_id: string | null
+  actual_eps: number | null
+  reason_codes: string[]
+  operational_authority: false
+}
+
+export interface PublicationTtmV1 {
+  complete: boolean // Four comparable periods, NOT completeness of every metric.
+  currency: string | null
+  period_start: string | null
+  period_end: string | null
+  revenue: number | null
+  ebitda: number | null
+  operating_income: number | null
+  net_income: number | null
+  free_cash_flow: number | null
+  reason_codes: string[]
+}
+
+export interface PublicationEventEvidence {
+  basis: 'OFFICIAL_DOCUMENT' | 'AGGREGATOR_RESULT' | 'UNATTESTED'
+  label: string
+}
 export type EquityReportingPeriodKind =
   | 'Q1'
   | 'Q2'
@@ -414,6 +557,7 @@ export interface EquityPublicationDashboardRow {
   ttm_net_income: number | null
   ttm_free_cash_flow: number | null
   ttm_complete: boolean
+  ttm_evidence_state: 'UNATTESTED' // Legacy view cannot certify L3 period comparability.
   trailing_pe: number | null
   forward_pe: number | null
   valuation_as_of: string | null
@@ -516,14 +660,81 @@ export interface NewsFeedRow {
 
 export interface MacroIndicatorRow {
   id: string
-  name: string
+  name: string | null
   value: number | null
   change_pct: number | null
-  last_update?: string | null
-  threshold_amber: number
-  threshold_red: number
-  direction: 'UP' | 'DOWN'
-  pillar: string
+  last_update: string | null
+  threshold_amber: number | null
+  threshold_red: number | null
+  direction: 'UP' | 'DOWN' | null
+  pillar: string | null
+}
+
+// Logical offline L2 envelope; no Supabase column or operational writer implied.
+export type MacroSeriesKeyV1 = 'VIX' | 'MOVE' | 'DXY' | 'US10Y' | 'CPIAUCSL' | 'CPILFESL'
+  | 'UNRATE' | 'SPREAD_10Y_2Y' | 'T10YIE' | 'HY_OAS' | 'JPYUSD' | 'PMI_MANUFACTURING'
+  | 'PAYEMS' | 'MISERY_INDEX' | 'JPY_VOLATILITY'
+
+export interface MacroCadencePolicyV1 {
+  scope: 'OFFLINE_SYNTHETIC'
+  id: string
+  version: string
+  series_id: MacroSeriesKeyV1
+  frequency: 'DAILY' | 'MONTHLY'
+  evaluated_on: string
+  expected_period: { start: string; end: string }
+  publication_due_at: string
+  calendar_ref: string
+}
+
+export interface MacroObservationEntryV1 {
+  producer: string
+  provider_native_id: string | null
+  observation: SourceObservationV1
+  canonical_value: number | null
+  conversion_ref: string | null
+  reason_codes: string[]
+}
+
+export interface MacroTraceV1 {
+  contract_version: 'macro-trace/v1'
+  scope: 'OFFLINE_SYNTHETIC'
+  series_id: MacroSeriesKeyV1
+  canonical_unit: SourceObservationV1['unit']
+  frequency: 'DAILY' | 'MONTHLY'
+  logical_owner: string | null
+  evaluated_at: string
+  cadence_policy: MacroCadencePolicyV1 | null
+  status: SourceObservationV1['quality'] | 'CONFLICT'
+  value: number | null
+  reason_codes: string[]
+  current: MacroObservationEntryV1 | null
+  observations: MacroObservationEntryV1[]
+  inputs: MacroObservationEntryV1[]
+  formula_ref: string | null
+  parameters: Record<string, string | number | string[]>
+  operational_authority: false
+  tactical_usable: false
+}
+
+export interface MacroObservationView {
+  id: string
+  provenance: 'LEGACY' | 'OFFLINE_SYNTHETIC'
+  value: number | null
+  unit: SourceObservationV1['unit']
+  status: MacroTraceV1['status']
+  observed_date: string | null
+  period: { start: string; end: string } | null
+  collected_at: string | null
+  provider: string | null
+  native_id: string | null
+  formula_ref: string | null
+  cadence_ref: string | null
+  expected_period: { start: string; end: string } | null
+  input_count: number
+  method_parameters: MacroTraceV1['parameters']
+  reason_codes: string[]
+  tactical_usable: false
 }
 
 export type MacroSeriesDataState = 'READY' | 'PARTIAL' | 'STALE' | 'UNKNOWN' | 'MISSING'

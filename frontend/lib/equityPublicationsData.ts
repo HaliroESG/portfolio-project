@@ -258,6 +258,7 @@ function parseDashboardRow(raw: JsonRecord): EquityPublicationDashboardRow | nul
     ttm_net_income: readNumber(raw.ttm_net_income),
     ttm_free_cash_flow: readNumber(raw.ttm_free_cash_flow),
     ttm_complete: readBoolean(raw.ttm_complete),
+    ttm_evidence_state: 'UNATTESTED',
     trailing_pe: readNumber(raw.trailing_pe),
     forward_pe: readNumber(raw.forward_pe),
     valuation_as_of: readString(raw.valuation_as_of),

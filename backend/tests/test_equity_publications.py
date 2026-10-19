@@ -1,4 +1,5 @@
 from datetime import date
+from dataclasses import replace
 
 import pandas as pd
 
@@ -113,13 +114,16 @@ def test_ttm_requires_four_complete_sequential_quarters():
 
     income, cashflow = financial_frames(periods=4)
     four_rows = normalize_interim_financials(record(), income, cashflow)
+    assert build_ttm_summary(four_rows) is None  # End dates alone do not prove discrete quarters.
+    starts = [date(2025, 7, 1), date(2025, 10, 1), date(2026, 1, 1), date(2026, 4, 1)]
+    four_rows = [replace(row, period_start=start, accounting_basis="DISCRETE", calendar_basis="CALENDAR", definition="GAAP", consolidation_scope="CONSOLIDATED") for row, start in zip(four_rows, starts)]
     summary = build_ttm_summary(four_rows)
     assert summary is not None
     assert summary["revenue"] == 340.0
     assert summary["free_cash_flow"] == 56.0
 
 
-def test_calendar_event_key_is_stable_for_a_fiscal_slot():
+def test_inferred_calendar_slot_does_not_replace_source_event_identity():
     frame = pd.DataFrame(
         [
             {
@@ -148,7 +152,8 @@ def test_calendar_event_key_is_stable_for_a_fiscal_slot():
     )
 
     assert first.status == "ESTIMATED"
-    assert first.event_key == revised_key
+    assert first.event_key != revised_key
+    assert first.event_key.endswith("2026-07-30")
 
 
 def test_calendar_slot_event_deduplicates_same_day_ticker_event():
@@ -184,7 +189,8 @@ def test_calendar_slot_event_deduplicates_same_day_ticker_event():
     )
 
     assert len(events) == 1
-    assert events[0].event_key.endswith("q3-2026")
+    assert events[0].event_key.endswith("2026-07-30")
+    assert events[0].period_kind == "Q3"
 
 
 def test_reported_events_are_mapped_to_the_closest_unmatched_period():

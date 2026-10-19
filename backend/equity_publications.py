@@ -11,6 +11,7 @@ from typing import Any, Iterable, Mapping, Sequence
 
 from etl_stats import build_etl_stats
 from trident_screener import normalize_currency, safe_float, statement_value
+from publication_contracts import strict_ttm
 
 
 JOB_NAME = "equity_publications_sync"
@@ -62,6 +63,12 @@ class InterimFinancialRecord:
     reason_codes: tuple[str, ...]
     source_provider: str
     source_url: str | None
+    # Logical evidence only: not written to the legacy Supabase schema.
+    period_start: date | None = None
+    accounting_basis: str | None = None
+    calendar_basis: str | None = None
+    definition: str | None = None
+    consolidation_scope: str | None = None
 
 
 @dataclass(frozen=True)
@@ -127,7 +134,7 @@ def parse_datetime(value: Any) -> datetime | None:
         except ValueError:
             return None
     if parsed.tzinfo is None:
-        parsed = parsed.replace(tzinfo=timezone.utc)
+        return None  # A civil date or naive time does not attest a UTC instant.
     return parsed.astimezone(timezone.utc)
 
 
@@ -311,7 +318,7 @@ def _event_status(
     *,
     actual_value: float | None = None,
 ) -> str:
-    if actual_value is not None or event_date < today:
+    if actual_value is not None and event_date <= today:
         return "REPORTED"
     return "ESTIMATED"
 
@@ -360,6 +367,10 @@ def normalize_earnings_frame(
                     "eps_estimate": safe_float(row.get("EPS Estimate")),
                     "eps_actual": actual_eps,
                     "surprise_pct": safe_float(row.get("Surprise(%)")),
+                    "publication_evidence": {"version": "publication-evidence/v1",
+                        "basis": "AGGREGATOR_RESULT" if status == "REPORTED" else "NONE",
+                        "reference": f"{record.provider_symbol}:{event_date.isoformat()}",
+                        "event_date": event_date.isoformat()},
                 },
             )
         )
@@ -395,8 +406,6 @@ def normalize_calendar_frame(
                     "EARNINGS",
                     YAHOO_SOURCE_PROVIDER,
                     event_date,
-                    fiscal_year=fiscal_year,
-                    period_kind=period_kind,
                 ),
                 instrument_key=record.instrument_key,
                 event_type="EARNINGS",
@@ -423,6 +432,10 @@ def normalize_calendar_frame(
                     "eps_estimate": safe_float(row.get("EPS Estimate")),
                     "eps_actual": actual_eps,
                     "surprise_pct": safe_float(row.get("Surprise(%)")),
+                    "publication_evidence": {"version": "publication-evidence/v1",
+                        "basis": "AGGREGATOR_RESULT" if _event_status(event_date, today, actual_value=actual_eps) == "REPORTED" else "NONE",
+                        "reference": f"{record.provider_symbol}:{event_date.isoformat()}",
+                        "event_date": event_date.isoformat()},
                 },
             )
         )
@@ -433,27 +446,54 @@ def merge_reporting_events(
     events: Iterable[ReportingEventRecord],
 ) -> list[ReportingEventRecord]:
     by_occurrence: dict[
-        tuple[str, str, date, str],
+        str,
         ReportingEventRecord,
     ] = {}
     for event in events:
-        occurrence = (
-            event.instrument_key,
-            event.event_type,
-            event.event_date,
-            event.source_provider,
-        )
+        # Same-day filings are distinct documents, not duplicate occurrences.
+        occurrence = event.event_key
         existing = by_occurrence.get(occurrence)
         if existing is None:
             by_occurrence[occurrence] = event
             continue
-        metadata = {**existing.metadata, **event.metadata}
+        if ((existing.instrument_key, existing.event_type, existing.source_provider)
+                != (event.instrument_key, event.event_type, event.source_provider)
+                or existing.event_date != event.event_date
+                or (existing.fiscal_year is not None and event.fiscal_year is not None
+                    and (existing.fiscal_year, existing.period_kind) != (event.fiscal_year, event.period_kind))):
+            raise ValueError("REPORTING_EVENT_REVISION_REQUIRES_EXPLICIT_RECONCILIATION")
+        # An observed result is a fact, not a last-write-wins metadata field.
+        # Zero and negative EPS are valid observations too.
+        existing_eps = existing.metadata.get("eps_actual")
+        event_eps = event.metadata.get("eps_actual")
+        if existing_eps is not None and event_eps is not None and existing_eps != event_eps:
+            raise ValueError("REPORTING_EVENT_REVISION_REQUIRES_EXPLICIT_RECONCILIATION")
         event_has_slot = event.fiscal_year is not None and event.period_kind is not None
         existing_has_slot = (
             existing.fiscal_year is not None and existing.period_kind is not None
         )
         preferred = event if event_has_slot or not existing_has_slot else existing
+        if existing.status != event.status:
+            # A newly observed result can supersede an estimate for this exact
+            # occurrence, but a calendar label alone never upgrades it.
+            reported = next((r for r in (existing, event) if r.status == "REPORTED"), None)
+            proof = reported.metadata.get("publication_evidence", {}) if reported else {}
+            if (set((existing.status, event.status)) != {"ESTIMATED", "REPORTED"}
+                    or not isinstance(proof, Mapping)
+                    or proof.get("basis") != "AGGREGATOR_RESULT"
+                    or proof.get("version") != "publication-evidence/v1"
+                    or proof.get("event_date") != reported.event_date.isoformat()
+                    or reported.source_provider != YAHOO_SOURCE_PROVIDER
+                    or safe_float(reported.metadata.get("eps_actual")) is None):
+                raise ValueError("REPORTING_EVENT_REVISION_REQUIRES_EXPLICIT_RECONCILIATION")
+            preferred = reported
         secondary = existing if preferred is event else event
+        metadata = {**secondary.metadata, **preferred.metadata}
+        states = {existing.status, event.status}
+        for row in (existing, event):
+            states.update(s for s in row.metadata.get("status_observations", []) if s in EVENT_STATUSES)
+        if len(states) > 1:
+            metadata["status_observations"] = sorted(states)
         by_occurrence[occurrence] = replace(
             preferred,
             event_time_utc=preferred.event_time_utc or secondary.event_time_utc,
@@ -507,14 +547,7 @@ def match_events_to_periods(
         matched.append(
             replace(
                 event,
-                event_key=reporting_event_key(
-                    event.instrument_key,
-                    event.event_type,
-                    event.source_provider,
-                    event.event_date,
-                    fiscal_year=fiscal_year,
-                    period_kind=period_kind,
-                ),
+                # Fiscal inference must not change the event's identity.
                 fiscal_year=fiscal_year,
                 fiscal_period_end=period_end,
                 period_kind=period_kind,
@@ -527,33 +560,24 @@ def match_events_to_periods(
 def build_ttm_summary(
     financials: Sequence[InterimFinancialRecord],
 ) -> dict[str, Any] | None:
+    if len({row.instrument_key for row in financials}) != 1:
+        return None
     quarterly = sorted(
-        (row for row in financials if row.period_months == 3),
+        financials,
         key=lambda row: row.fiscal_period_end,
         reverse=True,
     )[:4]
-    if len(quarterly) != 4:
-        return None
-    span_days = (quarterly[0].fiscal_period_end - quarterly[-1].fiscal_period_end).days
-    currencies = {row.currency for row in quarterly if row.currency}
-    if not 240 <= span_days <= 400 or len(currencies) != 1:
-        return None
-
-    def total(field: str) -> float | None:
-        values = [getattr(row, field) for row in quarterly]
-        if any(value is None for value in values):
-            return None
-        return sum(value for value in values if value is not None)
-
-    return {
-        "currency": next(iter(currencies)),
-        "period_end": quarterly[0].fiscal_period_end.isoformat(),
-        "revenue": total("revenue"),
-        "ebitda": total("ebitda"),
-        "operating_income": total("operating_income"),
-        "net_income": total("net_income"),
-        "free_cash_flow": total("free_cash_flow"),
-    }
+    summary = strict_ttm([{
+        "instrument_key": row.instrument_key, "fiscal_year": row.fiscal_year,
+        "period_kind": row.period_kind,
+        "period_start": row.period_start.isoformat() if row.period_start else None,
+        "period_end": row.fiscal_period_end.isoformat(), "currency": row.currency,
+        "basis": row.accounting_basis, "calendar_basis": row.calendar_basis,
+        "definition": row.definition, "scope": row.consolidation_scope,
+        "source_ref": row.source_provider,
+        **{field: getattr(row, field) for field in ("revenue", "ebitda", "operating_income", "net_income", "free_cash_flow")},
+    } for row in quarterly])
+    return summary if summary["complete"] else None
 
 
 def _quarterly_frame(ticker: Any, attribute: str, method_name: str) -> Any | None:
@@ -692,7 +716,7 @@ def normalize_sec_submissions(
     cik = str(payload.get("cik") or "").zfill(10)
     events: list[ReportingEventRecord] = []
     for index, form in enumerate(forms):
-        if form not in {"10-Q", "10-K"}:
+        if form not in {"10-Q", "10-K", "10-Q/A", "10-K/A"}:
             continue
         filing_date = parse_date(filing_dates[index] if index < len(filing_dates) else None)
         report_date = parse_date(report_dates[index] if index < len(report_dates) else None)
@@ -703,24 +727,19 @@ def normalize_sec_submissions(
             primary_documents[index] if index < len(primary_documents) else None
         )
         compact_accession = (accession or "").replace("-", "")
+        if not accession or not document or not re.fullmatch(r"\d{10}-\d{2}-\d{6}", accession) or not re.fullmatch(r"[A-Za-z0-9_.-]+", document) or not cik.isdigit() or int(cik) == 0:
+            continue  # A filing without a native identity is not safely mergeable.
         source_url = None
         if cik and compact_accession and document:
             source_url = (
                 "https://www.sec.gov/Archives/edgar/data/"
                 f"{int(cik)}/{compact_accession}/{document}"
             )
-        period_kind = "FY" if form == "10-K" else None
-        fiscal_year = report_date.year if report_date else filing_date.year
+        period_kind = "FY" if form.startswith("10-K") else None
+        fiscal_year = infer_fiscal_period(report_date, record.fiscal_year_end_month)[0] if report_date else None
         events.append(
             ReportingEventRecord(
-                event_key=reporting_event_key(
-                    record.instrument_key,
-                    "REGULATORY_FILING",
-                    SEC_SOURCE_PROVIDER,
-                    filing_date,
-                    fiscal_year=fiscal_year,
-                    period_kind=period_kind or form,
-                ),
+                event_key=f"{record.instrument_key}:{SEC_SOURCE_PROVIDER}:{cik}:{accession}:{document}",
                 instrument_key=record.instrument_key,
                 event_type="REGULATORY_FILING",
                 event_label=f"Dépôt {form}",
@@ -734,7 +753,13 @@ def normalize_sec_submissions(
                 match_confidence="HIGH" if report_date else "UNKNOWN",
                 source_provider=SEC_SOURCE_PROVIDER,
                 source_url=source_url,
-                metadata={"form": form, "accession_number": accession},
+                metadata={"form": form, "accession_number": accession,
+                          "primary_document": document, "issuer_cik": cik,
+                          "amendment": form.endswith("/A"),
+                          "amends_event_key": None,
+                          "publication_evidence": {"version": "publication-evidence/v1",
+                              "basis": "OFFICIAL_DOCUMENT", "reference": accession,
+                              "event_date": filing_date.isoformat()}},
             )
         )
     return events
@@ -1063,6 +1088,8 @@ def fetch_universe(
 
 def financial_payload(record: InterimFinancialRecord, now_iso: str) -> dict[str, Any]:
     payload = asdict(record)
+    for key in ("period_start", "accounting_basis", "calendar_basis", "definition", "consolidation_scope"):
+        payload.pop(key)  # No implicit Supabase column or schema change.
     payload["fiscal_period_end"] = record.fiscal_period_end.isoformat()
     payload["reason_codes"] = list(record.reason_codes)
     payload["collected_at"] = now_iso
@@ -1289,12 +1316,14 @@ def run_equity_publications_sync(
             is not None
             for record in symbol_targets
         )
+        target_keys = {record.instrument_key for record in symbol_targets}
         success_keys = {
-            record.instrument_key
-            for record in universe
-            if record.instrument_key in calendar_instruments
-            or record.instrument_key in financial_instruments
+            key for key in target_keys
+            if key in financial_instruments and key not in symbol_errors
         }
+        # Daily collection intentionally refreshes only due symbols. Failure is
+        # missing financial data for an attempted target, not an unrequested one.
+        financial_failures = target_keys - success_keys
         coverage_pct = (
             (len(success_keys) / len(universe)) * 100 if universe else 0.0
         )
@@ -1323,16 +1352,27 @@ def run_equity_publications_sync(
                 ),
                 "financial_upserts": financial_upserts,
                 "event_upserts": event_upserts,
+                "quality_state": "PARTIAL" if symbol_errors or sec_errors or len(financial_instruments) < len(universe) else "UNVERIFIED",
+                "coverage_basis": "INSTRUMENTS_WITH_FINANCIAL_ROWS_NOT_OFFICIAL_COMPLETENESS",
+                "coverage_dimensions": {
+                    "universe_instruments": len(universe),
+                    "financial_instruments_with_rows": len(financial_instruments),
+                    "calendar_instruments_with_rows": len(calendar_instruments),
+                    "official_document_instruments": len({e.instrument_key for e in all_events if e.source_provider == SEC_SOURCE_PROVIDER and e.source_url}),
+                    "calendar_start": calendar_start.isoformat(),
+                    "calendar_end": calendar_end.isoformat(),
+                    "calendar_completeness": "UNVERIFIED",
+                },
             },
-            items_total=len(universe),
+            items_total=len(target_keys),
             items_success=len(success_keys),
-            items_failed=max(len(universe) - len(success_keys), 0),
+            items_failed=len(financial_failures),
             coverage_pct=coverage_pct,
         )
         _finish_etl_run(
             supabase,
             run_id,
-            status="SUCCESS",
+            status="FAILED" if symbol_errors or sec_errors or financial_failures else "SUCCESS",
             stats=stats,
         )
         return stats

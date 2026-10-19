@@ -1,0 +1,635 @@
+{
+  "scope": "OFFLINE_SYNTHETIC",
+  "now": "2026-10-18T12:00:00Z",
+  "event_base": {
+    "scope": "OFFLINE_SYNTHETIC",
+    "provider": "FIXTURE",
+    "issuer": "synthetic-issuer",
+    "event_id": "earnings-q3",
+    "event_type": "EARNINGS",
+    "revision_id": "revision-1",
+    "supersedes_revision_id": null,
+    "event_date": "2026-10-17",
+    "event_time": null,
+    "status": "ESTIMATED",
+    "proof_kind": "NONE",
+    "source_ref": null,
+    "observed_at": null,
+    "fiscal_year": 2026,
+    "period_kind": "Q3",
+    "period_end": "2026-09-30",
+    "filing_date": null,
+    "amends_event_id": null,
+    "actual_eps": null
+  },
+  "event_cases": [
+    {
+      "id": "estimate_yesterday",
+      "patch": {},
+      "expected": {
+        "status": "ESTIMATED",
+        "reasons": [
+          "ESTIMATE_OVERDUE"
+        ]
+      }
+    },
+    {
+      "id": "legacy_reported",
+      "patch": {
+        "status": "REPORTED"
+      },
+      "expected": {
+        "status": "UNKNOWN",
+        "reasons": [
+          "STATUS_NOT_ATTESTED"
+        ]
+      }
+    },
+    {
+      "id": "aggregate_actual",
+      "patch": {
+        "status": "REPORTED",
+        "proof_kind": "AGGREGATOR_RESULT",
+        "source_ref": "aggregate-row-1",
+        "observed_at": "2026-10-18T08:00:00Z",
+        "actual_eps": 0
+      },
+      "expected": {
+        "status": "REPORTED",
+        "reasons": [
+          "NOT_OFFICIAL_CONFIRMATION"
+        ]
+      }
+    },
+    {
+      "id": "official_document",
+      "patch": {
+        "status": "REPORTED",
+        "proof_kind": "OFFICIAL_DOCUMENT",
+        "source_ref": "filing-1",
+        "observed_at": "2026-10-18T08:00:00Z"
+      },
+      "expected": {
+        "status": "REPORTED",
+        "reasons": []
+      }
+    },
+    {
+      "id": "future_schedule",
+      "patch": {
+        "status": "CONFIRMED",
+        "event_date": "2026-10-21",
+        "proof_kind": "OFFICIAL_SCHEDULE",
+        "source_ref": "calendar-1",
+        "observed_at": "2026-10-18T08:00:00Z"
+      },
+      "expected": {
+        "status": "CONFIRMED",
+        "reasons": []
+      }
+    },
+    {
+      "id": "cancelled",
+      "patch": {
+        "status": "CANCELLED",
+        "proof_kind": "OFFICIAL_CANCELLATION",
+        "source_ref": "cancel-1",
+        "observed_at": "2026-10-18T08:00:00Z"
+      },
+      "expected": {
+        "status": "CANCELLED",
+        "reasons": []
+      }
+    },
+    {
+      "id": "unknown_date",
+      "patch": {
+        "event_date": null
+      },
+      "expected": {
+        "status": "ESTIMATED",
+        "reasons": [
+          "EVENT_DATE_UNKNOWN"
+        ]
+      }
+    },
+    {
+      "id": "future_document",
+      "patch": {
+        "status": "REPORTED",
+        "proof_kind": "OFFICIAL_DOCUMENT",
+        "source_ref": "filing-1",
+        "observed_at": "2026-10-18T08:00:00Z",
+        "event_date": "2026-10-21"
+      },
+      "expected": {
+        "status": "UNKNOWN",
+        "reasons": [
+          "STATUS_NOT_ATTESTED"
+        ]
+      }
+    },
+    {
+      "id": "future_collection",
+      "patch": {
+        "status": "REPORTED",
+        "proof_kind": "OFFICIAL_DOCUMENT",
+        "source_ref": "filing-1",
+        "observed_at": "2026-10-19T08:00:00Z"
+      },
+      "expected": {
+        "status": "UNKNOWN",
+        "reasons": [
+          "STATUS_NOT_ATTESTED"
+        ]
+      }
+    },
+    {
+      "id": "actual_eps_no_document",
+      "patch": {
+        "status": "REPORTED",
+        "actual_eps": 1
+      },
+      "expected": {
+        "status": "UNKNOWN",
+        "reasons": [
+          "STATUS_NOT_ATTESTED"
+        ]
+      }
+    },
+    {
+      "id": "schedule_not_results",
+      "patch": {
+        "status": "REPORTED",
+        "proof_kind": "OFFICIAL_SCHEDULE",
+        "source_ref": "calendar-1",
+        "observed_at": "2026-10-18T08:00:00Z"
+      },
+      "expected": {
+        "status": "UNKNOWN",
+        "reasons": [
+          "STATUS_NOT_ATTESTED"
+        ]
+      }
+    },
+    {
+      "id": "new_york_midnight",
+      "patch": {
+        "event_date": "2026-10-17",
+        "event_time": "2026-10-17T23:30:00-04:00"
+      },
+      "expected": {
+        "status": "ESTIMATED",
+        "reasons": [
+          "ESTIMATE_OVERDUE"
+        ]
+      }
+    },
+    {
+      "id": "paris_midnight",
+      "patch": {
+        "event_date": "2026-10-18",
+        "event_time": "2026-10-18T00:30:00+02:00"
+      },
+      "expected": {
+        "status": "ESTIMATED",
+        "reasons": []
+      }
+    },
+    {
+      "id": "filing_missing_date",
+      "patch": {
+        "event_type": "REGULATORY_FILING",
+        "status": "REPORTED",
+        "proof_kind": "OFFICIAL_DOCUMENT",
+        "source_ref": "filing-1",
+        "observed_at": "2026-10-18T08:00:00Z",
+        "event_date": "2026-10-17",
+        "filing_date": null
+      },
+      "expected": {
+        "status": "UNKNOWN",
+        "reasons": [
+          "STATUS_NOT_ATTESTED"
+        ]
+      }
+    },
+    {
+      "id": "filing_future_date",
+      "patch": {
+        "event_type": "REGULATORY_FILING",
+        "status": "REPORTED",
+        "proof_kind": "OFFICIAL_DOCUMENT",
+        "source_ref": "filing-1",
+        "observed_at": "2026-10-18T08:00:00Z",
+        "event_date": "2026-10-17",
+        "filing_date": "2026-10-19"
+      },
+      "expected": {
+        "status": "UNKNOWN",
+        "reasons": [
+          "STATUS_NOT_ATTESTED"
+        ]
+      }
+    },
+    {
+      "id": "filing_other_day",
+      "patch": {
+        "event_type": "REGULATORY_FILING",
+        "status": "REPORTED",
+        "proof_kind": "OFFICIAL_DOCUMENT",
+        "source_ref": "filing-1",
+        "observed_at": "2026-10-18T08:00:00Z",
+        "event_date": "2026-10-17",
+        "filing_date": "2026-10-16"
+      },
+      "expected": {
+        "status": "UNKNOWN",
+        "reasons": [
+          "STATUS_NOT_ATTESTED"
+        ]
+      }
+    },
+    {
+      "id": "filing_same_day",
+      "patch": {
+        "event_type": "REGULATORY_FILING",
+        "status": "REPORTED",
+        "proof_kind": "OFFICIAL_DOCUMENT",
+        "source_ref": "filing-1",
+        "observed_at": "2026-10-18T08:00:00Z",
+        "event_date": "2026-10-17",
+        "filing_date": "2026-10-17"
+      },
+      "expected": {
+        "status": "REPORTED",
+        "reasons": []
+      }
+    },
+    {
+      "id": "filing_without_observation",
+      "patch": {
+        "event_type": "REGULATORY_FILING",
+        "status": "REPORTED",
+        "proof_kind": "OFFICIAL_DOCUMENT",
+        "source_ref": "filing-1",
+        "observed_at": null,
+        "event_date": "2026-10-17",
+        "filing_date": "2026-10-17"
+      },
+      "expected": {
+        "status": "UNKNOWN",
+        "reasons": [
+          "STATUS_NOT_ATTESTED"
+        ]
+      }
+    },
+    {
+      "id": "filing_future_occurrence",
+      "patch": {
+        "event_type": "REGULATORY_FILING",
+        "status": "REPORTED",
+        "proof_kind": "OFFICIAL_DOCUMENT",
+        "source_ref": "filing-1",
+        "observed_at": "2026-10-18T08:00:00Z",
+        "event_date": "2026-10-19",
+        "filing_date": "2026-10-19"
+      },
+      "expected": {
+        "status": "UNKNOWN",
+        "reasons": [
+          "STATUS_NOT_ATTESTED"
+        ]
+      }
+    },
+    {
+      "id": "filing_observed_before_occurrence",
+      "patch": {
+        "event_type": "REGULATORY_FILING",
+        "status": "REPORTED",
+        "proof_kind": "OFFICIAL_DOCUMENT",
+        "source_ref": "filing-1",
+        "observed_at": "2026-10-16T08:00:00Z",
+        "event_date": "2026-10-17",
+        "filing_date": "2026-10-17"
+      },
+      "expected": {
+        "status": "UNKNOWN",
+        "reasons": [
+          "STATUS_NOT_ATTESTED"
+        ]
+      }
+    }
+  ],
+  "ttm_invalid_dates": [
+    "2025-10-1",
+    "2025-1-01",
+    "2025/10/01",
+    "20251001",
+    " 2025-10-01",
+    "2025-10-01 ",
+    "2025-10-01T00:00:00Z",
+    "2025-10-01\n",
+    "2025-02-29",
+    "2026-02-30",
+    "0000-10-01",
+    "2025-00-01",
+    "2025-13-01",
+    "2025-10-00",
+    "2025-10-32",
+    "today",
+    "infinity",
+    "-infinity"
+  ],
+  "ttm_base": [
+    {
+      "instrument_key": "synthetic-issuer",
+      "fiscal_year": 2026,
+      "period_kind": "Q1",
+      "period_start": "2025-10-01",
+      "period_end": "2025-12-31",
+      "currency": "USD",
+      "basis": "DISCRETE",
+      "calendar_basis": "CALENDAR",
+      "definition": "GAAP",
+      "scope": "CONSOLIDATED",
+      "source_ref": "fixture-quarter-1",
+      "revenue": 100,
+      "ebitda": 10,
+      "operating_income": 8,
+      "net_income": 5,
+      "free_cash_flow": -2
+    },
+    {
+      "instrument_key": "synthetic-issuer",
+      "fiscal_year": 2026,
+      "period_kind": "Q2",
+      "period_start": "2026-01-01",
+      "period_end": "2026-03-31",
+      "currency": "USD",
+      "basis": "DISCRETE",
+      "calendar_basis": "CALENDAR",
+      "definition": "GAAP",
+      "scope": "CONSOLIDATED",
+      "source_ref": "fixture-quarter-2",
+      "revenue": 200,
+      "ebitda": 20,
+      "operating_income": 16,
+      "net_income": 10,
+      "free_cash_flow": -4
+    },
+    {
+      "instrument_key": "synthetic-issuer",
+      "fiscal_year": 2026,
+      "period_kind": "Q3",
+      "period_start": "2026-04-01",
+      "period_end": "2026-06-30",
+      "currency": "USD",
+      "basis": "DISCRETE",
+      "calendar_basis": "CALENDAR",
+      "definition": "GAAP",
+      "scope": "CONSOLIDATED",
+      "source_ref": "fixture-quarter-3",
+      "revenue": 300,
+      "ebitda": 30,
+      "operating_income": 24,
+      "net_income": 15,
+      "free_cash_flow": -6
+    },
+    {
+      "instrument_key": "synthetic-issuer",
+      "fiscal_year": 2026,
+      "period_kind": "Q4",
+      "period_start": "2026-07-01",
+      "period_end": "2026-09-30",
+      "currency": "USD",
+      "basis": "DISCRETE",
+      "calendar_basis": "CALENDAR",
+      "definition": "GAAP",
+      "scope": "CONSOLIDATED",
+      "source_ref": "fixture-quarter-4",
+      "revenue": 400,
+      "ebitda": 40,
+      "operating_income": 32,
+      "net_income": 20,
+      "free_cash_flow": -8
+    }
+  ],
+  "ttm_cases": [
+    {
+      "id": "offset_fiscal_year",
+      "complete": true
+    },
+    {
+      "id": "three_quarters",
+      "take": 3,
+      "complete": false
+    },
+    {
+      "id": "duplicate",
+      "duplicate": true,
+      "complete": false
+    },
+    {
+      "id": "gap",
+      "row": 1,
+      "patch": {
+        "period_start": "2026-01-02"
+      },
+      "complete": false
+    },
+    {
+      "id": "overlap",
+      "row": 1,
+      "patch": {
+        "period_start": "2025-12-31"
+      },
+      "complete": false
+    },
+    {
+      "id": "missing_currency",
+      "row": 1,
+      "patch": {
+        "currency": null
+      },
+      "complete": false
+    },
+    {
+      "id": "mixed_currency",
+      "row": 1,
+      "patch": {
+        "currency": "EUR"
+      },
+      "complete": false
+    },
+    {
+      "id": "mixed_issuer",
+      "row": 1,
+      "patch": {
+        "instrument_key": "another"
+      },
+      "complete": false
+    },
+    {
+      "id": "missing_start",
+      "row": 0,
+      "patch": {
+        "period_start": null
+      },
+      "complete": false
+    },
+    {
+      "id": "missing_end",
+      "row": 2,
+      "patch": {
+        "period_end": null
+      },
+      "complete": false
+    },
+    {
+      "id": "unknown_scope",
+      "row": 1,
+      "patch": {
+        "scope": null
+      },
+      "complete": false
+    },
+    {
+      "id": "scope_mismatch",
+      "row": 1,
+      "patch": {
+        "scope": "STANDALONE"
+      },
+      "complete": false
+    },
+    {
+      "id": "definition_mismatch",
+      "row": 1,
+      "patch": {
+        "definition": "NON_GAAP"
+      },
+      "complete": false
+    },
+    {
+      "id": "missing_source",
+      "row": 1,
+      "patch": {
+        "source_ref": null
+      },
+      "complete": false
+    },
+    {
+      "id": "half_year",
+      "row": 1,
+      "patch": {
+        "period_kind": "H1",
+        "basis": "YTD",
+        "period_start": "2025-10-01"
+      },
+      "complete": false
+    },
+    {
+      "id": "ytd_as_q2",
+      "row": 1,
+      "patch": {
+        "basis": "YTD"
+      },
+      "complete": false
+    },
+    {
+      "id": "q_sequence",
+      "row": 2,
+      "patch": {
+        "period_kind": "Q1"
+      },
+      "complete": false
+    },
+    {
+      "id": "no_basis",
+      "row": 1,
+      "patch": {
+        "basis": null
+      },
+      "complete": false
+    },
+    {
+      "id": "calendar_kind_unknown",
+      "row": 1,
+      "patch": {
+        "calendar_basis": null
+      },
+      "complete": false
+    },
+    {
+      "id": "fiscal_year_missing",
+      "row": 1,
+      "patch": {
+        "fiscal_year": null
+      },
+      "complete": false
+    },
+    {
+      "id": "missing_revenue",
+      "row": 2,
+      "patch": {
+        "revenue": null
+      },
+      "complete": true,
+      "null_metrics": [
+        "revenue"
+      ]
+    },
+    {
+      "id": "banks_missing_ebitda",
+      "row": 0,
+      "patch": {
+        "ebitda": null
+      },
+      "complete": true,
+      "null_metrics": [
+        "ebitda"
+      ]
+    },
+    {
+      "id": "zero_is_observed",
+      "row": 0,
+      "patch": {
+        "revenue": 0
+      },
+      "complete": true
+    },
+    {
+      "id": "unsafe_sum",
+      "row": 0,
+      "patch": {
+        "revenue": 9007199254740991
+      },
+      "complete": true,
+      "null_metrics": [
+        "revenue"
+      ]
+    },
+    {
+      "id": "52_weeks",
+      "weekly": 52,
+      "complete": true
+    },
+    {
+      "id": "53_weeks",
+      "weekly": 53,
+      "complete": true
+    },
+    {
+      "id": "51_weeks",
+      "weekly": 51,
+      "complete": false
+    },
+    {
+      "id": "stable_sum_with_reordered_rows",
+      "revenues": [9007199254740991, -9007199254740991, 0.1, 0.2],
+      "reverse": true,
+      "expected_revenue": 0.30000000000000004,
+      "complete": true
+    }
+  ]
+}

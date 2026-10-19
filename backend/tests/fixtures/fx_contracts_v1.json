@@ -1,0 +1,1828 @@
+{
+  "scope": "OFFLINE_SYNTHETIC",
+  "now": "2026-10-18T12:00:00Z",
+  "cases": [
+    {
+      "id": "usd_adjacent",
+      "currency": "USD",
+      "calendar": {
+        "scope": "OFFLINE_SYNTHETIC",
+        "id": "fixture:fx-calendar",
+        "version": "v1",
+        "provider": "fixture-fx",
+        "close_convention": "fixture:daily-close",
+        "date_basis": "UTC_SOURCE_DATE",
+        "evaluated_on": "2026-10-18",
+        "expected_session": "2026-10-16",
+        "sessions": [
+          "2026-10-14",
+          "2026-10-15",
+          "2026-10-16"
+        ]
+      },
+      "rows": [
+        {
+          "ticker": "USDEUR=X",
+          "close_convention": "fixture:daily-close",
+          "observation": {
+            "scope": "OFFLINE_SYNTHETIC",
+            "domain": "FX",
+            "key": "FX:USD:EUR",
+            "value": 0.9,
+            "unit": "EUR_PER_UNIT",
+            "currency": null,
+            "observed": {
+              "precision": "DATE",
+              "value": "2026-10-15"
+            },
+            "collected_at": "2026-10-18T10:00:00Z",
+            "run_id": "fixture:fx-run",
+            "frequency": "DAILY",
+            "period": null,
+            "source": {
+              "provider": "fixture-fx",
+              "native_id": "USDEUR=X",
+              "evidence_ref": "fixture:quote-2026-10-15",
+              "adapter_version": "v1"
+            },
+            "nature": "OBSERVED",
+            "formula_ref": null,
+            "input_refs": [],
+            "rights_ref": null
+          }
+        },
+        {
+          "ticker": "USDEUR=X",
+          "close_convention": "fixture:daily-close",
+          "observation": {
+            "scope": "OFFLINE_SYNTHETIC",
+            "domain": "FX",
+            "key": "FX:USD:EUR",
+            "value": 0.99,
+            "unit": "EUR_PER_UNIT",
+            "currency": null,
+            "observed": {
+              "precision": "DATE",
+              "value": "2026-10-16"
+            },
+            "collected_at": "2026-10-18T10:00:00Z",
+            "run_id": "fixture:fx-run",
+            "frequency": "DAILY",
+            "period": null,
+            "source": {
+              "provider": "fixture-fx",
+              "native_id": "USDEUR=X",
+              "evidence_ref": "fixture:quote-2026-10-16",
+              "adapter_version": "v1"
+            },
+            "nature": "OBSERVED",
+            "formula_ref": null,
+            "input_refs": [],
+            "rights_ref": null
+          }
+        }
+      ],
+      "expected": {
+        "status": "VALIDATED",
+        "rate": 0.99,
+        "change": 0.1,
+        "inverse": -0.09090909090909094,
+        "age": 0
+      }
+    },
+    {
+      "id": "chf_adjacent",
+      "currency": "CHF",
+      "calendar": {
+        "scope": "OFFLINE_SYNTHETIC",
+        "id": "fixture:fx-calendar",
+        "version": "v1",
+        "provider": "fixture-fx",
+        "close_convention": "fixture:daily-close",
+        "date_basis": "UTC_SOURCE_DATE",
+        "evaluated_on": "2026-10-18",
+        "expected_session": "2026-10-16",
+        "sessions": [
+          "2026-10-14",
+          "2026-10-15",
+          "2026-10-16"
+        ]
+      },
+      "rows": [
+        {
+          "ticker": "CHFEUR=X",
+          "close_convention": "fixture:daily-close",
+          "observation": {
+            "scope": "OFFLINE_SYNTHETIC",
+            "domain": "FX",
+            "key": "FX:CHF:EUR",
+            "value": 1.0396039603960396,
+            "unit": "EUR_PER_UNIT",
+            "currency": null,
+            "observed": {
+              "precision": "DATE",
+              "value": "2026-10-15"
+            },
+            "collected_at": "2026-10-18T10:00:00Z",
+            "run_id": "fixture:fx-run",
+            "frequency": "DAILY",
+            "period": null,
+            "source": {
+              "provider": "fixture-fx",
+              "native_id": "CHFEUR=X",
+              "evidence_ref": "fixture:quote-2026-10-15",
+              "adapter_version": "v1"
+            },
+            "nature": "OBSERVED",
+            "formula_ref": null,
+            "input_refs": [],
+            "rights_ref": null
+          }
+        },
+        {
+          "ticker": "CHFEUR=X",
+          "close_convention": "fixture:daily-close",
+          "observation": {
+            "scope": "OFFLINE_SYNTHETIC",
+            "domain": "FX",
+            "key": "FX:CHF:EUR",
+            "value": 1.05,
+            "unit": "EUR_PER_UNIT",
+            "currency": null,
+            "observed": {
+              "precision": "DATE",
+              "value": "2026-10-16"
+            },
+            "collected_at": "2026-10-18T10:00:00Z",
+            "run_id": "fixture:fx-run",
+            "frequency": "DAILY",
+            "period": null,
+            "source": {
+              "provider": "fixture-fx",
+              "native_id": "CHFEUR=X",
+              "evidence_ref": "fixture:quote-2026-10-16",
+              "adapter_version": "v1"
+            },
+            "nature": "OBSERVED",
+            "formula_ref": null,
+            "input_refs": [],
+            "rights_ref": null
+          }
+        }
+      ],
+      "expected": {
+        "status": "VALIDATED",
+        "rate": 1.05,
+        "change": 0.01,
+        "age": 0
+      }
+    },
+    {
+      "id": "gbp_adjacent",
+      "currency": "GBP",
+      "calendar": {
+        "scope": "OFFLINE_SYNTHETIC",
+        "id": "fixture:fx-calendar",
+        "version": "v1",
+        "provider": "fixture-fx",
+        "close_convention": "fixture:daily-close",
+        "date_basis": "UTC_SOURCE_DATE",
+        "evaluated_on": "2026-10-18",
+        "expected_session": "2026-10-16",
+        "sessions": [
+          "2026-10-14",
+          "2026-10-15",
+          "2026-10-16"
+        ]
+      },
+      "rows": [
+        {
+          "ticker": "GBPEUR=X",
+          "close_convention": "fixture:daily-close",
+          "observation": {
+            "scope": "OFFLINE_SYNTHETIC",
+            "domain": "FX",
+            "key": "FX:GBP:EUR",
+            "value": 1.1584158415841583,
+            "unit": "EUR_PER_UNIT",
+            "currency": null,
+            "observed": {
+              "precision": "DATE",
+              "value": "2026-10-15"
+            },
+            "collected_at": "2026-10-18T10:00:00Z",
+            "run_id": "fixture:fx-run",
+            "frequency": "DAILY",
+            "period": null,
+            "source": {
+              "provider": "fixture-fx",
+              "native_id": "GBPEUR=X",
+              "evidence_ref": "fixture:quote-2026-10-15",
+              "adapter_version": "v1"
+            },
+            "nature": "OBSERVED",
+            "formula_ref": null,
+            "input_refs": [],
+            "rights_ref": null
+          }
+        },
+        {
+          "ticker": "GBPEUR=X",
+          "close_convention": "fixture:daily-close",
+          "observation": {
+            "scope": "OFFLINE_SYNTHETIC",
+            "domain": "FX",
+            "key": "FX:GBP:EUR",
+            "value": 1.17,
+            "unit": "EUR_PER_UNIT",
+            "currency": null,
+            "observed": {
+              "precision": "DATE",
+              "value": "2026-10-16"
+            },
+            "collected_at": "2026-10-18T10:00:00Z",
+            "run_id": "fixture:fx-run",
+            "frequency": "DAILY",
+            "period": null,
+            "source": {
+              "provider": "fixture-fx",
+              "native_id": "GBPEUR=X",
+              "evidence_ref": "fixture:quote-2026-10-16",
+              "adapter_version": "v1"
+            },
+            "nature": "OBSERVED",
+            "formula_ref": null,
+            "input_refs": [],
+            "rights_ref": null
+          }
+        }
+      ],
+      "expected": {
+        "status": "VALIDATED",
+        "rate": 1.17,
+        "change": 0.01,
+        "age": 0
+      }
+    },
+    {
+      "id": "jpy_adjacent",
+      "currency": "JPY",
+      "calendar": {
+        "scope": "OFFLINE_SYNTHETIC",
+        "id": "fixture:fx-calendar",
+        "version": "v1",
+        "provider": "fixture-fx",
+        "close_convention": "fixture:daily-close",
+        "date_basis": "UTC_SOURCE_DATE",
+        "evaluated_on": "2026-10-18",
+        "expected_session": "2026-10-16",
+        "sessions": [
+          "2026-10-14",
+          "2026-10-15",
+          "2026-10-16"
+        ]
+      },
+      "rows": [
+        {
+          "ticker": "JPYEUR=X",
+          "close_convention": "fixture:daily-close",
+          "observation": {
+            "scope": "OFFLINE_SYNTHETIC",
+            "domain": "FX",
+            "key": "FX:JPY:EUR",
+            "value": 0.00603960396039604,
+            "unit": "EUR_PER_UNIT",
+            "currency": null,
+            "observed": {
+              "precision": "DATE",
+              "value": "2026-10-15"
+            },
+            "collected_at": "2026-10-18T10:00:00Z",
+            "run_id": "fixture:fx-run",
+            "frequency": "DAILY",
+            "period": null,
+            "source": {
+              "provider": "fixture-fx",
+              "native_id": "JPYEUR=X",
+              "evidence_ref": "fixture:quote-2026-10-15",
+              "adapter_version": "v1"
+            },
+            "nature": "OBSERVED",
+            "formula_ref": null,
+            "input_refs": [],
+            "rights_ref": null
+          }
+        },
+        {
+          "ticker": "JPYEUR=X",
+          "close_convention": "fixture:daily-close",
+          "observation": {
+            "scope": "OFFLINE_SYNTHETIC",
+            "domain": "FX",
+            "key": "FX:JPY:EUR",
+            "value": 0.0061,
+            "unit": "EUR_PER_UNIT",
+            "currency": null,
+            "observed": {
+              "precision": "DATE",
+              "value": "2026-10-16"
+            },
+            "collected_at": "2026-10-18T10:00:00Z",
+            "run_id": "fixture:fx-run",
+            "frequency": "DAILY",
+            "period": null,
+            "source": {
+              "provider": "fixture-fx",
+              "native_id": "JPYEUR=X",
+              "evidence_ref": "fixture:quote-2026-10-16",
+              "adapter_version": "v1"
+            },
+            "nature": "OBSERVED",
+            "formula_ref": null,
+            "input_refs": [],
+            "rights_ref": null
+          }
+        }
+      ],
+      "expected": {
+        "status": "VALIDATED",
+        "rate": 0.0061,
+        "change": 0.01,
+        "age": 0
+      }
+    },
+    {
+      "id": "no_calendar",
+      "currency": "USD",
+      "calendar": null,
+      "rows": [
+        {
+          "ticker": "USDEUR=X",
+          "close_convention": "fixture:daily-close",
+          "observation": {
+            "scope": "OFFLINE_SYNTHETIC",
+            "domain": "FX",
+            "key": "FX:USD:EUR",
+            "value": 0.9,
+            "unit": "EUR_PER_UNIT",
+            "currency": null,
+            "observed": {
+              "precision": "DATE",
+              "value": "2026-10-15"
+            },
+            "collected_at": "2026-10-18T10:00:00Z",
+            "run_id": "fixture:fx-run",
+            "frequency": "DAILY",
+            "period": null,
+            "source": {
+              "provider": "fixture-fx",
+              "native_id": "USDEUR=X",
+              "evidence_ref": "fixture:quote-2026-10-15",
+              "adapter_version": "v1"
+            },
+            "nature": "OBSERVED",
+            "formula_ref": null,
+            "input_refs": [],
+            "rights_ref": null
+          }
+        },
+        {
+          "ticker": "USDEUR=X",
+          "close_convention": "fixture:daily-close",
+          "observation": {
+            "scope": "OFFLINE_SYNTHETIC",
+            "domain": "FX",
+            "key": "FX:USD:EUR",
+            "value": 0.99,
+            "unit": "EUR_PER_UNIT",
+            "currency": null,
+            "observed": {
+              "precision": "DATE",
+              "value": "2026-10-16"
+            },
+            "collected_at": "2026-10-18T10:00:00Z",
+            "run_id": "fixture:fx-run",
+            "frequency": "DAILY",
+            "period": null,
+            "source": {
+              "provider": "fixture-fx",
+              "native_id": "USDEUR=X",
+              "evidence_ref": "fixture:quote-2026-10-16",
+              "adapter_version": "v1"
+            },
+            "nature": "OBSERVED",
+            "formula_ref": null,
+            "input_refs": [],
+            "rights_ref": null
+          }
+        }
+      ],
+      "expected": {
+        "status": "UNKNOWN",
+        "change": null,
+        "age": null
+      }
+    },
+    {
+      "id": "stale_source_recent_collection",
+      "currency": "USD",
+      "calendar": {
+        "scope": "OFFLINE_SYNTHETIC",
+        "id": "fixture:fx-calendar",
+        "version": "v1",
+        "provider": "fixture-fx",
+        "close_convention": "fixture:daily-close",
+        "date_basis": "UTC_SOURCE_DATE",
+        "evaluated_on": "2026-10-18",
+        "expected_session": "2026-10-16",
+        "sessions": [
+          "2026-10-14",
+          "2026-10-15",
+          "2026-10-16"
+        ]
+      },
+      "rows": [
+        {
+          "ticker": "USDEUR=X",
+          "close_convention": "fixture:daily-close",
+          "observation": {
+            "scope": "OFFLINE_SYNTHETIC",
+            "domain": "FX",
+            "key": "FX:USD:EUR",
+            "value": 0.8,
+            "unit": "EUR_PER_UNIT",
+            "currency": null,
+            "observed": {
+              "precision": "DATE",
+              "value": "2026-10-14"
+            },
+            "collected_at": "2026-10-18T10:00:00Z",
+            "run_id": "fixture:fx-run",
+            "frequency": "DAILY",
+            "period": null,
+            "source": {
+              "provider": "fixture-fx",
+              "native_id": "USDEUR=X",
+              "evidence_ref": "fixture:quote-2026-10-14",
+              "adapter_version": "v1"
+            },
+            "nature": "OBSERVED",
+            "formula_ref": null,
+            "input_refs": [],
+            "rights_ref": null
+          }
+        },
+        {
+          "ticker": "USDEUR=X",
+          "close_convention": "fixture:daily-close",
+          "observation": {
+            "scope": "OFFLINE_SYNTHETIC",
+            "domain": "FX",
+            "key": "FX:USD:EUR",
+            "value": 0.9,
+            "unit": "EUR_PER_UNIT",
+            "currency": null,
+            "observed": {
+              "precision": "DATE",
+              "value": "2026-10-15"
+            },
+            "collected_at": "2026-10-18T10:00:00Z",
+            "run_id": "fixture:fx-run",
+            "frequency": "DAILY",
+            "period": null,
+            "source": {
+              "provider": "fixture-fx",
+              "native_id": "USDEUR=X",
+              "evidence_ref": "fixture:quote-2026-10-15",
+              "adapter_version": "v1"
+            },
+            "nature": "OBSERVED",
+            "formula_ref": null,
+            "input_refs": [],
+            "rights_ref": null
+          }
+        }
+      ],
+      "expected": {
+        "status": "STALE",
+        "change": null,
+        "age": 1
+      }
+    },
+    {
+      "id": "non_adjacent",
+      "currency": "USD",
+      "calendar": {
+        "scope": "OFFLINE_SYNTHETIC",
+        "id": "fixture:fx-calendar",
+        "version": "v1",
+        "provider": "fixture-fx",
+        "close_convention": "fixture:daily-close",
+        "date_basis": "UTC_SOURCE_DATE",
+        "evaluated_on": "2026-10-18",
+        "expected_session": "2026-10-16",
+        "sessions": [
+          "2026-10-14",
+          "2026-10-15",
+          "2026-10-16"
+        ]
+      },
+      "rows": [
+        {
+          "ticker": "USDEUR=X",
+          "close_convention": "fixture:daily-close",
+          "observation": {
+            "scope": "OFFLINE_SYNTHETIC",
+            "domain": "FX",
+            "key": "FX:USD:EUR",
+            "value": 0.8,
+            "unit": "EUR_PER_UNIT",
+            "currency": null,
+            "observed": {
+              "precision": "DATE",
+              "value": "2026-10-14"
+            },
+            "collected_at": "2026-10-18T10:00:00Z",
+            "run_id": "fixture:fx-run",
+            "frequency": "DAILY",
+            "period": null,
+            "source": {
+              "provider": "fixture-fx",
+              "native_id": "USDEUR=X",
+              "evidence_ref": "fixture:quote-2026-10-14",
+              "adapter_version": "v1"
+            },
+            "nature": "OBSERVED",
+            "formula_ref": null,
+            "input_refs": [],
+            "rights_ref": null
+          }
+        },
+        {
+          "ticker": "USDEUR=X",
+          "close_convention": "fixture:daily-close",
+          "observation": {
+            "scope": "OFFLINE_SYNTHETIC",
+            "domain": "FX",
+            "key": "FX:USD:EUR",
+            "value": 0.99,
+            "unit": "EUR_PER_UNIT",
+            "currency": null,
+            "observed": {
+              "precision": "DATE",
+              "value": "2026-10-16"
+            },
+            "collected_at": "2026-10-18T10:00:00Z",
+            "run_id": "fixture:fx-run",
+            "frequency": "DAILY",
+            "period": null,
+            "source": {
+              "provider": "fixture-fx",
+              "native_id": "USDEUR=X",
+              "evidence_ref": "fixture:quote-2026-10-16",
+              "adapter_version": "v1"
+            },
+            "nature": "OBSERVED",
+            "formula_ref": null,
+            "input_refs": [],
+            "rights_ref": null
+          }
+        }
+      ],
+      "expected": {
+        "status": "VALIDATED",
+        "change": null,
+        "age": 0,
+        "comparison_reason": "NON_ADJACENT_OR_UNKNOWN_SESSION"
+      }
+    },
+    {
+      "id": "single_quote",
+      "currency": "USD",
+      "calendar": {
+        "scope": "OFFLINE_SYNTHETIC",
+        "id": "fixture:fx-calendar",
+        "version": "v1",
+        "provider": "fixture-fx",
+        "close_convention": "fixture:daily-close",
+        "date_basis": "UTC_SOURCE_DATE",
+        "evaluated_on": "2026-10-18",
+        "expected_session": "2026-10-16",
+        "sessions": [
+          "2026-10-14",
+          "2026-10-15",
+          "2026-10-16"
+        ]
+      },
+      "rows": [
+        {
+          "ticker": "USDEUR=X",
+          "close_convention": "fixture:daily-close",
+          "observation": {
+            "scope": "OFFLINE_SYNTHETIC",
+            "domain": "FX",
+            "key": "FX:USD:EUR",
+            "value": 0.99,
+            "unit": "EUR_PER_UNIT",
+            "currency": null,
+            "observed": {
+              "precision": "DATE",
+              "value": "2026-10-16"
+            },
+            "collected_at": "2026-10-18T10:00:00Z",
+            "run_id": "fixture:fx-run",
+            "frequency": "DAILY",
+            "period": null,
+            "source": {
+              "provider": "fixture-fx",
+              "native_id": "USDEUR=X",
+              "evidence_ref": "fixture:quote-2026-10-16",
+              "adapter_version": "v1"
+            },
+            "nature": "OBSERVED",
+            "formula_ref": null,
+            "input_refs": [],
+            "rights_ref": null
+          }
+        }
+      ],
+      "expected": {
+        "status": "VALIDATED",
+        "change": null,
+        "age": 0
+      }
+    },
+    {
+      "id": "empty",
+      "currency": "USD",
+      "calendar": {
+        "scope": "OFFLINE_SYNTHETIC",
+        "id": "fixture:fx-calendar",
+        "version": "v1",
+        "provider": "fixture-fx",
+        "close_convention": "fixture:daily-close",
+        "date_basis": "UTC_SOURCE_DATE",
+        "evaluated_on": "2026-10-18",
+        "expected_session": "2026-10-16",
+        "sessions": [
+          "2026-10-14",
+          "2026-10-15",
+          "2026-10-16"
+        ]
+      },
+      "rows": [],
+      "expected": {
+        "status": "MISSING",
+        "change": null,
+        "age": null
+      }
+    },
+    {
+      "id": "missing_value",
+      "currency": "USD",
+      "calendar": {
+        "scope": "OFFLINE_SYNTHETIC",
+        "id": "fixture:fx-calendar",
+        "version": "v1",
+        "provider": "fixture-fx",
+        "close_convention": "fixture:daily-close",
+        "date_basis": "UTC_SOURCE_DATE",
+        "evaluated_on": "2026-10-18",
+        "expected_session": "2026-10-16",
+        "sessions": [
+          "2026-10-14",
+          "2026-10-15",
+          "2026-10-16"
+        ]
+      },
+      "rows": [
+        {
+          "ticker": "USDEUR=X",
+          "close_convention": "fixture:daily-close",
+          "observation": {
+            "scope": "OFFLINE_SYNTHETIC",
+            "domain": "FX",
+            "key": "FX:USD:EUR",
+            "value": null,
+            "unit": "EUR_PER_UNIT",
+            "currency": null,
+            "observed": {
+              "precision": "DATE",
+              "value": "2026-10-16"
+            },
+            "collected_at": "2026-10-18T10:00:00Z",
+            "run_id": "fixture:fx-run",
+            "frequency": "DAILY",
+            "period": null,
+            "source": {
+              "provider": "fixture-fx",
+              "native_id": "USDEUR=X",
+              "evidence_ref": "fixture:quote-2026-10-16",
+              "adapter_version": "v1"
+            },
+            "nature": "OBSERVED",
+            "formula_ref": null,
+            "input_refs": [],
+            "rights_ref": null
+          }
+        }
+      ],
+      "expected": {
+        "status": "MISSING",
+        "change": null,
+        "age": 0
+      }
+    },
+    {
+      "id": "undated",
+      "currency": "USD",
+      "calendar": {
+        "scope": "OFFLINE_SYNTHETIC",
+        "id": "fixture:fx-calendar",
+        "version": "v1",
+        "provider": "fixture-fx",
+        "close_convention": "fixture:daily-close",
+        "date_basis": "UTC_SOURCE_DATE",
+        "evaluated_on": "2026-10-18",
+        "expected_session": "2026-10-16",
+        "sessions": [
+          "2026-10-14",
+          "2026-10-15",
+          "2026-10-16"
+        ]
+      },
+      "rows": [
+        {
+          "ticker": "USDEUR=X",
+          "close_convention": "fixture:daily-close",
+          "observation": {
+            "scope": "OFFLINE_SYNTHETIC",
+            "domain": "FX",
+            "key": "FX:USD:EUR",
+            "value": 0.99,
+            "unit": "EUR_PER_UNIT",
+            "currency": null,
+            "observed": null,
+            "collected_at": "2026-10-18T10:00:00Z",
+            "run_id": "fixture:fx-run",
+            "frequency": "DAILY",
+            "period": null,
+            "source": {
+              "provider": "fixture-fx",
+              "native_id": "USDEUR=X",
+              "evidence_ref": "fixture:quote-2026-10-16",
+              "adapter_version": "v1"
+            },
+            "nature": "OBSERVED",
+            "formula_ref": null,
+            "input_refs": [],
+            "rights_ref": null
+          }
+        }
+      ],
+      "expected": {
+        "status": "UNKNOWN",
+        "change": null,
+        "age": null
+      }
+    },
+    {
+      "id": "conflicting_duplicate",
+      "currency": "USD",
+      "calendar": {
+        "scope": "OFFLINE_SYNTHETIC",
+        "id": "fixture:fx-calendar",
+        "version": "v1",
+        "provider": "fixture-fx",
+        "close_convention": "fixture:daily-close",
+        "date_basis": "UTC_SOURCE_DATE",
+        "evaluated_on": "2026-10-18",
+        "expected_session": "2026-10-16",
+        "sessions": [
+          "2026-10-14",
+          "2026-10-15",
+          "2026-10-16"
+        ]
+      },
+      "rows": [
+        {
+          "ticker": "USDEUR=X",
+          "close_convention": "fixture:daily-close",
+          "observation": {
+            "scope": "OFFLINE_SYNTHETIC",
+            "domain": "FX",
+            "key": "FX:USD:EUR",
+            "value": 0.99,
+            "unit": "EUR_PER_UNIT",
+            "currency": null,
+            "observed": {
+              "precision": "DATE",
+              "value": "2026-10-16"
+            },
+            "collected_at": "2026-10-18T10:00:00Z",
+            "run_id": "fixture:fx-run",
+            "frequency": "DAILY",
+            "period": null,
+            "source": {
+              "provider": "fixture-fx",
+              "native_id": "USDEUR=X",
+              "evidence_ref": "fixture:quote-2026-10-16",
+              "adapter_version": "v1"
+            },
+            "nature": "OBSERVED",
+            "formula_ref": null,
+            "input_refs": [],
+            "rights_ref": null
+          }
+        },
+        {
+          "ticker": "USDEUR=X",
+          "close_convention": "fixture:daily-close",
+          "observation": {
+            "scope": "OFFLINE_SYNTHETIC",
+            "domain": "FX",
+            "key": "FX:USD:EUR",
+            "value": 1.01,
+            "unit": "EUR_PER_UNIT",
+            "currency": null,
+            "observed": {
+              "precision": "DATE",
+              "value": "2026-10-16"
+            },
+            "collected_at": "2026-10-18T10:00:00Z",
+            "run_id": "fixture:fx-run",
+            "frequency": "DAILY",
+            "period": null,
+            "source": {
+              "provider": "fixture-fx",
+              "native_id": "USDEUR=X",
+              "evidence_ref": "fixture:quote-2026-10-16",
+              "adapter_version": "v1"
+            },
+            "nature": "OBSERVED",
+            "formula_ref": null,
+            "input_refs": [],
+            "rights_ref": null
+          }
+        }
+      ],
+      "expected": {
+        "status": "CONFLICT",
+        "change": null,
+        "age": 0
+      }
+    },
+    {
+      "id": "idempotent_duplicate",
+      "currency": "USD",
+      "calendar": {
+        "scope": "OFFLINE_SYNTHETIC",
+        "id": "fixture:fx-calendar",
+        "version": "v1",
+        "provider": "fixture-fx",
+        "close_convention": "fixture:daily-close",
+        "date_basis": "UTC_SOURCE_DATE",
+        "evaluated_on": "2026-10-18",
+        "expected_session": "2026-10-16",
+        "sessions": [
+          "2026-10-14",
+          "2026-10-15",
+          "2026-10-16"
+        ]
+      },
+      "rows": [
+        {
+          "ticker": "USDEUR=X",
+          "close_convention": "fixture:daily-close",
+          "observation": {
+            "scope": "OFFLINE_SYNTHETIC",
+            "domain": "FX",
+            "key": "FX:USD:EUR",
+            "value": 0.99,
+            "unit": "EUR_PER_UNIT",
+            "currency": null,
+            "observed": {
+              "precision": "DATE",
+              "value": "2026-10-16"
+            },
+            "collected_at": "2026-10-18T11:00:00Z",
+            "run_id": "fixture:replay",
+            "frequency": "DAILY",
+            "period": null,
+            "source": {
+              "provider": "fixture-fx",
+              "native_id": "USDEUR=X",
+              "evidence_ref": "fixture:quote-2026-10-16",
+              "adapter_version": "v1"
+            },
+            "nature": "OBSERVED",
+            "formula_ref": null,
+            "input_refs": [],
+            "rights_ref": null
+          }
+        },
+        {
+          "ticker": "USDEUR=X",
+          "close_convention": "fixture:daily-close",
+          "observation": {
+            "scope": "OFFLINE_SYNTHETIC",
+            "domain": "FX",
+            "key": "FX:USD:EUR",
+            "value": 0.99,
+            "unit": "EUR_PER_UNIT",
+            "currency": null,
+            "observed": {
+              "precision": "DATE",
+              "value": "2026-10-16"
+            },
+            "collected_at": "2026-10-18T10:00:00Z",
+            "run_id": "fixture:fx-run",
+            "frequency": "DAILY",
+            "period": null,
+            "source": {
+              "provider": "fixture-fx",
+              "native_id": "USDEUR=X",
+              "evidence_ref": "fixture:quote-2026-10-16",
+              "adapter_version": "v1"
+            },
+            "nature": "OBSERVED",
+            "formula_ref": null,
+            "input_refs": [],
+            "rights_ref": null
+          }
+        }
+      ],
+      "expected": {
+        "status": "VALIDATED",
+        "change": null,
+        "age": 0
+      }
+    },
+    {
+      "id": "different_provider",
+      "currency": "USD",
+      "calendar": {
+        "scope": "OFFLINE_SYNTHETIC",
+        "id": "fixture:fx-calendar",
+        "version": "v1",
+        "provider": "fixture-fx",
+        "close_convention": "fixture:daily-close",
+        "date_basis": "UTC_SOURCE_DATE",
+        "evaluated_on": "2026-10-18",
+        "expected_session": "2026-10-16",
+        "sessions": [
+          "2026-10-14",
+          "2026-10-15",
+          "2026-10-16"
+        ]
+      },
+      "rows": [
+        {
+          "ticker": "USDEUR=X",
+          "close_convention": "fixture:daily-close",
+          "observation": {
+            "scope": "OFFLINE_SYNTHETIC",
+            "domain": "FX",
+            "key": "FX:USD:EUR",
+            "value": 0.9,
+            "unit": "EUR_PER_UNIT",
+            "currency": null,
+            "observed": {
+              "precision": "DATE",
+              "value": "2026-10-15"
+            },
+            "collected_at": "2026-10-18T10:00:00Z",
+            "run_id": "fixture:fx-run",
+            "frequency": "DAILY",
+            "period": null,
+            "source": {
+              "provider": "fixture-other",
+              "native_id": "USDEUR=X",
+              "evidence_ref": "fixture:quote-2026-10-15",
+              "adapter_version": "v1"
+            },
+            "nature": "OBSERVED",
+            "formula_ref": null,
+            "input_refs": [],
+            "rights_ref": null
+          }
+        },
+        {
+          "ticker": "USDEUR=X",
+          "close_convention": "fixture:daily-close",
+          "observation": {
+            "scope": "OFFLINE_SYNTHETIC",
+            "domain": "FX",
+            "key": "FX:USD:EUR",
+            "value": 0.99,
+            "unit": "EUR_PER_UNIT",
+            "currency": null,
+            "observed": {
+              "precision": "DATE",
+              "value": "2026-10-16"
+            },
+            "collected_at": "2026-10-18T10:00:00Z",
+            "run_id": "fixture:fx-run",
+            "frequency": "DAILY",
+            "period": null,
+            "source": {
+              "provider": "fixture-fx",
+              "native_id": "USDEUR=X",
+              "evidence_ref": "fixture:quote-2026-10-16",
+              "adapter_version": "v1"
+            },
+            "nature": "OBSERVED",
+            "formula_ref": null,
+            "input_refs": [],
+            "rights_ref": null
+          }
+        }
+      ],
+      "expected": {
+        "status": "VALIDATED",
+        "change": null,
+        "age": 0,
+        "comparison_reason": "SOURCE_MISMATCH"
+      }
+    },
+    {
+      "id": "different_close",
+      "currency": "USD",
+      "calendar": {
+        "scope": "OFFLINE_SYNTHETIC",
+        "id": "fixture:fx-calendar",
+        "version": "v1",
+        "provider": "fixture-fx",
+        "close_convention": "fixture:daily-close",
+        "date_basis": "UTC_SOURCE_DATE",
+        "evaluated_on": "2026-10-18",
+        "expected_session": "2026-10-16",
+        "sessions": [
+          "2026-10-14",
+          "2026-10-15",
+          "2026-10-16"
+        ]
+      },
+      "rows": [
+        {
+          "ticker": "USDEUR=X",
+          "close_convention": "fixture:another-close",
+          "observation": {
+            "scope": "OFFLINE_SYNTHETIC",
+            "domain": "FX",
+            "key": "FX:USD:EUR",
+            "value": 0.9,
+            "unit": "EUR_PER_UNIT",
+            "currency": null,
+            "observed": {
+              "precision": "DATE",
+              "value": "2026-10-15"
+            },
+            "collected_at": "2026-10-18T10:00:00Z",
+            "run_id": "fixture:fx-run",
+            "frequency": "DAILY",
+            "period": null,
+            "source": {
+              "provider": "fixture-fx",
+              "native_id": "USDEUR=X",
+              "evidence_ref": "fixture:quote-2026-10-15",
+              "adapter_version": "v1"
+            },
+            "nature": "OBSERVED",
+            "formula_ref": null,
+            "input_refs": [],
+            "rights_ref": null
+          }
+        },
+        {
+          "ticker": "USDEUR=X",
+          "close_convention": "fixture:daily-close",
+          "observation": {
+            "scope": "OFFLINE_SYNTHETIC",
+            "domain": "FX",
+            "key": "FX:USD:EUR",
+            "value": 0.99,
+            "unit": "EUR_PER_UNIT",
+            "currency": null,
+            "observed": {
+              "precision": "DATE",
+              "value": "2026-10-16"
+            },
+            "collected_at": "2026-10-18T10:00:00Z",
+            "run_id": "fixture:fx-run",
+            "frequency": "DAILY",
+            "period": null,
+            "source": {
+              "provider": "fixture-fx",
+              "native_id": "USDEUR=X",
+              "evidence_ref": "fixture:quote-2026-10-16",
+              "adapter_version": "v1"
+            },
+            "nature": "OBSERVED",
+            "formula_ref": null,
+            "input_refs": [],
+            "rights_ref": null
+          }
+        }
+      ],
+      "expected": {
+        "status": "VALIDATED",
+        "change": null,
+        "age": 0,
+        "comparison_reason": "METHOD_OR_PRECISION_MISMATCH"
+      }
+    },
+    {
+      "id": "different_precision",
+      "currency": "USD",
+      "calendar": {
+        "scope": "OFFLINE_SYNTHETIC",
+        "id": "fixture:fx-calendar",
+        "version": "v1",
+        "provider": "fixture-fx",
+        "close_convention": "fixture:daily-close",
+        "date_basis": "UTC_SOURCE_DATE",
+        "evaluated_on": "2026-10-18",
+        "expected_session": "2026-10-16",
+        "sessions": [
+          "2026-10-14",
+          "2026-10-15",
+          "2026-10-16"
+        ]
+      },
+      "rows": [
+        {
+          "ticker": "USDEUR=X",
+          "close_convention": "fixture:daily-close",
+          "observation": {
+            "scope": "OFFLINE_SYNTHETIC",
+            "domain": "FX",
+            "key": "FX:USD:EUR",
+            "value": 0.9,
+            "unit": "EUR_PER_UNIT",
+            "currency": null,
+            "observed": {
+              "precision": "TIMESTAMP",
+              "value": "2026-10-15T16:00:00Z"
+            },
+            "collected_at": "2026-10-18T10:00:00Z",
+            "run_id": "fixture:fx-run",
+            "frequency": "DAILY",
+            "period": null,
+            "source": {
+              "provider": "fixture-fx",
+              "native_id": "USDEUR=X",
+              "evidence_ref": "fixture:quote-2026-10-15",
+              "adapter_version": "v1"
+            },
+            "nature": "OBSERVED",
+            "formula_ref": null,
+            "input_refs": [],
+            "rights_ref": null
+          }
+        },
+        {
+          "ticker": "USDEUR=X",
+          "close_convention": "fixture:daily-close",
+          "observation": {
+            "scope": "OFFLINE_SYNTHETIC",
+            "domain": "FX",
+            "key": "FX:USD:EUR",
+            "value": 0.99,
+            "unit": "EUR_PER_UNIT",
+            "currency": null,
+            "observed": {
+              "precision": "DATE",
+              "value": "2026-10-16"
+            },
+            "collected_at": "2026-10-18T10:00:00Z",
+            "run_id": "fixture:fx-run",
+            "frequency": "DAILY",
+            "period": null,
+            "source": {
+              "provider": "fixture-fx",
+              "native_id": "USDEUR=X",
+              "evidence_ref": "fixture:quote-2026-10-16",
+              "adapter_version": "v1"
+            },
+            "nature": "OBSERVED",
+            "formula_ref": null,
+            "input_refs": [],
+            "rights_ref": null
+          }
+        }
+      ],
+      "expected": {
+        "status": "VALIDATED",
+        "change": null,
+        "age": 0,
+        "comparison_reason": "METHOD_OR_PRECISION_MISMATCH"
+      }
+    },
+    {
+      "id": "timestamp_adjacent",
+      "currency": "USD",
+      "calendar": {
+        "scope": "OFFLINE_SYNTHETIC",
+        "id": "fixture:fx-calendar",
+        "version": "v1",
+        "provider": "fixture-fx",
+        "close_convention": "fixture:daily-close",
+        "date_basis": "UTC_SOURCE_DATE",
+        "evaluated_on": "2026-10-18",
+        "expected_session": "2026-10-16",
+        "sessions": [
+          "2026-10-14",
+          "2026-10-15",
+          "2026-10-16"
+        ]
+      },
+      "rows": [
+        {
+          "ticker": "USDEUR=X",
+          "close_convention": "fixture:daily-close",
+          "observation": {
+            "scope": "OFFLINE_SYNTHETIC",
+            "domain": "FX",
+            "key": "FX:USD:EUR",
+            "value": 0.9,
+            "unit": "EUR_PER_UNIT",
+            "currency": null,
+            "observed": {
+              "precision": "TIMESTAMP",
+              "value": "2026-10-15T16:00:00Z"
+            },
+            "collected_at": "2026-10-18T10:00:00Z",
+            "run_id": "fixture:fx-run",
+            "frequency": "DAILY",
+            "period": null,
+            "source": {
+              "provider": "fixture-fx",
+              "native_id": "USDEUR=X",
+              "evidence_ref": "fixture:quote-2026-10-15",
+              "adapter_version": "v1"
+            },
+            "nature": "OBSERVED",
+            "formula_ref": null,
+            "input_refs": [],
+            "rights_ref": null
+          }
+        },
+        {
+          "ticker": "USDEUR=X",
+          "close_convention": "fixture:daily-close",
+          "observation": {
+            "scope": "OFFLINE_SYNTHETIC",
+            "domain": "FX",
+            "key": "FX:USD:EUR",
+            "value": 0.99,
+            "unit": "EUR_PER_UNIT",
+            "currency": null,
+            "observed": {
+              "precision": "TIMESTAMP",
+              "value": "2026-10-16T16:00:00Z"
+            },
+            "collected_at": "2026-10-18T10:00:00Z",
+            "run_id": "fixture:fx-run",
+            "frequency": "DAILY",
+            "period": null,
+            "source": {
+              "provider": "fixture-fx",
+              "native_id": "USDEUR=X",
+              "evidence_ref": "fixture:quote-2026-10-16",
+              "adapter_version": "v1"
+            },
+            "nature": "OBSERVED",
+            "formula_ref": null,
+            "input_refs": [],
+            "rights_ref": null
+          }
+        }
+      ],
+      "expected": {
+        "status": "VALIDATED",
+        "change": 0.1,
+        "age": 0
+      }
+    },
+    {
+      "id": "timestamp_close_drift",
+      "currency": "USD",
+      "calendar": {
+        "scope": "OFFLINE_SYNTHETIC",
+        "id": "fixture:fx-calendar",
+        "version": "v1",
+        "provider": "fixture-fx",
+        "close_convention": "fixture:daily-close",
+        "date_basis": "UTC_SOURCE_DATE",
+        "evaluated_on": "2026-10-18",
+        "expected_session": "2026-10-16",
+        "sessions": [
+          "2026-10-14",
+          "2026-10-15",
+          "2026-10-16"
+        ]
+      },
+      "rows": [
+        {
+          "ticker": "USDEUR=X",
+          "close_convention": "fixture:daily-close",
+          "observation": {
+            "scope": "OFFLINE_SYNTHETIC",
+            "domain": "FX",
+            "key": "FX:USD:EUR",
+            "value": 0.9,
+            "unit": "EUR_PER_UNIT",
+            "currency": null,
+            "observed": {
+              "precision": "TIMESTAMP",
+              "value": "2026-10-15T16:00:00Z"
+            },
+            "collected_at": "2026-10-18T10:00:00Z",
+            "run_id": "fixture:fx-run",
+            "frequency": "DAILY",
+            "period": null,
+            "source": {
+              "provider": "fixture-fx",
+              "native_id": "USDEUR=X",
+              "evidence_ref": "fixture:quote-2026-10-15",
+              "adapter_version": "v1"
+            },
+            "nature": "OBSERVED",
+            "formula_ref": null,
+            "input_refs": [],
+            "rights_ref": null
+          }
+        },
+        {
+          "ticker": "USDEUR=X",
+          "close_convention": "fixture:daily-close",
+          "observation": {
+            "scope": "OFFLINE_SYNTHETIC",
+            "domain": "FX",
+            "key": "FX:USD:EUR",
+            "value": 0.99,
+            "unit": "EUR_PER_UNIT",
+            "currency": null,
+            "observed": {
+              "precision": "TIMESTAMP",
+              "value": "2026-10-16T17:00:00Z"
+            },
+            "collected_at": "2026-10-18T10:00:00Z",
+            "run_id": "fixture:fx-run",
+            "frequency": "DAILY",
+            "period": null,
+            "source": {
+              "provider": "fixture-fx",
+              "native_id": "USDEUR=X",
+              "evidence_ref": "fixture:quote-2026-10-16",
+              "adapter_version": "v1"
+            },
+            "nature": "OBSERVED",
+            "formula_ref": null,
+            "input_refs": [],
+            "rights_ref": null
+          }
+        }
+      ],
+      "expected": {
+        "status": "VALIDATED",
+        "change": null,
+        "age": 0,
+        "comparison_reason": "METHOD_OR_PRECISION_MISMATCH"
+      }
+    },
+    {
+      "id": "outside_calendar",
+      "currency": "USD",
+      "calendar": {
+        "scope": "OFFLINE_SYNTHETIC",
+        "id": "fixture:fx-calendar",
+        "version": "v1",
+        "provider": "fixture-fx",
+        "close_convention": "fixture:daily-close",
+        "date_basis": "UTC_SOURCE_DATE",
+        "evaluated_on": "2026-10-18",
+        "expected_session": "2026-10-16",
+        "sessions": [
+          "2026-10-14",
+          "2026-10-15",
+          "2026-10-16"
+        ]
+      },
+      "rows": [
+        {
+          "ticker": "USDEUR=X",
+          "close_convention": "fixture:daily-close",
+          "observation": {
+            "scope": "OFFLINE_SYNTHETIC",
+            "domain": "FX",
+            "key": "FX:USD:EUR",
+            "value": 0.99,
+            "unit": "EUR_PER_UNIT",
+            "currency": null,
+            "observed": {
+              "precision": "DATE",
+              "value": "2026-10-17"
+            },
+            "collected_at": "2026-10-18T10:00:00Z",
+            "run_id": "fixture:fx-run",
+            "frequency": "DAILY",
+            "period": null,
+            "source": {
+              "provider": "fixture-fx",
+              "native_id": "USDEUR=X",
+              "evidence_ref": "fixture:quote-2026-10-17",
+              "adapter_version": "v1"
+            },
+            "nature": "OBSERVED",
+            "formula_ref": null,
+            "input_refs": [],
+            "rights_ref": null
+          }
+        }
+      ],
+      "expected": {
+        "status": "UNKNOWN",
+        "change": null,
+        "age": null
+      }
+    },
+    {
+      "id": "future_collection",
+      "currency": "USD",
+      "calendar": {
+        "scope": "OFFLINE_SYNTHETIC",
+        "id": "fixture:fx-calendar",
+        "version": "v1",
+        "provider": "fixture-fx",
+        "close_convention": "fixture:daily-close",
+        "date_basis": "UTC_SOURCE_DATE",
+        "evaluated_on": "2026-10-18",
+        "expected_session": "2026-10-16",
+        "sessions": [
+          "2026-10-14",
+          "2026-10-15",
+          "2026-10-16"
+        ]
+      },
+      "rows": [
+        {
+          "ticker": "USDEUR=X",
+          "close_convention": "fixture:daily-close",
+          "observation": {
+            "scope": "OFFLINE_SYNTHETIC",
+            "domain": "FX",
+            "key": "FX:USD:EUR",
+            "value": 0.99,
+            "unit": "EUR_PER_UNIT",
+            "currency": null,
+            "observed": {
+              "precision": "DATE",
+              "value": "2026-10-16"
+            },
+            "collected_at": "2026-10-18T13:00:00Z",
+            "run_id": "fixture:fx-run",
+            "frequency": "DAILY",
+            "period": null,
+            "source": {
+              "provider": "fixture-fx",
+              "native_id": "USDEUR=X",
+              "evidence_ref": "fixture:quote-2026-10-16",
+              "adapter_version": "v1"
+            },
+            "nature": "OBSERVED",
+            "formula_ref": null,
+            "input_refs": [],
+            "rights_ref": null
+          }
+        }
+      ],
+      "expected": {
+        "status": "UNKNOWN",
+        "change": null,
+        "age": 0
+      }
+    },
+    {
+      "id": "replay_future_collection",
+      "currency": "USD",
+      "calendar": {
+        "scope": "OFFLINE_SYNTHETIC",
+        "id": "fixture:fx-calendar",
+        "version": "v1",
+        "provider": "fixture-fx",
+        "close_convention": "fixture:daily-close",
+        "date_basis": "UTC_SOURCE_DATE",
+        "evaluated_on": "2026-10-18",
+        "expected_session": "2026-10-16",
+        "sessions": [
+          "2026-10-14",
+          "2026-10-15",
+          "2026-10-16"
+        ]
+      },
+      "rows": [
+        {
+          "ticker": "USDEUR=X",
+          "close_convention": "fixture:daily-close",
+          "observation": {
+            "scope": "OFFLINE_SYNTHETIC",
+            "domain": "FX",
+            "key": "FX:USD:EUR",
+            "value": 0.99,
+            "unit": "EUR_PER_UNIT",
+            "currency": null,
+            "observed": {
+              "precision": "DATE",
+              "value": "2026-10-16"
+            },
+            "collected_at": "2026-10-18T10:00:00Z",
+            "run_id": "fixture:fx-run",
+            "frequency": "DAILY",
+            "period": null,
+            "source": {
+              "provider": "fixture-fx",
+              "native_id": "USDEUR=X",
+              "evidence_ref": "fixture:quote-2026-10-16",
+              "adapter_version": "v1"
+            },
+            "nature": "OBSERVED",
+            "formula_ref": null,
+            "input_refs": [],
+            "rights_ref": null
+          }
+        },
+        {
+          "ticker": "USDEUR=X",
+          "close_convention": "fixture:daily-close",
+          "observation": {
+            "scope": "OFFLINE_SYNTHETIC",
+            "domain": "FX",
+            "key": "FX:USD:EUR",
+            "value": 0.99,
+            "unit": "EUR_PER_UNIT",
+            "currency": null,
+            "observed": {
+              "precision": "DATE",
+              "value": "2026-10-16"
+            },
+            "collected_at": "2026-10-18T13:00:00Z",
+            "run_id": "fixture:fx-run",
+            "frequency": "DAILY",
+            "period": null,
+            "source": {
+              "provider": "fixture-fx",
+              "native_id": "USDEUR=X",
+              "evidence_ref": "fixture:quote-2026-10-16",
+              "adapter_version": "v1"
+            },
+            "nature": "OBSERVED",
+            "formula_ref": null,
+            "input_refs": [],
+            "rights_ref": null
+          }
+        }
+      ],
+      "expected": {
+        "status": "UNKNOWN",
+        "change": null,
+        "age": 0
+      }
+    },
+    {
+      "id": "conflicting_rights_refs",
+      "currency": "USD",
+      "calendar": {
+        "scope": "OFFLINE_SYNTHETIC",
+        "id": "fixture:fx-calendar",
+        "version": "v1",
+        "provider": "fixture-fx",
+        "close_convention": "fixture:daily-close",
+        "date_basis": "UTC_SOURCE_DATE",
+        "evaluated_on": "2026-10-18",
+        "expected_session": "2026-10-16",
+        "sessions": [
+          "2026-10-14",
+          "2026-10-15",
+          "2026-10-16"
+        ]
+      },
+      "rows": [
+        {
+          "ticker": "USDEUR=X",
+          "close_convention": "fixture:daily-close",
+          "observation": {
+            "scope": "OFFLINE_SYNTHETIC",
+            "domain": "FX",
+            "key": "FX:USD:EUR",
+            "value": 0.9,
+            "unit": "EUR_PER_UNIT",
+            "currency": null,
+            "observed": {
+              "precision": "DATE",
+              "value": "2026-10-15"
+            },
+            "collected_at": "2026-10-18T10:00:00Z",
+            "run_id": "fixture:fx-run",
+            "frequency": "DAILY",
+            "period": null,
+            "source": {
+              "provider": "fixture-fx",
+              "native_id": "USDEUR=X",
+              "evidence_ref": "fixture:quote-2026-10-15",
+              "adapter_version": "v1"
+            },
+            "nature": "OBSERVED",
+            "formula_ref": null,
+            "input_refs": [],
+            "rights_ref": null
+          }
+        },
+        {
+          "ticker": "USDEUR=X",
+          "close_convention": "fixture:daily-close",
+          "observation": {
+            "scope": "OFFLINE_SYNTHETIC",
+            "domain": "FX",
+            "key": "FX:USD:EUR",
+            "value": 0.99,
+            "unit": "EUR_PER_UNIT",
+            "currency": null,
+            "observed": {
+              "precision": "DATE",
+              "value": "2026-10-16"
+            },
+            "collected_at": "2026-10-18T10:00:00Z",
+            "run_id": "fixture:fx-run",
+            "frequency": "DAILY",
+            "period": null,
+            "source": {
+              "provider": "fixture-fx",
+              "native_id": "USDEUR=X",
+              "evidence_ref": "fixture:quote-2026-10-16",
+              "adapter_version": "v1"
+            },
+            "nature": "OBSERVED",
+            "formula_ref": null,
+            "input_refs": [],
+            "rights_ref": "rights-A"
+          }
+        },
+        {
+          "ticker": "USDEUR=X",
+          "close_convention": "fixture:daily-close",
+          "observation": {
+            "scope": "OFFLINE_SYNTHETIC",
+            "domain": "FX",
+            "key": "FX:USD:EUR",
+            "value": 0.99,
+            "unit": "EUR_PER_UNIT",
+            "currency": null,
+            "observed": {
+              "precision": "DATE",
+              "value": "2026-10-16"
+            },
+            "collected_at": "2026-10-18T10:00:00Z",
+            "run_id": "fixture:fx-run",
+            "frequency": "DAILY",
+            "period": null,
+            "source": {
+              "provider": "fixture-fx",
+              "native_id": "USDEUR=X",
+              "evidence_ref": "fixture:quote-2026-10-16",
+              "adapter_version": "v1"
+            },
+            "nature": "OBSERVED",
+            "formula_ref": null,
+            "input_refs": [],
+            "rights_ref": "rights-B"
+          }
+        }
+      ],
+      "expected": {
+        "status": "CONFLICT",
+        "change": null,
+        "age": 0,
+        "comparison_reason": "CURRENT_NOT_VERIFIED"
+      }
+    },
+    {
+      "id": "missing_and_present_rights_ref",
+      "currency": "USD",
+      "calendar": {
+        "scope": "OFFLINE_SYNTHETIC",
+        "id": "fixture:fx-calendar",
+        "version": "v1",
+        "provider": "fixture-fx",
+        "close_convention": "fixture:daily-close",
+        "date_basis": "UTC_SOURCE_DATE",
+        "evaluated_on": "2026-10-18",
+        "expected_session": "2026-10-16",
+        "sessions": [
+          "2026-10-14",
+          "2026-10-15",
+          "2026-10-16"
+        ]
+      },
+      "rows": [
+        {
+          "ticker": "USDEUR=X",
+          "close_convention": "fixture:daily-close",
+          "observation": {
+            "scope": "OFFLINE_SYNTHETIC",
+            "domain": "FX",
+            "key": "FX:USD:EUR",
+            "value": 0.9,
+            "unit": "EUR_PER_UNIT",
+            "currency": null,
+            "observed": {
+              "precision": "DATE",
+              "value": "2026-10-15"
+            },
+            "collected_at": "2026-10-18T10:00:00Z",
+            "run_id": "fixture:fx-run",
+            "frequency": "DAILY",
+            "period": null,
+            "source": {
+              "provider": "fixture-fx",
+              "native_id": "USDEUR=X",
+              "evidence_ref": "fixture:quote-2026-10-15",
+              "adapter_version": "v1"
+            },
+            "nature": "OBSERVED",
+            "formula_ref": null,
+            "input_refs": [],
+            "rights_ref": null
+          }
+        },
+        {
+          "ticker": "USDEUR=X",
+          "close_convention": "fixture:daily-close",
+          "observation": {
+            "scope": "OFFLINE_SYNTHETIC",
+            "domain": "FX",
+            "key": "FX:USD:EUR",
+            "value": 0.99,
+            "unit": "EUR_PER_UNIT",
+            "currency": null,
+            "observed": {
+              "precision": "DATE",
+              "value": "2026-10-16"
+            },
+            "collected_at": "2026-10-18T10:00:00Z",
+            "run_id": "fixture:fx-run",
+            "frequency": "DAILY",
+            "period": null,
+            "source": {
+              "provider": "fixture-fx",
+              "native_id": "USDEUR=X",
+              "evidence_ref": "fixture:quote-2026-10-16",
+              "adapter_version": "v1"
+            },
+            "nature": "OBSERVED",
+            "formula_ref": null,
+            "input_refs": [],
+            "rights_ref": null
+          }
+        },
+        {
+          "ticker": "USDEUR=X",
+          "close_convention": "fixture:daily-close",
+          "observation": {
+            "scope": "OFFLINE_SYNTHETIC",
+            "domain": "FX",
+            "key": "FX:USD:EUR",
+            "value": 0.99,
+            "unit": "EUR_PER_UNIT",
+            "currency": null,
+            "observed": {
+              "precision": "DATE",
+              "value": "2026-10-16"
+            },
+            "collected_at": "2026-10-18T10:00:00Z",
+            "run_id": "fixture:fx-run",
+            "frequency": "DAILY",
+            "period": null,
+            "source": {
+              "provider": "fixture-fx",
+              "native_id": "USDEUR=X",
+              "evidence_ref": "fixture:quote-2026-10-16",
+              "adapter_version": "v1"
+            },
+            "nature": "OBSERVED",
+            "formula_ref": null,
+            "input_refs": [],
+            "rights_ref": "rights-B"
+          }
+        }
+      ],
+      "expected": {
+        "status": "CONFLICT",
+        "change": null,
+        "age": 0,
+        "comparison_reason": "CURRENT_NOT_VERIFIED"
+      }
+    }
+  ]
+}

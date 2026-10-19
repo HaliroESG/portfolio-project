@@ -4,7 +4,7 @@ import { finiteNumber, observationState, sourceTimestamp, type ObservationState 
 import { isSelectorSchemaError } from './supabaseSelectorErrors'
 
 export const FX_PAIRS_SWR_KEY = 'fx-pairs-v2'
-export const FX_RATES_SWR_KEY = 'fx-rates-v2'
+export const FX_RATES_SWR_KEY = 'fx-rates-v3'
 export const FX_CACHE_KEY = 'fx_currency_rates_v2'
 
 // Explicit ISO currency pairs only: never infer FX from an equity's currency or name.
@@ -33,7 +33,7 @@ export function parseCurrencyRate(raw: Record<string, unknown>): CurrencyRateRow
   const rate = finiteNumber(raw.rate_to_eur)
   return {
     id, symbol: typeof raw.symbol === 'string' ? raw.symbol : id,
-    rate_to_eur: rate !== null && rate > 0 ? rate : null,
+    rate_to_eur: rate !== null && rate > 0 && rate <= Number.MAX_SAFE_INTEGER ? rate : null,
     last_update: sourceTimestamp(raw.last_update),
   }
 }
@@ -76,16 +76,6 @@ export function fxPairState(pair: FxPairRow, now = Date.now()): Exclude<Observat
   if (pair.data_status === 'LOW_CONFIDENCE' || pair.data_status === 'PARTIAL') return pair.data_status
   if (pair.data_status !== 'OK') return 'UNKNOWN'
   return collected === 'READY' ? 'SOURCE_OK' : collected
-}
-
-export function rateDailyChange(rate: CurrencyRateRow, pairs: FxPairRow[], now = Date.now()): number | null {
-  if (observationState(rate.rate_to_eur, rate.last_update, now) !== 'READY') return null
-  const pair = pairs.find((row) => row.base === rate.id && row.quote === 'EUR')
-    ?? pairs.find((row) => row.base === 'EUR' && row.quote === rate.id)
-  if (!pair || pair.perf_day_local === null || fxPairState(pair, now) !== 'SOURCE_OK') return null
-  // Align collection days, without claiming an actual market observation date.
-  if (new Date(pair.last_update!).toISOString().slice(0, 10) !== new Date(rate.last_update!).toISOString().slice(0, 10)) return null
-  return pair.quote === 'EUR' ? pair.perf_day_local : 1 / (1 + pair.perf_day_local) - 1
 }
 
 export function parseFxCache(raw: string | null): CurrencyRateRow[] {
