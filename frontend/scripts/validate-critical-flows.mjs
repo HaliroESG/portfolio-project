@@ -424,22 +424,23 @@ try {
   )
 
   const fxPage = read('frontend/app/fx/page.tsx')
+  const fxHook = read('frontend/hooks/useFxRates.ts')
+  const fxTrace = read('frontend/lib/fxTrace.ts')
   addCheck(
     'frontend.fx.data_state_handling',
-    hasAll(fxPage, [
+    hasAll(fxHook, [
       'loadCurrencyRates',
-      'loadFxPairs',
       'parseFxCache',
-      'rateDailyChange',
-      'observationState',
+      'projectLegacyFx',
       "'CACHED'",
       "'ERROR'",
       "'UNKNOWN'",
       "'STALE'",
       "'EMPTY'",
-      "change === null ? 'N/A'",
-    ]),
-    'FX page should include explicit feed/cached/stale state handling.'
+    ]) && hasAll(fxPage, ['useFxRates', 'FxRateDetails', "change === null ? 'N/A'"])
+      && hasAll(fxTrace, ['LEGACY_PROVENANCE_UNAVAILABLE', 'SOURCE_SESSIONS_UNVERIFIED', 'change_pct: null'])
+      && !fxPage.includes('rateDailyChange'),
+    'Shared FX reader must preserve error/cache/unknown states and never join by collection day.'
   )
 
   const types = read('frontend/types.ts')

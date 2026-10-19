@@ -1,20 +1,10 @@
 import type { SupabaseClient } from '@supabase/supabase-js'
 import { isSelectorSchemaError } from './supabaseSelectorErrors'
 import { finiteNumber, sourceTimestamp } from './readerState'
+import type { MacroIndicatorRow } from '../types'
+export type { MacroIndicatorRow } from '../types'
 
 export type MacroDirection = 'UP' | 'DOWN'
-
-export interface MacroIndicatorRow {
-  id: string
-  name: string | null
-  value: number | null
-  change_pct: number | null
-  last_update: string | null
-  threshold_amber: number | null
-  threshold_red: number | null
-  direction: MacroDirection | null
-  pillar: string | null
-}
 
 export const MACRO_INDICATORS_SWR_KEY = 'macro-indicators-v1'
 export const MACRO_INDICATORS_REFRESH_MS = 60000

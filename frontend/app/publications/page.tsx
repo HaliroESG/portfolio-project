@@ -33,6 +33,7 @@ import {
   publicationStatusLabel,
 } from '../../lib/equityPublicationUi'
 import { supabase } from '../../lib/supabase'
+import { publicationEvidence, publicationCoverageDimensions } from '../../lib/publicationTrace'
 import { swrOptions, SWR_REFRESH } from '../../lib/swrConfig'
 import { cn } from '../../lib/utils'
 import type {
@@ -107,20 +108,23 @@ function eventStatusClass(status: EquityReportingEventStatus): string {
 function StateBadge({ state, reasons = [] }: { state: EquityPublicationDataState; reasons?: string[] }) {
   const content = reasons.length
     ? reasons.map((reason) => REASON_LABELS[reason] ?? reason).join(' · ')
-    : state
+    : state === 'READY' ? 'Présence de données selon le contrat historique ; ne certifie ni la source, ni la fraîcheur, ni le TTM.' : state
   return (
     <Tooltip content={content}>
       <span className={cn('inline-flex rounded-md border px-1.5 py-0.5 text-[9px] font-black uppercase', stateClass(state))}>
-        {state}
+        {state === 'READY' ? 'Données présentes' : state}
       </span>
     </Tooltip>
   )
 }
 
-function EventStatusBadge({ status, date }: { status: EquityReportingEventStatus; date?: string | null }) {
+function EventStatusBadge({ status, date, event }: { status: EquityReportingEventStatus; date?: string | null; event?: EquityReportingEventRow }) {
+  const label = event ? publicationEvidence(event).label : status === 'REPORTED'
+    ? 'Déclarée publiée · preuve non attestée' : status === 'CONFIRMED'
+    ? 'Date déclarée confirmée · preuve non attestée' : publicationStatusLabel(status, date)
   return (
     <span className={cn('inline-flex rounded-md border px-1.5 py-0.5 text-[9px] font-black uppercase', eventStatusClass(status))}>
-      {publicationStatusLabel(status, date)}
+      {label}
     </span>
   )
 }
@@ -383,14 +387,14 @@ function PublicationDrawer({
                     ) : (
                       <div className="divide-y divide-slate-200 border-y border-slate-200 dark:divide-white/10 dark:border-white/10">
                         {data.events.map((event) => (
-                          <div key={event.event_key} className="flex items-center gap-3 py-3">
-                            <div className="w-20 shrink-0 font-mono text-xs font-bold">{formatDate(event.event_date, { day: '2-digit', month: 'short', year: '2-digit' })}</div>
+                          <div key={event.event_key} className="grid grid-cols-[4rem_minmax(0,1fr)_auto] items-start gap-x-3 gap-y-2 py-3">
+                            <div className="font-mono text-xs font-bold">{formatDate(event.event_date, { day: '2-digit', month: 'short', year: '2-digit' })}</div>
                             <div className="min-w-0 flex-1">
                               <div className="truncate text-xs font-bold text-slate-900 dark:text-white">{event.event_label ?? 'Publication'}</div>
                               <div className="mt-1 text-[9px] uppercase text-slate-500">{event.source_provider} · {event.match_confidence}</div>
                             </div>
-                            <EventStatusBadge status={event.status} date={event.event_date} />
                             <SourceLink href={event.source_url} />
+                            <div className="col-span-3"><EventStatusBadge status={event.status} date={event.event_date} event={event} /></div>
                           </div>
                         ))}
                       </div>
@@ -637,7 +641,7 @@ function CalendarView({
                     key={event.event_key}
                     onClick={() => onSelect(event)}
                     disabled={!availableKeys.has(event.instrument_key)}
-                    title={`${event.ticker} · ${event.event_label ?? 'Publication'} · ${publicationStatusLabel(event.status, event.event_date)}${availableKeys.has(event.instrument_key) ? '' : ' · Fiche société indisponible'}`}
+                    title={`${event.ticker} · ${event.event_label ?? 'Publication'} · ${publicationEvidence(event).label}${availableKeys.has(event.instrument_key) ? '' : ' · Fiche société indisponible'}`}
                     className={cn(
                       'block h-6 w-full truncate rounded-md border px-1.5 text-left text-[9px] font-bold',
                       eventStatusClass(event.status)
@@ -664,7 +668,7 @@ function CalendarView({
               onClick={() => onSelect(event)}
               disabled={!availableKeys.has(event.instrument_key)}
               title={availableKeys.has(event.instrument_key) ? 'Ouvrir le détail' : 'Fiche société indisponible'}
-              className="flex w-full items-center gap-3 px-4 py-3 text-left hover:bg-slate-50 dark:hover:bg-white/[0.03]"
+              className="flex w-full flex-wrap items-center gap-3 px-4 py-3 text-left hover:bg-slate-50 dark:hover:bg-white/[0.03]"
             >
               <div className="w-12 shrink-0 text-center">
                 <div className="text-[9px] font-black uppercase text-slate-500">{publicationDate(event.event_date).toLocaleDateString('fr-FR', { month: 'short' })}</div>
@@ -674,7 +678,7 @@ function CalendarView({
                 <div className="truncate text-xs font-black">{event.name ?? event.ticker}</div>
                 <div className="mt-1 truncate text-[10px] text-slate-500">{event.event_label ?? 'Publication de résultats'}</div>
               </div>
-              <EventStatusBadge status={event.status} date={event.event_date} />
+              <div className="w-full"><EventStatusBadge status={event.status} date={event.event_date} event={event} /></div>
             </button>
           ))
         )}
@@ -705,6 +709,7 @@ export default function PublicationsPage() {
   const searchResults = useMemo(() => filterPublicationSearch(rows, events, indexFilter, search), [rows, events, indexFilter, search])
   const filteredRows = useMemo(() => sortRows(searchResults.rows, sortKey, sortDirection), [searchResults.rows, sortKey, sortDirection])
   const filteredEvents = searchResults.events
+  const sourceCoverage = useMemo(() => publicationCoverageDimensions(filteredRows, filteredEvents), [filteredRows, filteredEvents])
 
   const selectedRow = rows.find((row) => row.instrument_key === selectedInstrument) ?? null
   const pageCount = Math.max(1, Math.ceil(filteredRows.length / TABLE_PAGE_SIZE))
@@ -813,7 +818,7 @@ export default function PublicationsPage() {
         <section className="grid grid-cols-2 border-b border-slate-200 bg-white dark:border-white/10 dark:bg-[#0D1117]/60 sm:grid-cols-3 lg:grid-cols-6">
           {[
             ['Univers', coverage.total],
-            ['Prêtes', coverage.ready],
+            ['Statut hérité READY · non certifié', coverage.ready],
             ['Partielles', coverage.partial],
             ['Intermédiaires', coverage.interim],
             ['Sociétés avec événements chargés', coverage.calendar],
@@ -831,6 +836,10 @@ export default function PublicationsPage() {
             <p>Univers : {data.dashboardRead.received}/{data.dashboardRead.expected ?? '?'} lignes · {data.dashboardRead.state}.</p>
             <p>Calendrier : {data.calendarRead.received}/{data.calendarRead.expected ?? '?'} événements · {data.calendarRead.state} · fenêtre {formatDate(data.calendarWindow.start)} — {formatDate(data.calendarWindow.end)}.</p>
             <p>Complet signifie lecture paginée terminée dans cette fenêtre, pas couverture exhaustive des publications des émetteurs. Les dates inconnues ne sont pas déduites.</p>
+            <p>Champs financiers renseignés : annuels {sourceCoverage.annual.reduce((n, row) => n + row.available, 0)}/{sourceCoverage.companies * 6} · intermédiaires {sourceCoverage.interim.reduce((n, row) => n + row.available, 0)}/{sourceCoverage.companies * 6}. Une valeur manquante reste vide, jamais zéro.</p>
+            <p>Dépôts SEC référencés : {sourceCoverage.officialDocuments} · résultats agrégateur : {sourceCoverage.aggregatorResults} · déclarées publiées sans preuve attestée : {sourceCoverage.unattestedReported}.</p>
+            <p>Valorisations datées : {sourceCoverage.valuation.filter(v => v.asOf).length}/{sourceCoverage.companies}. Leur date propre figure dans le tableau ; ni la collecte ni les comptes annuels n’en attestent la fraîcheur.</p>
+            <p>Les couvertures annuelles, intermédiaires, calendrier et valorisation restent distinctes. Le statut de collecte SUCCESS ne les certifie pas. Le TTM historique reste non attesté jusqu’à preuve des quatre périodes comparables.</p>
             {(data.calendarRead.state === 'PARTIAL' || data.dashboardRead.state === 'PARTIAL') && <p className="font-bold text-amber-700">Lecture partielle : {data.dashboardRead.reasons.concat(data.calendarRead.reasons).join(' · ')}. Ne pas interpréter un vide comme une absence de publication.</p>}
           </div>}
           {isLoading && <EmptyState title="Chargement des publications" message="Lecture des fondamentaux et du calendrier." tone="loading" />}

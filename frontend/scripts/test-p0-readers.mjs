@@ -9,6 +9,7 @@ registerHooks({ resolve(specifier, context, next) {
   return next(specifier, context)
 } })
 const fx = await import('../lib/fxData.ts')
+const fxTrace = await import('../lib/fxTrace.ts')
 const macro = await import('../lib/macroData.ts')
 const states = await import('../lib/macroState.ts')
 const reader = await import('../lib/readerState.ts')
@@ -71,14 +72,15 @@ await test('FX accepts explicit supported currency pairs, never equities or cryp
   assert.equal(missing.last_price, null); assert.equal(missing.perf_day_local, null); assert.equal(missing.last_update, null)
   assert.equal(fx.parseFxPair(pair({ last_price: -1, perf_day_local: -1 })).perf_day_local, null)
 })
-await test('FX only derives EUR daily performance with verified orientation and day', () => {
+await test('L1 supersedes collection-day joins: legacy rates never imply comparable market sessions', () => {
   const rate = fx.parseCurrencyRate({ id: 'USD', rate_to_eur: 0.9, last_update: fresh })
-  assert.ok(Math.abs(fx.rateDailyChange(rate, [fx.parseFxPair(pair())], now) - (1 / 1.1 - 1)) < 1e-12)
-  assert.equal(fx.rateDailyChange(rate, [fx.parseFxPair(pair({ ticker: 'USDEUR=X' }))], now), 0.1)
-  assert.equal(fx.rateDailyChange(rate, [], now), null)
-  assert.equal(fx.rateDailyChange(rate, [fx.parseFxPair(pair({ last_update: old }))], now), null)
-  assert.equal(fx.rateDailyChange({ ...rate, last_update: null }, [fx.parseFxPair(pair())], now), null)
-  assert.equal(fx.rateDailyChange(rate, [fx.parseFxPair(pair({ ticker: 'USDJPY=X' }))], now), null)
+  for (const last_update of [fresh, old, null]) {
+    const view = fxTrace.projectLegacyFx({ ...rate, last_update, change_pct: 0.1, status: 'VALIDATED' }, now)
+    assert.equal(view.change_pct, null)
+    assert.equal(view.observed_date, null)
+    assert.equal(view.session_age, null)
+    assert.notEqual(view.status, 'VALIDATED')
+  }
 })
 await test('canonical FX rates, nullable fallback and tainted cache isolation', async () => {
   const c = client({ currencies: [{ id: 'USD', rate_to_eur: '0.9', last_update: null }], market_watch: [pair(), pair({ ticker: 'MSFT' })] })
@@ -113,7 +115,7 @@ await test('fresh collection never upgrades stale, partial or unknown FX source 
   for (const [data_status, expected] of [['STALE', 'STALE'], ['PARTIAL', 'PARTIAL'], ['LOW_CONFIDENCE', 'LOW_CONFIDENCE'], [null, 'UNKNOWN'], ['UNSUPPORTED', 'UNKNOWN']]) {
     const parsed = fx.parseFxPair(pair({ data_status }))
     assert.equal(fx.fxPairState(parsed, now), expected)
-    assert.equal(fx.rateDailyChange(rate, [parsed], now), null)
+    assert.equal(fxTrace.projectLegacyFx(rate, now).change_pct, null)
   }
   assert.equal(fx.fxPairState(fx.parseFxPair(pair()), now), 'SOURCE_OK')
   assert.equal(fx.fxPairState(fx.parseFxPair(pair({ last_update: old })), now), 'STALE')

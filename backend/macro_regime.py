@@ -1,7 +1,6 @@
 from __future__ import annotations
 
-import csv
-import io
+from macro_contracts import parse_fred_csv
 from dataclasses import dataclass, field
 from datetime import date, datetime, timezone
 from typing import Any, Callable, Iterable, Mapping
@@ -244,22 +243,12 @@ def fetch_fred_series(
         http_get = requests.get
     response = http_get(fred_csv_url(series_id), timeout=timeout)
     response.raise_for_status()
-    reader = csv.DictReader(io.StringIO(response.text))
-    rows: list[tuple[date, float]] = []
-    for raw in reader:
-        raw_date = raw.get("DATE")
-        raw_value = raw.get(series_id)
-        if not raw_date or raw_value in {None, "", "."}:
-            continue
-        value = _safe_float(raw_value)
-        if value is None:
-            continue
-        try:
-            parsed_date = date.fromisoformat(raw_date)
-        except ValueError:
-            continue
-        rows.append((parsed_date, value))
-    return sorted(rows, key=lambda item: item[0])
+    parsed = parse_fred_csv(response.text, series_id)
+    if parsed["status"] != "PARSED":
+        # Legacy consumers cannot represent gaps/schema errors. Never silently
+        # drop them and shift calendar calculations by row position.
+        raise ValueError("FRED_" + parsed["status"])
+    return [(date.fromisoformat(row["period_date"]), row["value"]) for row in parsed["rows"]]
 
 
 def build_latest_series_point(

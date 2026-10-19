@@ -1,0 +1,470 @@
+{
+  "schema_version": "source-contract-fixtures/v1",
+  "scope": "OFFLINE_SYNTHETIC",
+  "now": "2026-10-18T12:00:00Z",
+  "cases": [
+    {
+      "id": "fresh-date",
+      "input": {
+        "scope": "OFFLINE_SYNTHETIC",
+        "domain": "FX",
+        "key": "USD:EUR",
+        "value": 0.91,
+        "unit": "EUR_PER_UNIT",
+        "currency": null,
+        "observed": {
+          "precision": "DATE",
+          "value": "2026-10-16"
+        },
+        "collected_at": "2026-10-18T10:00:00Z",
+        "run_id": "fixture:run-1",
+        "frequency": "DAILY",
+        "period": null,
+        "source": {
+          "provider": "fixture-source",
+          "native_id": "USDEUR=X",
+          "evidence_ref": "fixture:fx-1",
+          "adapter_version": "v1"
+        },
+        "nature": "OBSERVED",
+        "formula_ref": null,
+        "input_refs": [],
+        "rights_ref": null
+      },
+      "policy": {
+        "id": "fixture:fx-date-floor",
+        "version": "v1",
+        "domain": "FX",
+        "key": "USD:EUR",
+        "provider": "fixture-source",
+        "frequency": "DAILY",
+        "evaluated_on": "2026-10-18",
+        "not_before": "2026-10-16",
+        "calendar_ref": "fixture:calendar-v1"
+      },
+      "expected": {
+        "quality": "VALIDATED",
+        "reason_codes": [],
+        "observed_date": "2026-10-16",
+        "observed_at": null
+      }
+    },
+    {
+      "id": "old-date",
+      "input": {
+        "scope": "OFFLINE_SYNTHETIC",
+        "domain": "FX",
+        "key": "USD:EUR",
+        "value": 0.91,
+        "unit": "EUR_PER_UNIT",
+        "currency": null,
+        "observed": {
+          "precision": "DATE",
+          "value": "2026-09-01"
+        },
+        "collected_at": "2026-10-18T10:00:00Z",
+        "run_id": "fixture:run-1",
+        "frequency": "DAILY",
+        "period": null,
+        "source": {
+          "provider": "fixture-source",
+          "native_id": "USDEUR=X",
+          "evidence_ref": "fixture:fx-1",
+          "adapter_version": "v1"
+        },
+        "nature": "OBSERVED",
+        "formula_ref": null,
+        "input_refs": [],
+        "rights_ref": null
+      },
+      "policy": {
+        "id": "fixture:fx-date-floor",
+        "version": "v1",
+        "domain": "FX",
+        "key": "USD:EUR",
+        "provider": "fixture-source",
+        "frequency": "DAILY",
+        "evaluated_on": "2026-10-18",
+        "not_before": "2026-10-16",
+        "calendar_ref": "fixture:calendar-v1"
+      },
+      "expected": {
+        "quality": "STALE",
+        "reason_codes": [
+          "OBSERVATION_STALE"
+        ],
+        "observed_date": "2026-09-01",
+        "observed_at": null
+      }
+    },
+    {
+      "id": "missing-date",
+      "input": {
+        "scope": "OFFLINE_SYNTHETIC",
+        "domain": "FX",
+        "key": "USD:EUR",
+        "value": 0.91,
+        "unit": "EUR_PER_UNIT",
+        "currency": null,
+        "observed": null,
+        "collected_at": "2026-10-18T10:00:00Z",
+        "run_id": "fixture:run-1",
+        "frequency": "DAILY",
+        "period": null,
+        "source": {
+          "provider": "fixture-source",
+          "native_id": "USDEUR=X",
+          "evidence_ref": "fixture:fx-1",
+          "adapter_version": "v1"
+        },
+        "nature": "OBSERVED",
+        "formula_ref": null,
+        "input_refs": [],
+        "rights_ref": null
+      },
+      "policy": {
+        "id": "fixture:fx-date-floor",
+        "version": "v1",
+        "domain": "FX",
+        "key": "USD:EUR",
+        "provider": "fixture-source",
+        "frequency": "DAILY",
+        "evaluated_on": "2026-10-18",
+        "not_before": "2026-10-16",
+        "calendar_ref": "fixture:calendar-v1"
+      },
+      "expected": {
+        "quality": "UNKNOWN",
+        "reason_codes": [
+          "OBSERVATION_MISSING"
+        ],
+        "observed_date": null,
+        "observed_at": null
+      }
+    },
+    {
+      "id": "future-date",
+      "input": {
+        "scope": "OFFLINE_SYNTHETIC",
+        "domain": "FX",
+        "key": "USD:EUR",
+        "value": 0.91,
+        "unit": "EUR_PER_UNIT",
+        "currency": null,
+        "observed": {
+          "precision": "DATE",
+          "value": "2026-10-19"
+        },
+        "collected_at": "2026-10-18T10:00:00Z",
+        "run_id": "fixture:run-1",
+        "frequency": "DAILY",
+        "period": null,
+        "source": {
+          "provider": "fixture-source",
+          "native_id": "USDEUR=X",
+          "evidence_ref": "fixture:fx-1",
+          "adapter_version": "v1"
+        },
+        "nature": "OBSERVED",
+        "formula_ref": null,
+        "input_refs": [],
+        "rights_ref": null
+      },
+      "policy": {
+        "id": "fixture:fx-date-floor",
+        "version": "v1",
+        "domain": "FX",
+        "key": "USD:EUR",
+        "provider": "fixture-source",
+        "frequency": "DAILY",
+        "evaluated_on": "2026-10-18",
+        "not_before": "2026-10-16",
+        "calendar_ref": "fixture:calendar-v1"
+      },
+      "expected": {
+        "quality": "UNKNOWN",
+        "reason_codes": [
+          "OBSERVATION_FUTURE",
+          "OBSERVATION_AFTER_COLLECTION"
+        ],
+        "observed_date": "2026-10-19",
+        "observed_at": null
+      }
+    },
+    {
+      "id": "timestamp",
+      "input": {
+        "scope": "OFFLINE_SYNTHETIC",
+        "domain": "FX",
+        "key": "USD:EUR",
+        "value": 0.91,
+        "unit": "EUR_PER_UNIT",
+        "currency": null,
+        "observed": {
+          "precision": "TIMESTAMP",
+          "value": "2026-10-16T22:30:00-04:00"
+        },
+        "collected_at": "2026-10-18T10:00:00Z",
+        "run_id": "fixture:run-1",
+        "frequency": "DAILY",
+        "period": null,
+        "source": {
+          "provider": "fixture-source",
+          "native_id": "USDEUR=X",
+          "evidence_ref": "fixture:fx-1",
+          "adapter_version": "v1"
+        },
+        "nature": "OBSERVED",
+        "formula_ref": null,
+        "input_refs": [],
+        "rights_ref": null
+      },
+      "policy": {
+        "id": "fixture:fx-date-floor",
+        "version": "v1",
+        "domain": "FX",
+        "key": "USD:EUR",
+        "provider": "fixture-source",
+        "frequency": "DAILY",
+        "evaluated_on": "2026-10-18",
+        "not_before": "2026-10-16",
+        "calendar_ref": "fixture:calendar-v1"
+      },
+      "expected": {
+        "quality": "VALIDATED",
+        "reason_codes": [],
+        "observed_date": "2026-10-17",
+        "observed_at": "2026-10-17T02:30:00Z"
+      }
+    },
+    {
+      "id": "no-policy",
+      "input": {
+        "scope": "OFFLINE_SYNTHETIC",
+        "domain": "FX",
+        "key": "USD:EUR",
+        "value": 0.91,
+        "unit": "EUR_PER_UNIT",
+        "currency": null,
+        "observed": {
+          "precision": "DATE",
+          "value": "2026-10-16"
+        },
+        "collected_at": "2026-10-18T10:00:00Z",
+        "run_id": "fixture:run-1",
+        "frequency": "DAILY",
+        "period": null,
+        "source": {
+          "provider": "fixture-source",
+          "native_id": "USDEUR=X",
+          "evidence_ref": "fixture:fx-1",
+          "adapter_version": "v1"
+        },
+        "nature": "OBSERVED",
+        "formula_ref": null,
+        "input_refs": [],
+        "rights_ref": null
+      },
+      "policy": null,
+      "expected": {
+        "quality": "UNKNOWN",
+        "reason_codes": [
+          "FRESHNESS_POLICY_MISSING"
+        ],
+        "observed_date": "2026-10-16",
+        "observed_at": null
+      }
+    },
+    {
+      "id": "macro-zero",
+      "input": {
+        "scope": "OFFLINE_SYNTHETIC",
+        "domain": "MACRO",
+        "key": "fixture:spread",
+        "value": 0,
+        "unit": "PERCENTAGE_POINTS",
+        "currency": null,
+        "observed": {
+          "precision": "DATE",
+          "value": "2026-10-16"
+        },
+        "collected_at": "2026-10-18T10:00:00Z",
+        "run_id": "fixture:run-1",
+        "frequency": "DAILY",
+        "period": null,
+        "source": {
+          "provider": "fixture-source",
+          "native_id": "fixture:spread",
+          "evidence_ref": "fixture:macro-1",
+          "adapter_version": "v1"
+        },
+        "nature": "OBSERVED",
+        "formula_ref": null,
+        "input_refs": [],
+        "rights_ref": null
+      },
+      "policy": {
+        "id": "fixture:fx-date-floor",
+        "version": "v1",
+        "domain": "MACRO",
+        "key": "fixture:spread",
+        "provider": "fixture-source",
+        "frequency": "DAILY",
+        "evaluated_on": "2026-10-18",
+        "not_before": "2026-10-16",
+        "calendar_ref": "fixture:calendar-v1"
+      },
+      "expected": {
+        "quality": "VALIDATED",
+        "reason_codes": [],
+        "observed_date": "2026-10-16",
+        "observed_at": null
+      }
+    },
+    {
+      "id": "publication-negative",
+      "input": {
+        "scope": "OFFLINE_SYNTHETIC",
+        "domain": "PUBLICATION",
+        "key": "fixture:issuer-fcf",
+        "value": -12.5,
+        "unit": "CURRENCY",
+        "currency": "EUR",
+        "observed": {
+          "precision": "DATE",
+          "value": "2026-10-16"
+        },
+        "collected_at": "2026-10-18T10:00:00Z",
+        "run_id": "fixture:run-1",
+        "frequency": "QUARTERLY",
+        "period": {
+          "start": "2026-07-01",
+          "end": "2026-09-30"
+        },
+        "source": {
+          "provider": "fixture-source",
+          "native_id": "fixture:issuer",
+          "evidence_ref": "fixture:publication-1",
+          "adapter_version": "v1"
+        },
+        "nature": "OBSERVED",
+        "formula_ref": null,
+        "input_refs": [],
+        "rights_ref": null
+      },
+      "policy": {
+        "id": "fixture:fx-date-floor",
+        "version": "v1",
+        "domain": "PUBLICATION",
+        "key": "fixture:issuer-fcf",
+        "provider": "fixture-source",
+        "frequency": "QUARTERLY",
+        "evaluated_on": "2026-10-18",
+        "not_before": "2026-10-16",
+        "calendar_ref": "fixture:calendar-v1"
+      },
+      "expected": {
+        "quality": "VALIDATED",
+        "reason_codes": [],
+        "observed_date": "2026-10-16",
+        "observed_at": null
+      }
+    },
+    {
+      "id": "missing-value",
+      "input": {
+        "scope": "OFFLINE_SYNTHETIC",
+        "domain": "FX",
+        "key": "USD:EUR",
+        "value": null,
+        "unit": "EUR_PER_UNIT",
+        "currency": null,
+        "observed": {
+          "precision": "DATE",
+          "value": "2026-10-16"
+        },
+        "collected_at": "2026-10-18T10:00:00Z",
+        "run_id": "fixture:run-1",
+        "frequency": "DAILY",
+        "period": null,
+        "source": {
+          "provider": "fixture-source",
+          "native_id": "USDEUR=X",
+          "evidence_ref": "fixture:fx-1",
+          "adapter_version": "v1"
+        },
+        "nature": "OBSERVED",
+        "formula_ref": null,
+        "input_refs": [],
+        "rights_ref": null
+      },
+      "policy": {
+        "id": "fixture:fx-date-floor",
+        "version": "v1",
+        "domain": "FX",
+        "key": "USD:EUR",
+        "provider": "fixture-source",
+        "frequency": "DAILY",
+        "evaluated_on": "2026-10-18",
+        "not_before": "2026-10-16",
+        "calendar_ref": "fixture:calendar-v1"
+      },
+      "expected": {
+        "quality": "MISSING",
+        "reason_codes": [
+          "VALUE_MISSING"
+        ],
+        "observed_date": "2026-10-16",
+        "observed_at": null
+      }
+    },
+    {
+      "id": "estimated",
+      "input": {
+        "scope": "OFFLINE_SYNTHETIC",
+        "domain": "PUBLICATION",
+        "key": "fixture:estimate",
+        "value": 0.91,
+        "unit": "RATIO",
+        "currency": null,
+        "observed": {
+          "precision": "DATE",
+          "value": "2026-10-16"
+        },
+        "collected_at": "2026-10-18T10:00:00Z",
+        "run_id": "fixture:run-1",
+        "frequency": "DAILY",
+        "period": null,
+        "source": {
+          "provider": "fixture-source",
+          "native_id": "USDEUR=X",
+          "evidence_ref": "fixture:fx-1",
+          "adapter_version": "v1"
+        },
+        "nature": "ESTIMATED",
+        "formula_ref": null,
+        "input_refs": [],
+        "rights_ref": null
+      },
+      "policy": {
+        "id": "fixture:fx-date-floor",
+        "version": "v1",
+        "domain": "PUBLICATION",
+        "key": "fixture:estimate",
+        "provider": "fixture-source",
+        "frequency": "DAILY",
+        "evaluated_on": "2026-10-18",
+        "not_before": "2026-10-16",
+        "calendar_ref": "fixture:calendar-v1"
+      },
+      "expected": {
+        "quality": "PARTIAL",
+        "reason_codes": [
+          "ESTIMATED_NOT_OBSERVED"
+        ],
+        "observed_date": "2026-10-16",
+        "observed_at": null
+      }
+    }
+  ]
+}

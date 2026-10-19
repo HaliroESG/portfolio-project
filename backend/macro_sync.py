@@ -7,6 +7,7 @@ import yfinance as yf
 from supabase import create_client
 
 from etl_stats import build_etl_stats
+from macro_contracts import macro_owner
 
 # Utilisation des secrets GitHub
 SUPABASE_URL = os.environ.get("SUPABASE_URL")
@@ -67,6 +68,8 @@ def sync_macro():
 
     for ticker, name in daily_tickers.items():
             try:
+                if macro_owner("YAHOO", ticker) != "macro_sync":
+                    raise ValueError("MACRO_PRODUCER_NOT_OWNER")
                 # On prend 5 jours pour être sûr d'avoir des données même après un jour férié
                 df = yf.download(ticker, period="5d", progress=False)
                 
@@ -80,11 +83,17 @@ def sync_macro():
                     
                     change = (current / prev) - 1
                     
-                    supabase.table("macro_indicators").update({
+                    response = supabase.table("macro_indicators").update({
                         "value": current,
                         "change_pct": change,
                         "last_update": datetime.now().isoformat()
                     }).eq("id", ticker).execute()
+                    # A successful HTTP call is not proof that an UPDATE found
+                    # its row. Legacy values remain unverified in the reader.
+                    if not response.data or not any(row.get("id") == ticker for row in response.data):
+                        failed += 1
+                        print("MACRO_UPDATE_UNCONFIRMED")
+                        continue
                     print(f"✅ {name} à jour : {current:.2f}")
                     updated += 1
                 else:
@@ -108,7 +117,7 @@ if __name__ == "__main__":
             items_success=stats.get("updated"),
             items_failed=stats.get("failed"),
         )
-        finish_etl_run(run_id, "SUCCESS", time.time() - started, stats=normalized_stats)
+        finish_etl_run(run_id, "FAILED" if stats.get("failed") else "SUCCESS", time.time() - started, stats=normalized_stats)
     except Exception as e:
         finish_etl_run(run_id, "FAILED", time.time() - started, error=str(e))
         raise

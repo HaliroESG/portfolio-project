@@ -4,18 +4,20 @@ import React from 'react'
 import useSWR from 'swr'
 import { AppShell } from '../../components/AppShell'
 import { supabase } from '../../lib/supabase'
-import { ArrowRightLeft, TrendingUp, TrendingDown } from 'lucide-react'
-import { cn } from '../../lib/utils'
+import { ArrowRightLeft } from 'lucide-react'
 import { FX_PAIRS_SWR_KEY, fxPairState, loadFxPairs } from '../../lib/fxData'
 import { latestSourceTimestamp } from '../../lib/readerState'
+import { useFxRates } from '../../hooks/useFxRates'
+import { FxRateDetails } from '../../components/FxRateDetails'
 
 export default function CurrenciesPage() {
+  const rates = useFxRates()
   const { data, isLoading, error } = useSWR(
     FX_PAIRS_SWR_KEY, () => loadFxPairs(supabase),
     { refreshInterval: 300000, revalidateOnFocus: false }
   )
   const currencyPairs = data ?? []
-  const lastSyncIso = latestSourceTimestamp(currencyPairs.map((pair) => pair.last_update))
+  const lastSyncIso = latestSourceTimestamp(rates.rows.map(row => row.last_update))
   const lastSync = lastSyncIso ? new Date(lastSyncIso).toLocaleTimeString('fr-FR') : ''
 
   return (
@@ -27,13 +29,27 @@ export default function CurrenciesPage() {
               <h1 className="text-3xl font-black uppercase tracking-tighter text-slate-950 dark:text-white">Currency Pairs</h1>
             </div>
             
-            {/* Currency Pairs Table */}
-            <p className="text-sm text-slate-500">Paires explicites uniquement. 1 unité de devise de base = taux en devise de cotation. Statut de marché déclaré par la source ; date affichée = collecte, pas cotation. Variation source masquée si l’état est périmé, incomplet ou inconnu.</p>
+            <section aria-label="Référence EUR commune" className="rounded-2xl border border-slate-200 bg-white p-4 dark:border-white/10 dark:bg-[#0D1117]/50">
+              <h2 className="font-bold">Référence EUR commune · {rates.state}</h2>
+              <p className="my-2 text-sm text-slate-500">Mêmes taux que FX Intelligence et le panneau d’en-tête. La collecte ne prouve ni la date de cotation ni la comparabilité des séances.</p>
+              {rates.loading && <p>Chargement des taux…</p>}
+              {rates.error && <p role="alert" className="text-sm text-amber-700">Lecture des taux impossible. Les éventuelles valeurs conservées sont un cache.</p>}
+              {!rates.loading && !rates.error && rates.rows.length === 0 && <p>Aucun taux disponible.</p>}
+              <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
+                {rates.rows.map(rate => <div key={rate.id} data-fx-rate={rate.id} className="min-w-0 rounded-lg border border-slate-200 p-3 dark:border-white/10">
+                  <div className="flex justify-between gap-2 font-mono text-sm font-bold"><span>{rate.id}/EUR</span><span data-fx-value>{rate.rate_to_eur === null ? 'N/A' : rate.rate_to_eur.toFixed(4)}</span></div>
+                  <FxRateDetails rate={rate} cached={rates.usingCache} />
+                  <p className="mt-2 text-xs text-slate-500">Variation : <span data-fx-change>{rate.change_pct === null ? 'N/A' : `${(rate.change_pct * 100).toFixed(2)}%`}</span></p>
+                </div>)}
+              </div>
+            </section>
+            {/* Separate source observations: never substitute these for the EUR reference. */}
+            <p className="text-sm text-slate-500">Les paires Market Watch ci-dessous sont des observations distinctes, non rapprochées des taux de conversion. 1 unité de base = taux en devise de cotation. Les variations fournies ne sont pas certifiées : séances et méthode non renseignées.</p>
             {error && <p role="alert" className="text-sm text-amber-700">Lecture FX impossible. Les éventuelles valeurs précédentes sont conservées comme cache.</p>}
             <div className="bg-white dark:bg-[#0D1117]/50 rounded-3xl border-2 border-slate-200 dark:border-white/5 shadow-2xl overflow-hidden">
               <div className="p-6 border-b-2 border-slate-200 dark:border-white/5">
                 <h2 className="text-sm font-black uppercase tracking-tighter text-slate-950 dark:text-white">
-                  FX Pairs from Market Watch
+                  FX Pairs from Market Watch · source distincte
                 </h2>
               </div>
               <div className="overflow-x-auto">
@@ -50,7 +66,7 @@ export default function CurrenciesPage() {
                         Rate
                       </th>
                       <th className="p-4 text-right text-[10px] font-black text-slate-950 dark:text-gray-500 uppercase tracking-widest border-b border-slate-200 dark:border-white/5">
-                        Daily Change
+                        Variation source (non vérifiée)
                       </th>
                     </tr>
                   </thead>
@@ -98,17 +114,7 @@ export default function CurrenciesPage() {
                             </td>
                             <td className="p-4 text-right">
                               <div className="flex items-center justify-end gap-1.5">
-                                {change === null ? null : isPositive ? (
-                                  <TrendingUp className="w-3 h-3 text-green-600 dark:text-green-400" />
-                                ) : (
-                                  <TrendingDown className="w-3 h-3 text-red-600 dark:text-red-400" />
-                                )}
-                                <span className={cn(
-                                  "text-sm font-mono font-black",
-                                  change === null ? 'text-slate-500' : isPositive
-                                    ? "text-green-600 dark:text-green-400"
-                                    : "text-red-600 dark:text-red-400"
-                                )}>
+                                <span className="text-sm font-mono font-black text-slate-500">
                                   {change === null ? 'N/A' : `${isPositive ? '+' : ''}${(change * 100).toFixed(2)}%`}
                                 </span>
                               </div>
