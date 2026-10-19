@@ -5,7 +5,7 @@ import pandas as pd
 import pytest
 
 import equity_publications as ep
-from test_equity_publications import record, financial_frames
+from tests.test_equity_publications import record, financial_frames
 
 
 def test_estimate_never_becomes_reported_by_advancing_clock():
