@@ -1,5 +1,6 @@
 import type { SupabaseClient } from '@supabase/supabase-js'
 import type { EquityScreenerRow, EquityScreenerValuationTag, TridentOverallState } from '../types'
+import { finiteNumber } from './readerState'
 
 type JsonRecord = Record<string, unknown>
 
@@ -88,12 +89,7 @@ function readString(value: unknown): string | null {
 }
 
 function readNumber(value: unknown): number | null {
-  if (typeof value === 'number' && Number.isFinite(value)) return value
-  if (typeof value === 'string' && value.trim().length > 0) {
-    const parsed = Number.parseFloat(value)
-    return Number.isFinite(parsed) ? parsed : null
-  }
-  return null
+  return finiteNumber(value)
 }
 
 function readStringArray(value: unknown): string[] {
@@ -185,7 +181,7 @@ function parseRow(raw: JsonRecord): EquityScreenerRow | null {
     momentum_3m_pct: readNumber(raw.momentum_3m_pct),
     momentum_12m_pct: readNumber(raw.momentum_12m_pct),
     price_coverage_pct: readNumber(raw.price_coverage_pct),
-    quality_value_score: readNumber(raw.quality_value_score) ?? 0,
+    quality_value_score: readNumber(raw.quality_value_score),
     valuation_tag: parseValuationTag(raw.valuation_tag),
     score_details: readRecord(raw.score_details),
     data_state: readStringArray(raw.data_state),
@@ -215,6 +211,7 @@ async function loadAllRows(supabase: SupabaseClient): Promise<JsonRecord[]> {
       .from('equity_screener_latest')
       .select(selector)
       .order('quality_value_score', { ascending: false })
+      .order('instrument_key', { ascending: true })
       .range(offset, offset + PAGE_SIZE - 1)
     if (error) {
       if (selector === SELECTOR_V2 && isSchemaPending(error)) {

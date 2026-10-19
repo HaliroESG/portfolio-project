@@ -225,11 +225,14 @@ export function TridentRegressionChart({
   instrumentKey,
   providerSymbol,
   assetCurrency,
+  wide = false,
 }: {
   ticker: string
   instrumentKey?: string | null
   providerSymbol?: string | null
   assetCurrency: string | null
+  /** Dossier layout only; calculations and the legacy sidebar remain unchanged. */
+  wide?: boolean
 }) {
   const [horizon, setHorizon] = useState<PriceHistoryHorizon>('MAX')
   const [mode, setMode] = useState<PriceHistoryCurrencyMode>('LOCAL')
@@ -543,7 +546,7 @@ export function TridentRegressionChart({
               <Metric label="Slope" value={formatPct(model.annualizedSlopePct)} tone={model.annualizedSlopePct !== null && model.annualizedSlopePct < 0 ? 'bad' : 'neutral'} />
             </div>
 
-            {renderRegressionSvg(charts.inline, 'h-60', 'inline', 'inline')}
+            {renderRegressionSvg(charts.inline, wide ? 'h-auto max-h-[520px]' : 'h-60', 'inline', 'inline')}
 
             <div className="flex flex-wrap items-center gap-x-2 gap-y-1 text-[9px] font-mono uppercase tracking-wider text-slate-500 dark:text-gray-500">
               <span>{currency}</span>
