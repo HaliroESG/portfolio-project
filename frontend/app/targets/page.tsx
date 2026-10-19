@@ -10,10 +10,10 @@ import {
   buildFamilyOfficeAllocationRows,
   loadFamilyOfficeAllocationSource,
 } from '../../lib/familyOfficeAllocation'
-import { parseTargetModels, parseTargetSleeves, parseTargetBuckets, parseTargetEnvelopeLines, parseTargetPortfolios } from '../../lib/targetModelReaders'
+import { parseTargetModels, parseTargetSleeves, parseTargetBuckets, parseTargetEnvelopeLines, parseTargetPortfolios, resolvePortfolioScope } from '../../lib/targetModelReaders'
 import { supabase } from '../../lib/supabase'
 import { cn } from '../../lib/utils'
-import { sourceReadiness, hasSelectedPortfolio } from '../../lib/sourceReadiness'
+import { sourceReadiness, hasSelectedPortfolio, sourceFailures } from '../../lib/sourceReadiness'
 import { usePortfolioSelection } from '../../lib/usePortfolioSelection'
 import { SourceStateScreen } from '../../components/SourceStateScreen'
 import type {
@@ -84,12 +84,6 @@ function formatDate(value: string | null | undefined): string {
   return date.toLocaleDateString('fr-FR', { day: '2-digit', month: '2-digit', year: '2-digit' })
 }
 
-function scopeFromPortfolioType(value: unknown): PortfolioScope | null {
-  if (value === 'PERSONAL') return 'PERSO'
-  if (value === 'PROFESSIONAL') return 'PRO'
-  return null
-}
-
 function resolveFreshnessDate(value: string | null | undefined, staleAfterDays = 3): FreshnessState {
   if (!value) return 'MISSING'
   const date = new Date(value)
@@ -135,7 +129,7 @@ export default function TargetsPage() {
   const [scopeOverride, setScopeOverride] = useState<PortfolioScope | null>(
     typeof window !== 'undefined' && new URLSearchParams(window.location.search).get('scope') === 'PRO' ? 'PRO' : null,
   )
-  const selectedScope = scopeOverride ?? scopeFromPortfolioType(selectedPortfolio?.portfolio_type)
+  const selectedScope = resolvePortfolioScope(selectedPortfolio?.portfolio_type, scopeOverride)
 
   const allocationRowsDataSource = useSWR(
   
@@ -227,16 +221,19 @@ export default function TargetsPage() {
   const sourceError = portfoliosError ?? allocationError ?? targetModelError ?? targetBucketsError ?? targetEnvelopeLinesError ?? targetSleevesError
 
 
-  const requiredSources = [
-    portfoliosSource,
-    allocationRowsDataSource,
-    targetModelsDataSource,
-    targetBucketsDataSource,
-    targetEnvelopeLinesDataSource,
+  const namedSources = [
+    { label: 'Portfolio registry', source: portfoliosSource },
+    { label: 'Target models', source: targetModelsDataSource },
+    ...(selectedPortfolioId ? [{ label: 'Family Office holdings', source: allocationRowsDataSource }] : []),
+    ...(selectedTargetModel ? [
+      { label: 'Strategic buckets', source: targetBucketsDataSource },
+      { label: 'Envelope targets', source: targetEnvelopeLinesDataSource },
+    ] : []),
+    ...(selectedTargetModel?.portfolio_scope === 'PRO' ? [{ label: 'Core / Satellite targets', source: targetSleevesDataSource }] : []),
   ]
-  const reads = sourceReadiness(selectedScope === 'PRO' && selectedTargetModel ? [...requiredSources, targetSleevesDataSource] : requiredSources)
-  const state = reads === 'READY' && !hasSelectedPortfolio(portfolios, selectedPortfolioId) ? 'UNAVAILABLE' : reads
-  const selectedScopeIsPro = selectedTargetModel?.portfolio_scope === 'PRO'
+  const requiredSources = namedSources.map(({ source }) => source)
+  const reads = sourceReadiness(requiredSources)
+  const state = reads === 'READY' && (!hasSelectedPortfolio(portfolios, selectedPortfolioId) || !selectedScope) ? 'UNAVAILABLE' : reads
   const assessment = useMemo(
     () => !sourceLoading && !sourceError && targetEnvelopeLinesReady && selectedScope
       ? assessFamilyOfficeAllocation(allocationRows, selectedTargetModel, targetEnvelopeLines, {
@@ -339,7 +336,8 @@ export default function TargetsPage() {
   if (state !== 'READY') return (
     <AppShell className="bg-slate-50">
       <SourceStateScreen key={`${selectedPortfolioId}:${selectedScope}`} title="Portfolio Drift" state={state} portfolios={portfolios} portfolioId={selectedPortfolioId}
-        scope={selectedScope ?? 'PERSO'} onPortfolio={setSelectedPortfolioIdOverride} onScope={setScopeOverride}
+        scope={selectedScope} onPortfolio={setSelectedPortfolioIdOverride} onScope={setScopeOverride}
+        failures={sourceFailures(namedSources)}
         onRetry={() => Promise.allSettled(requiredSources.map((source) => source.mutate()))} />
     </AppShell>
   )
@@ -549,7 +547,7 @@ export default function TargetsPage() {
             ) : (
               <div className="mt-4 rounded-lg border border-slate-200 bg-slate-50 px-4 py-3 text-xs font-mono text-slate-600 dark:border-white/10 dark:bg-black/20 dark:text-gray-400">
                 {selectedScope
-                  ? <>No target model imported for {selectedScope}. Run `import_target_model.py --kind {selectedScope === 'PRO' ? 'pro' : 'perso'} --dry-run`, then apply with service-role credentials.</>
+                  ? <>No target model imported for {selectedScope}. Allocation recommendations remain unavailable. Any model import requires separate validation.</>
                   : <>Portfolio scope is unavailable. No target model or allocation action can be selected.</>}
               </div>
             )}

@@ -2,6 +2,18 @@ import type { PortfolioScope, TargetModelRow, TargetBucketRow, TargetSleeveKey, 
 
 type RawRow = Record<string, unknown>
 
+export function scopeFromPortfolioType(value: unknown): PortfolioScope | null {
+  if (value === 'PERSONAL') return 'PERSO'
+  if (value === 'PROFESSIONAL') return 'PRO'
+  return null
+}
+
+// A UI or URL preference never establishes portfolio identity or relaxes PRO policy.
+export function resolvePortfolioScope(value: unknown, requestedScope: PortfolioScope | null): PortfolioScope | null {
+  const verifiedScope = scopeFromPortfolioType(value)
+  return verifiedScope && (requestedScope === null || requestedScope === verifiedScope) ? verifiedScope : null
+}
+
 function readNumber(value: unknown): number | null {
   if (value === null || value === undefined) return null
   if (typeof value === 'number' && Number.isFinite(value)) return value

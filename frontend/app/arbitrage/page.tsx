@@ -2,7 +2,7 @@
 
 import React, { useMemo, useState } from 'react'
 import useSWR from 'swr'
-import { sourceReadiness, hasSelectedPortfolio } from '../../lib/sourceReadiness'
+import { sourceReadiness, hasSelectedPortfolio, sourceFailures } from '../../lib/sourceReadiness'
 import { SourceStateScreen } from '../../components/SourceStateScreen'
 import { usePortfolioSelection } from '../../lib/usePortfolioSelection'
 import { AlertTriangle, ArrowDown, ArrowUp, ChevronsUpDown, LockKeyhole, Scale } from 'lucide-react'
@@ -14,7 +14,7 @@ import {
   loadFamilyOfficeAllocationSource,
   toPortfolioDecisionRows,
 } from '../../lib/familyOfficeAllocation'
-import { parseTargetModels, parseTargetBuckets, parseTargetSleeves, parseTargetEnvelopeLines, parseTargetPortfolios } from '../../lib/targetModelReaders'
+import { parseTargetModels, parseTargetBuckets, parseTargetSleeves, parseTargetEnvelopeLines, parseTargetPortfolios, resolvePortfolioScope } from '../../lib/targetModelReaders'
 import { supabase } from '../../lib/supabase'
 import { cn } from '../../lib/utils'
 import { loadMacroAllocationAdvice } from '../../lib/macroStrategyData'
@@ -30,8 +30,6 @@ import type {
   PortfolioScope,
   SupportIdentifierState,
   SupportSourceQuality,
-  TargetEnvelopeLineRow,
-  TargetModelRow,
 } from '../../types'
 
 type SortKey = 'priority' | 'ticker' | 'action' | 'amount' | 'drift' | 'confidence'
@@ -104,8 +102,14 @@ function parseAdviceAction(value: unknown): AllocationAdviceAction {
   return 'UNAVAILABLE'
 }
 
-function parsePortfolioScope(value: unknown): PortfolioScope {
-  return value === 'PRO' ? 'PRO' : 'PERSO'
+// Reject the whole response/cache on an identity mismatch; filtering a foreign
+// row would make a partial set of recommendations appear complete.
+function adviceMatchesPortfolio(data: unknown, portfolioId: string | null, scope: PortfolioScope | null): data is RawRow[] {
+  return Boolean(portfolioId && scope && Array.isArray(data) && data.every((row: unknown) =>
+    row !== null && typeof row === 'object' && !Array.isArray(row)
+    && 'portfolio_id' in row && row.portfolio_id === portfolioId
+    && 'portfolio_scope' in row && row.portfolio_scope === scope,
+  ))
 }
 
 function parseExecution(value: unknown): AllocationAdviceExecution {
@@ -158,9 +162,11 @@ function parseAdviceRow(raw: RawRow): AllocationAdviceRow | null {
   const sourceFile = readString(raw.source_file)
   const bucketKey = readString(raw.bucket_key)
   const bucketLabel = readString(raw.bucket_label)
-  if (!portfolioId || !modelId || !modelName || !sourceFile || !bucketKey || !bucketLabel) return null
+  const portfolioScope = raw.portfolio_scope
+  if (!portfolioId || !modelId || !modelName || !sourceFile || !bucketKey || !bucketLabel
+    || (portfolioScope !== 'PERSO' && portfolioScope !== 'PRO')) return null
   return {
-    portfolio_scope: parsePortfolioScope(raw.portfolio_scope),
+    portfolio_scope: portfolioScope,
     portfolio_id: portfolioId,
     model_id: modelId,
     model_name: modelName,
@@ -436,14 +442,14 @@ export default function ArbitragePage() {
     if (error) throw error
     return parseTargetPortfolios(data ?? [])
   })
-  const { data: portfolios, error: portfoliosError, isLoading: portfoliosLoading } = portfoliosSource
+  const { data: portfolios, error: portfoliosError } = portfoliosSource
   const [selectedPortfolioId, setSelectedPortfolioIdOverride] = usePortfolioSelection(
     portfolios, sourceReadiness([portfoliosSource]) === 'READY',
   )
 
   const selectedPortfolio = portfolios?.find((portfolio) => portfolio.id === selectedPortfolioId) ?? null
   const [scopeOverride, setScopeOverride] = useState<PortfolioScope | null>(null)
-  const selectedScope = scopeOverride ?? ((selectedPortfolio as { portfolio_type?: string | null } | null)?.portfolio_type === 'PRO' ? 'PRO' : (selectedPortfolio as { portfolio_type?: string | null } | null)?.portfolio_type === 'PERSONAL' ? 'PERSO' : null)
+  const selectedScope = resolvePortfolioScope(selectedPortfolio?.portfolio_type, scopeOverride)
 
   const allocationSource = useSWR(
     selectedPortfolioId ? ['fo-arbitrage-allocation', selectedPortfolioId] : null,
@@ -505,10 +511,10 @@ export default function ArbitragePage() {
   const error = portfoliosError ?? allocationError ?? targetModelError ?? targetLinesError ?? bucketsError ?? sleevesError
   const isLoading = allocationLoading || targetModelLoading || targetLinesLoading || Boolean(selectedTargetModel && (bucketsLoading || targetLinesLoading)) || Boolean(selectedTargetModel?.portfolio_scope === 'PRO' && sleevesLoading)
   const assessment = useMemo(
-    () => portfoliosError || allocationError || targetModelError || targetLinesError || (bucketsSource ? bucketsSource.error : undefined) || (sleevesSource ? sleevesSource.error : undefined) || isLoading
+    () => error || isLoading || !selectedScope
       ? { rows: [], total_value_eur: null, target_total_pct: null, target_model_ready: false }
       : assessFamilyOfficeAllocation(allocationRows, selectedTargetModel, targetLines, {
-        expectedScope: selectedScope as PortfolioScope,
+        expectedScope: selectedScope,
         targetBuckets,
         targetSleeves,
       }),
@@ -516,22 +522,31 @@ export default function ArbitragePage() {
   )
   const rows = useMemo(() => toPortfolioDecisionRows(assessment), [assessment])
 
+  const advicePortfolioId = sourceReadiness([portfoliosSource]) === 'READY'
+    && hasSelectedPortfolio(portfolios, selectedPortfolioId) && selectedScope ? selectedPortfolioId : null
   const adviceSource = useSWR(
-    ['allocation-advice', selectedScope],
+    advicePortfolioId ? ['allocation-advice', selectedScope, advicePortfolioId] : null,
     async () => {
+      if (!advicePortfolioId || !selectedScope) throw new Error('Allocation advice identity unavailable')
       const { data, error } = await supabase
         .from('allocation_advice_items_latest')
         .select('portfolio_scope,portfolio_id,model_id,model_name,source_file,bucket_key,bucket_label,current_value_eur,current_weight_pct,target_weight_pct,drift_pct,rebalance_amount_eur,action,confidence,reason_codes,preferred_execution,data_state,model_contract_state,model_contract_reason,bucket_position_count,bucket_unavailable_positions,position_count,unavailable_positions,unmatched_positions,unmatched_scope_positions,total_value_eur,allocatable_total_eur,reserve_floor_eur,reserve_current_eur,reserve_eligible_positions,reserve_state,updated_at')
         .eq('portfolio_scope', selectedScope)
+        .eq('portfolio_id', advicePortfolioId)
         .order('action', { ascending: true })
       if (error) throw error
-      return ((data ?? []) as unknown as RawRow[])
-        .map(parseAdviceRow)
-        .filter((row): row is AllocationAdviceRow => row !== null)
+      if (!adviceMatchesPortfolio(data, advicePortfolioId, selectedScope)) throw new Error('Allocation advice identity mismatch')
+      return data.map((raw) => {
+        const row = parseAdviceRow(raw)
+        if (!row) throw new Error('Allocation advice invalid row')
+        return row
+      })
     }
   )
 
-  const { data: adviceRows = [], error: adviceError } = adviceSource
+  const { data: cachedAdviceRows, error: adviceError } = adviceSource
+  const adviceIdentityMatches = adviceMatchesPortfolio(cachedAdviceRows, advicePortfolioId, selectedScope)
+  const adviceRows = adviceIdentityMatches ? cachedAdviceRows ?? [] : []
   const macroSource = useSWR(
     selectedPortfolioId ? ['macro-allocation-advice', selectedPortfolioId] : null,
     () => loadMacroAllocationAdvice(supabase, selectedPortfolioId)
@@ -617,17 +632,25 @@ export default function ArbitragePage() {
   }
 
   // Dependencies match the visible overlay, including its summary/filter data.
-  const requiredSources = [
-    portfoliosSource,
-    ...(showStandardOverlay ? [modelsSource, adviceSource, executionSource,
-      ...(selectedPortfolioId ? [allocationSource] : []),
-      ...(selectedTargetModel ? [bucketsSource, linesSource] : []),
-    ...(selectedTargetModel?.portfolio_scope === 'PRO' ? [sleevesSource] : []),
+  const namedSources = [
+    { label: 'Portfolio registry', source: portfoliosSource },
+    ...(showStandardOverlay ? [
+      { label: 'Target models', source: modelsSource },
+      { label: 'Execution universe', source: executionSource },
+      ...(selectedScope ? [{ label: 'Allocation advice', source: adviceSource }] : []),
+      ...(selectedPortfolioId ? [{ label: 'Family Office holdings', source: allocationSource }] : []),
+      ...(selectedTargetModel ? [
+        { label: 'Strategic buckets', source: bucketsSource },
+        { label: 'Envelope targets', source: linesSource },
+      ] : []),
+      ...(selectedTargetModel?.portfolio_scope === 'PRO' ? [{ label: 'Core / Satellite targets', source: sleevesSource }] : []),
     ] : []),
-    ...(showMacroOverlay && selectedPortfolioId ? [macroSource] : []),
+    ...(showMacroOverlay && selectedPortfolioId ? [{ label: 'Macro allocation', source: macroSource }] : []),
   ]
+  const requiredSources = namedSources.map(({ source }) => source)
   const reads = sourceReadiness(requiredSources)
-  const state = reads === 'READY' && !hasSelectedPortfolio(portfolios, selectedPortfolioId) ? 'UNAVAILABLE' : reads
+  const state = reads === 'READY' && (!hasSelectedPortfolio(portfolios, selectedPortfolioId) || !selectedScope
+    || (showStandardOverlay && !adviceIdentityMatches)) ? 'UNAVAILABLE' : reads
   if (state !== 'READY') return (
     <AppShell className="bg-slate-50">
       <main className="p-3 sm:p-6 lg:p-10">
@@ -644,7 +667,8 @@ export default function ArbitragePage() {
             ))}
           </div>
           <SourceStateScreen key={`${selectedPortfolioId}:${selectedScope}:${overlayFilter}`} title="Arbitrage" state={state} portfolios={portfolios} portfolioId={selectedPortfolioId}
-            scope={selectedScope ?? 'PERSO'} onPortfolio={setSelectedPortfolioIdOverride} onScope={setScopeOverride}
+            scope={selectedScope} onPortfolio={setSelectedPortfolioIdOverride} onScope={setScopeOverride}
+            failures={sourceFailures(namedSources)}
             overlay={overlayFilter} onOverlay={setOverlayFilter}
             onRetry={() => Promise.allSettled(requiredSources.map((source) => source.mutate()))} />
         </div>
@@ -868,7 +892,7 @@ export default function ArbitragePage() {
               </div>
             ) : adviceRows.length === 0 ? (
               <div className="p-4">
-                <EmptyState title="No allocation advice" message={`No active ${selectedScope} target model is available yet.`} />
+                <EmptyState title="No allocation advice" message={`No allocation advice is available for the selected portfolio (${selectedScope}).`} />
               </div>
             ) : (
               <>

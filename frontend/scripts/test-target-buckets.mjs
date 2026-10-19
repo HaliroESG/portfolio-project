@@ -62,18 +62,21 @@ for (const scope of ['PERSO', 'PRO']) {
   for (const page of ['targets', 'arbitrage']) {
     const cache = fixtureCache(page, fixture)
     const fetchers = new Map()
+    const fetcherKeys = new Map()
+    const queryFilters = []
     const source = fs.readFileSync(new URL('../app/' + page + '/page.tsx', import.meta.url), 'utf8')
-    let calls = 0
     let latestAssessment
+    let scopeOverride = null
     let rawTables = { ...tables }
     const pageModule = { exports: {} }
     const dependencies = {
-      react: React,
+      react: { ...React, useState: initial => React.useState(initial === null ? scopeOverride : initial) },
       'react/jsx-runtime': require('react/jsx-runtime'),
       swr: (key, fetcher) => {
         if (!key) return {}
         const name = Array.isArray(key) ? key[0] : key
         fetchers.set(name, fetcher)
+        fetcherKeys.set(name, key)
         return cache.get(name) ?? {}
       },
       'lucide-react': new Proxy({}, { get: () => () => null }),
@@ -86,18 +89,19 @@ for (const scope of ['PERSO', 'PRO']) {
         const first = Array.isArray(portfolios) && portfolios.length ? portfolios[0].id : ''
         return [first, () => {}]
       } },
-      '../../components/SourceStateScreen': { SourceStateScreen: () => null },
+      '../../components/SourceStateScreen': { SourceStateScreen: ({ state }) => React.createElement('section', { 'data-source-state': state }) },
       '../../lib/macroStrategyData': { loadMacroAllocationAdvice: () => { throw new Error('Unexpected live read') } },
       '../../lib/supabase': { supabase: { from: table => {
         assert.ok(table in rawTables, 'Unexpected table ' + table)
         const query = {
-          select: () => query, eq: () => query, order: () => query,
+          select: () => query,
+          eq: (column, value) => { queryFilters.push({ table, column, value }); return query },
+          order: () => query,
           then: (resolve, reject) => Promise.resolve({ data: rawTables[table], error: null }).then(resolve, reject),
         }
         return query
       } } },
       '../../lib/familyOfficeAllocation': { ...family, assessFamilyOfficeAllocation: (...args) => {
-        calls++
         latestAssessment = family.assessFamilyOfficeAllocation(...args)
         return latestAssessment
       } },
@@ -109,9 +113,95 @@ for (const scope of ['PERSO', 'PRO']) {
       return dependencies[name]
     } })
     const render = () => renderToStaticMarkup(React.createElement(pageModule.exports.default))
-    assert.match(render(), page === 'arbitrage' && scope === 'PRO' ? /Asset class|Synthetic holding 1|Refreshing sources/ : /Synthetic holding 1/)
-    assert.equal(latestAssessment.target_model_ready, !(page==='arbitrage'&&scope==='PRO'), page + ':' + scope)
-    assert.ok(latestAssessment.rows.some(row => row.action==='BUY'||row.action==='REDUCE') || (page==='arbitrage'&&scope==='PRO'), 'ok rows')
+    assert.match(render(), /Synthetic holding 1/)
+    assert.equal(latestAssessment.target_model_ready, true, page + ':' + scope)
+    assert.ok(latestAssessment.rows.some(row => row.action === 'BUY' || row.action === 'REDUCE'), 'Valid PERSO and native PROFESSIONAL fixtures produce informative decisions')
+    if (page === 'arbitrage') {
+      assert.deepEqual(Array.from(fetcherKeys.get('allocation-advice')), ['allocation-advice', scope, 'portfolio'], 'Advice cache includes the exact portfolio, not only its scope')
+      const adviceKey = 'allocation-advice'
+      const saved = cache.get(adviceKey)
+      const good = { ...saved.data[0], model_id: fixture.model.id, model_name: fixture.model.model_name, source_file: fixture.model.source_file }
+      rawTables.allocation_advice_items_latest = [good]
+      queryFilters.length = 0
+      const fetchAdvice = fetchers.get(adviceKey)
+      assert.equal((await fetchAdvice()).length, 1)
+      assert.ok(queryFilters.some(({ table, column, value }) => table === 'allocation_advice_items_latest' && column === 'portfolio_id' && value === 'portfolio'), 'Actual page query filters portfolio_id')
+      assert.ok(queryFilters.some(({ column, value }) => column === 'portfolio_scope' && value === scope), 'Actual page query also filters scope')
+      for (const bad of [
+        { ...good, portfolio_id: 'foreign' }, { ...good, portfolio_id: null },
+        { ...good, portfolio_id: undefined }, { ...good, portfolio_id: '' },
+        { ...good, portfolio_scope: scope === 'PRO' ? 'PERSO' : 'PRO' },
+        { ...good, portfolio_scope: undefined },
+      ]) {
+        for (const data of [[bad], [good, bad]]) {
+          rawTables.allocation_advice_items_latest = data
+          await assert.rejects(fetchAdvice, /advice/i, 'Never silently drop a foreign row and accept the remainder')
+          cache.set(adviceKey, { data })
+          assert.match(render(), /data-source-state="UNAVAILABLE"/, 'A bypassed/contaminated cache fails closed too')
+          assert.doesNotMatch(render(), /Synthetic cached (macro|allocation) advice|Synthetic holding 1/)
+          scenarios++
+        }
+      }
+      rawTables.allocation_advice_items_latest = []
+      assert.equal((await fetchAdvice()).length, 0, 'A genuinely empty response is valid, not an identity error')
+      for (const data of [null, {}, [null], [good, { ...good, model_id: null }]]) {
+        rawTables.allocation_advice_items_latest = data
+        await assert.rejects(fetchAdvice, /advice/i, 'Malformed collections/rows cannot become a valid empty or partial result')
+        scenarios++
+      }
+      cache.set(adviceKey, { data: [] })
+      assert.match(render(), /No allocation advice/)
+      cache.set(adviceKey, saved)
+      rawTables = { ...tables }
+      assert.match(render(), /Synthetic cached allocation advice/)
+      const registryKey = pageKeys[page].portfolios
+      const registry = cache.get(registryKey)
+      for (const data of [[], [fixture.portfolios[0], { ...fixture.portfolios[0] }]]) {
+        cache.set(registryKey, { data })
+        fetchers.clear()
+        assert.match(render(), /data-source-state="UNAVAILABLE"/)
+        assert.equal(fetchers.has(adviceKey), false, 'A missing/duplicate selected identity disables advice reads')
+        scenarios++
+      }
+      cache.set(registryKey, registry)
+      render()
+      scenarios++
+    }
+    // A valid model/cache must never override the selected portfolio's identity.
+    // In particular, a PERSO contract on PROFESSIONAL must not bypass its reserve.
+    const portfolioKey = pageKeys[page].portfolios
+    const savedPortfolios = cache.get(portfolioKey)
+    const nativeType = scope === 'PRO' ? 'PROFESSIONAL' : 'PERSONAL'
+    const incompatibleType = scope === 'PRO' ? 'PERSONAL' : 'PROFESSIONAL'
+    for (const portfolioType of [incompatibleType, 'UNKNOWN', undefined, null]) {
+      scopeOverride = scope
+      cache.set(portfolioKey, { data: [{ ...fixture.portfolios[0], portfolio_type: portfolioType }] })
+      latestAssessment = undefined
+      fetchers.clear()
+      const html = render()
+      assert.match(html, /data-source-state="UNAVAILABLE"/, `${page}: ${String(portfolioType)} cannot use ${scope}`)
+      assert.doesNotMatch(html, /Synthetic holding 1|Synthetic cached (macro|allocation) advice/)
+      assert.equal(latestAssessment, undefined, 'No allocation calculation under an unverified or incompatible scope')
+      for (const dependent of ['lines', 'buckets', 'sleeves']) assert.equal(fetchers.has(pageKeys[page][dependent]), false)
+      assert.equal(fetchers.has('allocation-advice'), false, 'No scope-bound advice query under a mismatch')
+      scenarios++
+    }
+    cache.set(portfolioKey, savedPortfolios)
+    scopeOverride = scope === 'PRO' ? 'PERSO' : 'PRO'
+    latestAssessment = undefined
+    assert.match(render(), /data-source-state="UNAVAILABLE"/, `${page}: opposite manual scope is blocked on ${nativeType}`)
+    assert.equal(latestAssessment, undefined)
+    scopeOverride = scope
+    assert.match(render(), /Synthetic holding 1/)
+    assert.equal(latestAssessment.target_model_ready, true, 'Compatible explicit scope recovers the valid contract')
+    if (scope === 'PRO') {
+      const protectedReserve = latestAssessment.rows.find(row => row.reason_codes.includes('PRO_RESERVE_EXCLUDED'))
+      assert.equal(protectedReserve?.current_value_eur, 120000, 'Compatible PRO still protects its reserve')
+      assert.ok(!['BUY', 'REDUCE'].includes(protectedReserve.action))
+    }
+    scopeOverride = null
+    render()
+    scenarios += 2
     // Run actual page fetchers: both readers must reject an extra malformed row.
     for (const [name, table] of [['models', 'target_models'], ['buckets', 'target_buckets'], ['lines', 'target_envelope_lines'], ['portfolios', 'fo_portfolios'], ...(scope === 'PRO' ? [['sleeves', 'target_sleeve_allocations']] : [])].filter(([name]) => name !== 'execution')) {
       const fetcher = fetchers.get(pageKeys[page][name])
@@ -122,9 +212,8 @@ for (const scope of ['PERSO', 'PRO']) {
       rawTables = { ...tables }
     }
     const required = Object.entries(pageKeys[page]).filter(([name]) => scope === 'PRO' || name !== 'sleeves').filter(([name]) => name !== 'execution')
-    for (const [name, key] of required) {
+    for (const [, key] of required) {
       const saved = cache.get(key)
-      const goodCalls = calls
       for (const state of [
         { ...saved, error: new Error('Synthetic refresh error') },
         { ...saved, isLoading: true },
@@ -132,8 +221,6 @@ for (const scope of ['PERSO', 'PRO']) {
       ]) {
         cache.set(key, state)
         const html = render()
-        const isPortfolioGate = page === 'arbitrage' && name === 'portfolios'
-        
         assert.doesNotMatch(html, /Synthetic holding 1/)
         if (page === 'arbitrage') {
           assert.doesNotMatch(html, /Synthetic cached (macro|allocation) advice/)
@@ -143,9 +230,9 @@ for (const scope of ['PERSO', 'PRO']) {
       }
       cache.set(key, saved)
       render()
-      assert.equal(latestAssessment.target_model_ready, !(page === 'arbitrage' && scope === 'PRO'))
+      assert.equal(latestAssessment.target_model_ready, true)
     }
-    if (page === 'arbitrage' && scope !== 'PRO') {
+    if (page === 'arbitrage') {
       for (const [key, label] of [['allocation-advice', 'allocation'], ['macro-allocation-advice', 'macro']]) {
         const saved = cache.get(key)
         assert.ok(render().includes('Synthetic cached ' + label + ' advice'))
@@ -171,7 +258,7 @@ for (const scope of ['PERSO', 'PRO']) {
       assert.ok(latestAssessment.rows.every(row => row.action === 'UNAVAILABLE'))
     }
     cache.set(modelsKey, { data: [fixture.model] })
-    assert.match(render(), page === 'arbitrage' && scope === 'PRO' ? /Asset class/ : /Synthetic holding 1/)
+    assert.match(render(), /Synthetic holding 1/)
     console.log(page + ' ' + scope + ': shared fetchers, cached errors, missing reads and recovery PASS')
   }
 }

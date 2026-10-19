@@ -1,5 +1,5 @@
 import React, { useState } from 'react'
-import { portfolioOptions, type SourceReadiness } from '../lib/sourceReadiness'
+import { portfolioOptions, type SourceFailure, type SourceReadiness } from '../lib/sourceReadiness'
 import type { PortfolioScope } from '../types'
 
 const messages: Record<Exclude<SourceReadiness, 'READY'>, string> = {
@@ -9,17 +9,18 @@ const messages: Record<Exclude<SourceReadiness, 'READY'>, string> = {
   UNAVAILABLE: 'Sources or portfolio identity unavailable. No recommendation is displayed.',
 }
 
-export function SourceStateScreen({ title, state, portfolios, portfolioId, scope, onPortfolio, onScope, onRetry, overlay, onOverlay }: {
+export function SourceStateScreen({ title, state, portfolios, portfolioId, scope, onPortfolio, onScope, onRetry, overlay, onOverlay, failures = [] }: {
   title: string
   state: Exclude<SourceReadiness, 'READY'>
   portfolios: unknown
   portfolioId: string
-  scope: PortfolioScope
+  scope: PortfolioScope | null
   onPortfolio: (id: string) => void
   onScope: (scope: PortfolioScope) => void
   onRetry: () => Promise<unknown>
   overlay?: 'ALL' | 'STANDARD' | 'MACRO'
   onOverlay?: (overlay: 'ALL' | 'STANDARD' | 'MACRO') => void
+  failures?: SourceFailure[]
 }) {
   const [retrying, setRetrying] = useState(false)
   const options = portfolioOptions(portfolios)
@@ -36,7 +37,8 @@ export function SourceStateScreen({ title, state, portfolios, portfolioId, scope
             </select>
           </label>
           <label className="text-sm text-slate-700 dark:text-gray-200">Scope
-            <select aria-label="Scope" value={scope} onChange={(event) => onScope(event.target.value as PortfolioScope)} className="ml-2 rounded border p-2 text-slate-950">
+            <select aria-label="Scope" value={scope ?? ''} onChange={(event) => onScope(event.target.value as PortfolioScope)} className="ml-2 rounded border p-2 text-slate-950">
+              <option value="" disabled>Scope unavailable</option>
               <option value="PERSO">PERSO</option><option value="PRO">PRO</option>
             </select>
           </label>
@@ -51,6 +53,15 @@ export function SourceStateScreen({ title, state, portfolios, portfolioId, scope
         <section role="status" data-source-state={state} className="rounded-lg border border-amber-300 bg-amber-50 p-4 text-amber-900">
           <h2 className="font-bold">{state}</h2>
           <p>{messages[state]}</p>
+          {state === 'ERROR' && failures.length > 0 && (
+            <ul aria-label="Source diagnostics" className="mt-3 space-y-3 text-sm">
+              {failures.map((failure) => (
+                <li key={failure.label} data-source-failure={failure.code}>
+                  <strong>{failure.label}</strong><p>{failure.message}</p>
+                </li>
+              ))}
+            </ul>
+          )}
           <button type="button" disabled={retrying || state === 'LOADING' || state === 'REVALIDATING'}
             onClick={async () => {
               setRetrying(true)
