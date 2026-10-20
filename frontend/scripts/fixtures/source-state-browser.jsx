@@ -42,17 +42,20 @@ const query = new URLSearchParams(location.search)
 const initialHold = query.get('hold')
 const keys = new Map(), modes = new Map(), pending = new Map(), observed = new Map()
 const fetchCounts = new Map()
+const requests = []
 if (initialHold) modes.set(initialHold, 'hold')
+if (query.get('empty')) modes.set(query.get('empty'), 'empty')
+if (query.get('schema')) modes.set(query.get('schema'), 'schema')
 function fixture(key) {
   const name = sourceNames[Array.isArray(key) ? key[0] : key]
   const scope = Array.isArray(key) ? key[1] : 'PERSO'
-  if (name === 'portfolios') return [{ id: 'p1', name: 'Portfolio one', portfolio_type: 'PERSONAL' }, { id: 'p2', name: 'Portfolio two', portfolio_type: 'PERSONAL' }]
+  if (name === 'portfolios') return [{ id: 'p1', name: 'Portfolio one', portfolio_type: query.get('portfolioType') ?? 'PERSONAL' }, { id: 'p2', name: 'Portfolio two', portfolio_type: 'PERSONAL' }]
   if (name === 'models') return models
   if (name === 'allocation') return allocation(scope)
   if (name === 'lines') return lines(scope)
   if (name === 'buckets') return [{ id: 1, model_id: scope, portfolio_scope: scope, bucket_key: 'test', bucket_label: 'Synthetic bucket', parent_bucket_key: null, target_weight_pct: 100, lower_band_pct: null, upper_band_pct: null, source_sheet: 'SYNTHETIC', source_row: 1, updated_at: today }]
   const advice = { current_weight_pct: 50, target_weight_pct: 80, drift_pct: -30, rebalance_amount_eur: 600, current_value_eur: 1000, action: 'BUY', reason_codes: [], confidence: 80, updated_at }
-  if (name === 'advice') return [{ ...advice, model_id: scope, bucket_key: 'test', bucket_label: `Advice ${scope}`, source_file: 'synthetic.xlsx', preferred_execution: 'NEW_CASH_FIRST' }]
+  if (name === 'advice') return [{ ...advice, portfolio_id: key[2] ?? 'p1', portfolio_scope: scope, model_id: scope, bucket_key: 'test', bucket_label: `Advice ${scope}`, source_file: 'synthetic.xlsx', preferred_execution: 'NEW_CASH_FIRST' }]
   if (name === 'macro') return [{ ...advice, bucket_key: 'test', bucket_label: `Macro ${scope}`, snapshot_id: 'synthetic', regime: 'SYNTHETIC', regime_state: 'READY', instrument_symbol: 'TEST', recommended_envelope: 'CTO', trend_ticker: null, trend_state: 'READY', ma200_status: null }]
   if (name === 'sleeves') return [{ id: 1, model_id: 'm1', portfolio_scope: scope, sleeve_key: 'CORE', component_label: 'Core', bucket_key: 'test', bucket_label: `Test ${scope}`, target_weight_pct: 100, activation_status: 'ACTIVE', updated_at: today }]
   if (name === 'execution') return []
@@ -63,6 +66,10 @@ const middleware = (useSWRNext) => (key, _fetcher, config) => {
   if (key) keys.set(name, key)
   const response = useSWRNext(key, async (key) => {
     fetchCounts.set(name, (fetchCounts.get(name) ?? 0) + 1)
+    requests.push({ name, key })
+    if (modes.get(name) === 'empty') return []
+    if (modes.get(name) === 'schema') throw { code: '42703', message: 'PRIVATE_RAW_ERROR', details: 'PRIVATE_DETAILS' }
+    if (modes.get(name) === 'access') throw { code: '42501', message: 'PRIVATE_RAW_ERROR' }
     if (modes.get(name) === 'error') throw new Error('Synthetic source failure')
     if (modes.get(name) === 'hold') return new Promise((resolve) => pending.set(name, () => resolve(fixture(key))))
     return fixture(key)
@@ -75,6 +82,7 @@ function Controls() {
   window.qa = {
     observed: () => Object.fromEntries(observed),
     fetchCounts: () => Object.fromEntries(fetchCounts),
+    requests: () => requests.map(request => ({ ...request })),
     activeKey: (name) => keys.get(name),
     setMode(name, mode) { modes.set(name, mode) },
     revalidate(name, mode) { modes.set(name, mode); void mutate(keys.get(name)).catch(() => {}) },

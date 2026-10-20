@@ -335,6 +335,7 @@ try {
 
   const targetsPage = read('frontend/app/targets/page.tsx')
   const arbitragePage = read('frontend/app/arbitrage/page.tsx')
+  const familyAllocation = read('frontend/lib/familyOfficeAllocation.ts')
   const supportsPage = read('frontend/app/supports/page.tsx')
   const sidebar = read('frontend/components/Sidebar.tsx')
   addCheck(
@@ -346,11 +347,11 @@ try {
       'md:hidden',
       'hidden md:block',
       'Targets stay read-only',
-      'broker_position_snapshot_runs',
-      'actual_source_accounts',
+      'loadFamilyOfficeAllocationSource',
+      'source_accounts',
       'Target Excel',
-    ]),
-    'Targets should expose Portfolio Drift metrics, broker snapshot freshness, target import status, and mobile cards while staying frontend read-only.'
+    ]) && hasAll(familyAllocation, ["from('fo_positions_latest')", "from('fo_cash_balances_latest')", "from('fo_accounts')"]),
+    'Targets should expose Portfolio Drift metrics, canonical Family Office snapshot freshness, target import status, and mobile cards while staying frontend read-only.'
   )
   addCheck(
     'frontend.targets.target_studio_two_level_models',
@@ -368,8 +369,8 @@ try {
   addCheck(
     'frontend.arbitrage.decision_dashboard',
     hasAll(arbitragePage, [
-      'portfolio_decision_items_latest',
-      'DECISION_SELECTOR',
+      'loadFamilyOfficeAllocationSource',
+      'toPortfolioDecisionRows(assessment)',
       'Decision queue',
       'FilterSelect label="Action"',
       'FilterSelect label="Data issue"',
@@ -377,7 +378,7 @@ try {
       'reason_codes',
       'Informative',
     ]),
-    'Arbitrage should read the decision read model and expose filters, actions, amount, justification, and read-only semantics.'
+    'Arbitrage should derive decisions from canonical Family Office reads and expose filters, actions, amount, justification, and read-only semantics.'
   )
   addCheck(
     'frontend.arbitrage.allocation_advice',
