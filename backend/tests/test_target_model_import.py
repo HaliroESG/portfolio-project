@@ -1,11 +1,13 @@
 from __future__ import annotations
 
 from copy import deepcopy
+from types import SimpleNamespace
 
 import pytest
 from openpyxl import Workbook, load_workbook
 
-from scripts.import_target_model import parse_target_model, run_import
+from scripts import import_target_model as importer
+from scripts.import_target_model import TargetModelReceiptError, parse_target_model, run_import
 
 
 class _Response:
@@ -109,7 +111,13 @@ class _Rpc:
             next_rows[table] = retained + deepcopy(self.params[parameter])
 
         self.client.rows = next_rows
-        return _Response({"model_upserted": model_id})
+        return _Response({
+            "model_upserted": model_id,
+            "buckets_inserted": len(self.params["p_buckets"]),
+            "sleeve_allocations_inserted": len(self.params["p_sleeve_allocations"]),
+            "envelope_lines_inserted": len(self.params["p_envelope_lines"]),
+            "audit_holdings_inserted": len(self.params["p_audit_holdings"]),
+        })
 
 
 def _write_personal(path):
@@ -381,11 +389,12 @@ def test_pro_target_model_apply_writes_native_sleeves_and_reserve(tmp_path):
     assert len(fake.rows["target_sleeve_allocations"]) == 11
 
 
-def test_invalid_target_model_does_not_write(tmp_path):
+@pytest.mark.parametrize("reserve_floor", [100000, "nan", "NaN", "-nan"])
+def test_invalid_target_model_does_not_write(tmp_path, reserve_floor):
     source = tmp_path / "pro.xlsx"
     _write_pro(source)
     persisted = load_workbook(source)
-    persisted["Portefeuille_cible"]["B4"] = 100000
+    persisted["Portefeuille_cible"]["B4"] = reserve_floor
     persisted.save(source)
     fake = _Supabase()
 
@@ -417,3 +426,99 @@ def test_apply_uses_one_atomic_rpc_and_preserves_existing_rows_on_failure(tmp_pa
     assert len(fake.rpc_calls) == 1
     assert fake.rpc_calls[0][0] == "apply_target_model_v1"
     assert fake.rows == original_rows
+
+
+RECEIPT_COUNTS = (
+    "buckets_inserted", "sleeve_allocations_inserted",
+    "envelope_lines_inserted", "audit_holdings_inserted",
+)
+RECEIPT_FIELDS = ("model_upserted", *RECEIPT_COUNTS)
+
+
+@pytest.mark.parametrize("kind", ["perso", "pro"])
+def test_success_returns_verified_server_receipt(tmp_path, monkeypatch, kind):
+    source = tmp_path / "synthetic.xlsx"
+    (_write_personal if kind == "perso" else _write_pro)(source)
+    original = _Rpc.execute
+    responses = []
+
+    def capture(rpc):
+        response = original(rpc)
+        responses.append(deepcopy(response.data))
+        return response
+
+    monkeypatch.setattr(_Rpc, "execute", capture)
+    fake = _Supabase()
+    report = run_import(source, kind=kind, dry_run=False, supabase_client=fake)
+    assert report["write"] == responses[0]
+    assert len(fake.rpc_calls) == 1
+    assert report["write"]["sleeve_allocations_inserted"] == (0 if kind == "perso" else 11)
+
+
+@pytest.mark.parametrize("field", RECEIPT_FIELDS)
+@pytest.mark.parametrize("mutation", ["missing", "mismatch"])
+def test_receipt_must_match_every_sent_count_and_identity(tmp_path, monkeypatch, field, mutation):
+    source = tmp_path / "synthetic.xlsx"
+    _write_personal(source)
+    original = _Rpc.execute
+
+    def corrupt_after_commit(rpc):
+        response = original(rpc)
+        if mutation == "missing":
+            response.data.pop(field)
+        else:
+            response.data[field] = "foreign-model" if field == "model_upserted" else 999
+        return response
+
+    monkeypatch.setattr(_Rpc, "execute", corrupt_after_commit)
+    fake = _Supabase()
+    with pytest.raises(TargetModelReceiptError, match="Import outcome UNVERIFIED"):
+        run_import(source, kind="perso", dry_run=False, supabase_client=fake)
+    assert len(fake.rpc_calls) == 1
+    # A malformed response cannot prove rollback: the fake server already committed.
+    assert fake.rows["target_models"][0]["is_active"] is True
+
+
+@pytest.mark.parametrize("field", RECEIPT_COUNTS)
+@pytest.mark.parametrize("value", [True, False, 0.0, 8.0, "8", None, -1, float("nan")])
+def test_receipt_rejects_non_integer_or_inconsistent_counts(field, value):
+    expected = dict.fromkeys(RECEIPT_COUNTS, 0)
+    expected["model_upserted"] = "synthetic"
+    data = {**expected, field: value}
+    with pytest.raises(TargetModelReceiptError):
+        importer._verified_import_receipt(SimpleNamespace(data=data), expected)
+
+
+@pytest.mark.parametrize("data", [None, [], {}, "success", [{"model_upserted": "synthetic"}],
+                                 {"model_upserted": "synthetic"}, 1, True])
+def test_receipt_rejects_missing_or_old_shape(data):
+    expected = {"model_upserted": "synthetic", **dict.fromkeys(RECEIPT_COUNTS, 0)}
+    with pytest.raises(TargetModelReceiptError):
+        importer._verified_import_receipt(SimpleNamespace(data=data), expected)
+    with pytest.raises(TargetModelReceiptError):
+        importer._verified_import_receipt(object(), expected)
+
+
+def test_receipt_does_not_echo_untrusted_fields():
+    expected = {"model_upserted": "synthetic", **dict.fromkeys(RECEIPT_COUNTS, 0)}
+    with pytest.raises(TargetModelReceiptError) as error:
+        importer._verified_import_receipt(SimpleNamespace(data={**expected, "extra": "UNTRUSTED"}), expected)
+    assert "UNTRUSTED" not in str(error.value)
+
+
+def test_cli_reports_unverified_outcome_and_failure_exit_without_retry(tmp_path, monkeypatch, capsys):
+    source = tmp_path / "synthetic.xlsx"
+    _write_personal(source)
+    fake = _Supabase()
+    monkeypatch.setattr(importer, "_parse_args", lambda: SimpleNamespace(
+        kind="perso", file=str(source), dry_run=False, apply=True,
+    ))
+    monkeypatch.setattr(importer, "_build_supabase_client", lambda: fake)
+    monkeypatch.setattr(_Rpc, "execute", lambda self: SimpleNamespace(data=None))
+    assert importer.main() == 1
+    import json
+    result = json.loads(capsys.readouterr().out)
+    assert result["ok"] is False
+    assert result["write_outcome"] == "UNVERIFIED"
+    assert "write" not in result
+    assert len(fake.rpc_calls) == 1

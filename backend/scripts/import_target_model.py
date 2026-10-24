@@ -460,7 +460,11 @@ def parse_pro_model(path: str | Path) -> dict[str, Any]:
         )
 
     reserve_floor_eur = _read_float(workbook["Portefeuille_cible"]["B4"].value)
-    if reserve_floor_eur is None or abs(reserve_floor_eur - 120_000.0) > 0.01:
+    if (
+        reserve_floor_eur is None
+        or not math.isfinite(reserve_floor_eur)
+        or abs(reserve_floor_eur - 120_000.0) > 0.01
+    ):
         rejected.append({"reason": f"PRO reserve floor must equal EUR 120000 ({reserve_floor_eur})"})
     return _build_report(
         kind="pro",
@@ -631,6 +635,28 @@ def _payload(row: Any) -> dict[str, Any]:
     return payload
 
 
+class TargetModelReceiptError(RuntimeError):
+    """The RPC may have committed, but its response does not verify the import."""
+
+
+def _verified_import_receipt(response: Any, expected: dict[str, Any]) -> dict[str, Any]:
+    data = getattr(response, "data", None)
+    valid = isinstance(data, dict) and data.keys() == expected.keys()
+    if valid:
+        valid = all(
+            type(data[key]) is type(value) and data[key] == value
+            for key, value in expected.items()
+        )
+    if not valid:
+        # Do not echo untrusted response data or infer that a committed write rolled back.
+        raise TargetModelReceiptError(
+            "Import outcome UNVERIFIED: missing or inconsistent RPC receipt. "
+            "The transaction may have committed; reconcile by independent readback "
+            "before any retry. No automatic retry was attempted."
+        )
+    return {key: data[key] for key in expected}
+
+
 def apply_target_model(report: dict[str, Any], *, supabase_client: Any) -> dict[str, Any]:
     now = datetime.now(timezone.utc).isoformat()
     model_payload = {
@@ -653,7 +679,7 @@ def apply_target_model(report: dict[str, Any], *, supabase_client: Any) -> dict[
     sleeve_payloads = [_payload(row) for row in report["sleeve_allocations"]]
     envelope_payloads = [_payload(row) for row in report["envelope_lines"]]
     audit_payloads = [_payload(row) for row in report["audit_holdings"]]
-    supabase_client.rpc(
+    response = supabase_client.rpc(
         APPLY_TARGET_MODEL_RPC,
         {
             "p_model": model_payload,
@@ -664,13 +690,14 @@ def apply_target_model(report: dict[str, Any], *, supabase_client: Any) -> dict[
         },
     ).execute()
 
-    return {
+    expected_receipt = {
         "model_upserted": report["model_id"],
         "buckets_inserted": len(bucket_payloads),
         "sleeve_allocations_inserted": len(sleeve_payloads),
         "envelope_lines_inserted": len(envelope_payloads),
         "audit_holdings_inserted": len(audit_payloads),
     }
+    return _verified_import_receipt(response, expected_receipt)
 
 
 def run_import(
@@ -744,6 +771,8 @@ def main() -> int:
             "source_file": Path(args.file).name,
             "error": str(exc),
         }
+        if isinstance(exc, TargetModelReceiptError):
+            report["write_outcome"] = "UNVERIFIED"
     print(json.dumps(report, indent=2, ensure_ascii=False, default=str))
     return 0 if report.get("ok") else 1
 

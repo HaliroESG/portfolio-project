@@ -1,0 +1,36 @@
+{
+  "scope": "OFFLINE_PACKAGING_ONLY",
+  "original_p2_manifest_sha256": "04335d9f8e2b2d8e74915d9285137cf1cc621d963a9be4951dbd77a2f307512d",
+  "original_native_manifest_sha256": "acf8682ff86e1738c4aefed16f8ceafd86bd0d0f4bd2845f9a19a892fd0233cb",
+  "sql_parts": [
+    {
+      "source_sha256": "1a33510cd41de6e82da04fc978b17e0f1b2ee503c2f43199fa7c19b31f48d1dd",
+      "path": "backend/sql/20260921_allocation_contracts_v1.sql",
+      "ordered_position": 1
+    },
+    {
+      "source_sha256": "070954c316d241caceb9e4615867b19f613b4a9f19549317064cfc2d1f0fdf35",
+      "path": "backend/manual/target-model-v1/sql/acl-hardening.sql",
+      "ordered_position": 2
+    },
+    {
+      "source_sha256": "b793fc4e12bc2dbc80c6c15cef6dcbb742b9fdb2667d5ad621e6ee353f815f9d",
+      "path": "backend/manual/target-model-v1/sql/view-acl-hardening.sql",
+      "ordered_position": 3
+    },
+    {
+      "source_sha256": "0fb8c64ec8878d48e289e8f72874046992f84e410848c41c1f853c45cbf02995",
+      "path": "backend/manual/target-model-v1/sql/owner-read-postlude.sql",
+      "ordered_position": 4
+    }
+  ],
+  "preconditions_sha256": "2930970e85ed8767cd95dcb2e54a7c0cb591b59f019a9854c43754cfa1f6e13b",
+  "postconditions_sha256": "a82895baed6df93d14edccf7927d69ea33a6d924969a040f8382410a129ced60",
+  "changes": [
+    "Explicit qualified client directory replaces host-specific absolute path; client SHA remains pinned.",
+    "Runtime metadata removed from P2 package; only synthetic fixture and exact SQL retained.",
+    "Native loader pins new package and executor hashes.",
+    "Pure renderer unit tests use non-executable synthetic client; PostgreSQL rehearsals require explicit qualified runtime."
+  ],
+  "real_execution_authorized": false
+}
