@@ -58,6 +58,7 @@ alter default privileges in schema public grant all on sequences to anon,authent
 """
 @unittest.skipUnless(PG_BIN, "Explicit qualified PostgreSQL 17.6 path required; no installation or fallback")
 class Rehearsal(unittest.TestCase):
+ started=False
  counter=0
  @classmethod
  def setUpClass(cls):
@@ -224,7 +225,9 @@ class Rehearsal(unittest.TestCase):
 if __name__=="__main__":
  suite=unittest.defaultTestLoader.loadTestsFromTestCase(Rehearsal)
  result=unittest.TextTestRunner(verbosity=2).run(suite)
- print(json.dumps({"status":"PASS" if result.wasSuccessful() else "FAIL","tests":result.testsRun,
+ status="FAIL" if not result.wasSuccessful() else ("SKIPPED" if result.testsRun==len(result.skipped) else "PASS")
+ print(json.dumps({"status":status,"tests":result.testsRun,"skipped":len(result.skipped),
+  "executed_tests":result.testsRun-len(result.skipped),
   "failures":len(result.failures),"errors":len(result.errors),"source_access":False,
   "server_stopped":not Rehearsal.started,"cluster":str(getattr(Rehearsal,"root",""))}))
  raise SystemExit(0 if result.wasSuccessful() else 1)

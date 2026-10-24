@@ -12,7 +12,7 @@ from pathlib import Path
 import re
 import uuid
 
-P2_MANIFEST = 'da652f918bb0a98020b3d174a6b7f6295d75637c6df86ced27dcca6e43100bbe'
+P2_MANIFEST = 'c09cd177f80cd245642519fffe7b4056de2134cc147893409161487392f77911'
 P2_EXECUTOR = '2bc9028463304db252ab2d312e7489cf0d80c0c33219157defc85a65727a0fb8'
 KEYS = {'project_ref','host','port','database','user','system_identifier',
         'server_version_num','catalog_sha256','issued_at','expires_at','operation_id',
