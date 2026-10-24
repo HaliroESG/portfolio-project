@@ -7,12 +7,15 @@ import hashlib
 import json
 import os
 import re
+import subprocess
 import sys
 import urllib.error
 import urllib.parse
 import urllib.request
+import zipfile
 from pathlib import Path
 from typing import Any
+from types import SimpleNamespace
 
 
 CONTEXT = "ASTROCYTE Independent Review"
@@ -387,6 +390,36 @@ def _write_receipt(path: Path, receipt: dict[str, Any]) -> None:
     )
 
 
+def _evaluate_authenticated_event(event_path: Path, repository: str) -> dict[str, Any]:
+    """Reuse the trusted receipt verifier without minting a new owner attestation."""
+    import verify_native_review as native
+
+    pull_request, head_sha, author = _load_event(event_path)
+    try:
+        event = native.strict_json(event_path.read_bytes())
+        policy = SimpleNamespace(
+            evaluate_reviews=evaluate_reviews,
+            evaluate_owner_codex_ship=evaluate_owner_codex_ship,
+        )
+        return native.verify(policy, event, repository, get=native.api)
+    except (ValueError, KeyError, TypeError, OSError, subprocess.SubprocessError,
+            zipfile.BadZipFile):
+        # Publish a failure for this event's HEAD instead of leaving an earlier
+        # success as the only emitted review context after invalid evidence.
+        return {
+            "schema_version": SCHEMA_VERSION,
+            "context": CONTEXT,
+            "repository": repository,
+            "pull_request": pull_request,
+            "head_sha": head_sha,
+            "pull_request_author": author,
+            "labels_or_comments_trusted": False,
+            "auto_approval": False,
+            "status": "FAIL",
+            "reason": "AUTHENTICATED_REVIEW_EVIDENCE_INVALID",
+        }
+
+
 def main() -> int:
     event_path = Path(os.environ.get("GITHUB_EVENT_PATH", ""))
     repository = os.environ.get("GITHUB_REPOSITORY", "")
@@ -402,15 +435,8 @@ def main() -> int:
             receipt = _evaluate_owner_dispatch(api_url, repository, token)
             head_sha = receipt["head_sha"]
         else:
-            pull_request, head_sha, author = _load_event(event_path)
-            reviews = _fetch_reviews(api_url, repository, pull_request, token)
-            receipt = evaluate_reviews(
-                reviews,
-                repository=repository,
-                pull_request=pull_request,
-                head_sha=head_sha,
-                pull_request_author=author,
-            )
+            receipt = _evaluate_authenticated_event(event_path, repository)
+            head_sha = receipt["head_sha"]
         _write_receipt(receipt_path, receipt)
         _post_check_run(api_url, repository, head_sha, token, receipt)
     except IndependentReviewError as exc:
