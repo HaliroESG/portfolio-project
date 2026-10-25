@@ -9,7 +9,7 @@ from fastapi.testclient import TestClient
 from pypdf import PdfReader
 
 import api
-from test_security_golden import MemoryRepository
+from tests.test_security_golden import MemoryRepository
 
 
 @pytest.fixture
