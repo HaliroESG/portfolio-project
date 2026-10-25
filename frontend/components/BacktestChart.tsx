@@ -6,7 +6,7 @@ export interface LineSeries {
   label: string
   role: 'target' | 'current' | 'preset' | 'baseline'
   color: string
-  values: number[]
+  values: Array<number | null>
 }
 
 interface BacktestChartProps {
@@ -21,10 +21,14 @@ function formatDate(value: string): string {
   return date.toLocaleDateString('fr-FR', { day: '2-digit', month: '2-digit', year: '2-digit' })
 }
 
-function buildLinePath(values: number[], getX: (index: number) => number, getY: (value: number) => number): string {
-  return values
-    .map((value, index) => `${index === 0 ? 'M' : 'L'} ${getX(index)} ${getY(value)}`)
-    .join(' ')
+function buildLinePath(values: Array<number | null>, getX: (index: number) => number, getY: (value: number) => number): string {
+  let open = false
+  return values.map((value, index) => {
+    if (value === null || !Number.isFinite(value)) { open = false; return '' }
+    const command = open ? 'L' : 'M'
+    open = true
+    return `${command} ${getX(index)} ${getY(value)}`
+  }).join(' ')
 }
 
 function sanitizeId(value: string): string {
@@ -47,7 +51,8 @@ export function BacktestChart({ dates, series, title = 'NAV (EUR)' }: BacktestCh
   const top = 18
   const bottom = 190
 
-  const allValues = series.flatMap((s) => s.values)
+  const allValues = series.flatMap((s) => s.values).filter((value): value is number => value !== null && Number.isFinite(value))
+  if (allValues.length === 0) return <p className="p-6 text-sm text-slate-500">Valeurs de patrimoine indisponibles.</p>
   const min = Math.min(...allValues)
   const max = Math.max(...allValues)
   const safeRange = Math.max(1, max - min)
@@ -87,13 +92,10 @@ export function BacktestChart({ dates, series, title = 'NAV (EUR)' }: BacktestCh
         })}
       </defs>
 
-      {series.map((s, index) => {
-        const gradientId = `${sanitizeId(s.key)}-fill`
+      {series.map((s) => {
         const linePath = buildLinePath(s.values, getX, getY)
-        const areaPath = `${linePath} L ${getX(dates.length - 1)} ${bottom} L ${getX(0)} ${bottom} Z`
         return (
           <g key={s.key}>
-            {index === 0 && <path d={areaPath} fill={`url(#${gradientId})`} />}
             <path d={linePath} fill="none" stroke={s.color} strokeWidth="2.4" />
           </g>
         )
@@ -130,6 +132,7 @@ export function BacktestChart({ dates, series, title = 'NAV (EUR)' }: BacktestCh
         </div>
       </div>
 
+      <p className="mt-3 text-xs text-slate-500">Patrimoine simulé en EUR, apports/retraits inclus : ce n’est pas un rendement. Prix et FX historiques non qualifiés ; les valeurs absentes interrompent la courbe.</p>
       <div className="mt-4 rounded-2xl border border-slate-200 dark:border-white/5 bg-slate-50 dark:bg-[#080A0F] p-3">
         {renderChartSvg('h-52')}
       </div>

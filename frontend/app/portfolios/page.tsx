@@ -1,20 +1,23 @@
 "use client"
 
+import { protectFamilyOfficeBundle } from '../../lib/financialQualification'
+import { FinancialKpiNotice } from '../../components/FinancialKpiNotice'
+
 import { Banknote, Building2, RefreshCw, WalletCards } from 'lucide-react'
 import { useMemo, useState } from 'react'
-import useSWR from 'swr'
 import { AppShell } from '../../components/AppShell'
 import { EmptyState } from '../../components/EmptyState'
 import { FamilyOfficeStateBadge } from '../../components/FamilyOfficeStateBadge'
 import { command } from '../../lib/commandApi'
-import { FAMILY_OFFICE_REFRESH_MS, FAMILY_OFFICE_SWR_KEY, loadFamilyOfficeBundle } from '../../lib/familyOfficeData'
+import { useFamilyOfficeBundle } from '../../lib/familyOfficeData'
 import { supabase } from '../../lib/supabase'
 
 const eur = new Intl.NumberFormat('fr-FR', { style: 'currency', currency: 'EUR', maximumFractionDigits: 0 })
 const number = new Intl.NumberFormat('fr-FR', { maximumFractionDigits: 4 })
 
 export default function PortfoliosPage() {
-  const { data, error, isLoading, mutate } = useSWR(FAMILY_OFFICE_SWR_KEY, () => loadFamilyOfficeBundle(supabase), { refreshInterval: FAMILY_OFFICE_REFRESH_MS })
+  const { data: cachedData, error, isLoading, mutate } = useFamilyOfficeBundle(supabase)
+  const data = cachedData ? protectFamilyOfficeBundle(cachedData) : undefined
   const [portfolioOverride, setPortfolioOverride] = useState('')
   const [accountOverride, setAccountOverride] = useState('ALL')
   const [recalculating, setRecalculating] = useState(false)
@@ -68,6 +71,7 @@ export default function PortfoliosPage() {
               </button>
             </div>
           </header>
+          <FinancialKpiNotice family="PORTFOLIO_PERFORMANCE" />
           {commandError && <div className="border-l-2 border-red-500 bg-red-50 px-4 py-3 text-xs font-medium text-red-700 dark:bg-red-950/20 dark:text-red-300">{commandError}</div>}
 
           <section className="grid overflow-hidden rounded-md border border-slate-200 bg-white dark:border-white/10 dark:bg-[#0D1117] sm:grid-cols-2 lg:grid-cols-4">

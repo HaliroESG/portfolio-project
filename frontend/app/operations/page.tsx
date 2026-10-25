@@ -1,12 +1,14 @@
 "use client"
 
+import { protectFamilyOfficeBundle } from '../../lib/financialQualification'
+import { FinancialKpiNotice } from '../../components/FinancialKpiNotice'
+
 import { AlertTriangle, Check, FileDown, FileSpreadsheet, LockKeyhole, RefreshCw, Upload } from 'lucide-react'
 import { FormEvent, useMemo, useState } from 'react'
-import useSWR from 'swr'
 import { AppShell } from '../../components/AppShell'
 import { EmptyState } from '../../components/EmptyState'
 import { authenticatedDownload, command } from '../../lib/commandApi'
-import { FAMILY_OFFICE_REFRESH_MS, FAMILY_OFFICE_SWR_KEY, loadFamilyOfficeBundle } from '../../lib/familyOfficeData'
+import { useFamilyOfficeBundle } from '../../lib/familyOfficeData'
 import { supabase } from '../../lib/supabase'
 import type { FamilyOfficeOperationRow } from '../../types'
 
@@ -19,7 +21,8 @@ function severityStyle(severity: FamilyOfficeOperationRow['severity']): string {
 }
 
 export default function OperationsPage() {
-  const { data, error, isLoading, mutate } = useSWR(FAMILY_OFFICE_SWR_KEY, () => loadFamilyOfficeBundle(supabase), { refreshInterval: FAMILY_OFFICE_REFRESH_MS })
+  const { data: cachedData, error, isLoading, mutate } = useFamilyOfficeBundle(supabase)
+  const data = cachedData ? protectFamilyOfficeBundle(cachedData) : undefined
   const [pendingAction, setPendingAction] = useState<string | null>(null)
   const [feedback, setFeedback] = useState<string | null>(null)
   const [actionError, setActionError] = useState<string | null>(null)
@@ -116,6 +119,7 @@ export default function OperationsPage() {
             <h1 className="mt-1 text-2xl font-black text-slate-950 dark:text-white">Opérations</h1>
             <p className="mt-2 text-sm text-slate-500">Imports, rapprochements, exceptions et clôtures.</p>
           </header>
+          <FinancialKpiNotice family="PORTFOLIO_PERFORMANCE" />
           {feedback && <div className="border-l-2 border-emerald-500 bg-emerald-50 px-4 py-3 text-xs font-medium text-emerald-700 dark:bg-emerald-950/20 dark:text-emerald-300">{feedback}</div>}
           {actionError && <div className="border-l-2 border-red-500 bg-red-50 px-4 py-3 text-xs font-medium text-red-700 dark:bg-red-950/20 dark:text-red-300">{actionError}</div>}
 

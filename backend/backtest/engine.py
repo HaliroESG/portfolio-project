@@ -9,6 +9,7 @@ import pandas as pd
 
 from backtest.presets import build_preset_specs, select_preset_keys
 from backtest.data_quality import compute_common_start, get_earliest_dates
+from financial_qualification import protect_fields
 
 BASE_CURRENCY = "EUR"
 TRADING_DAYS = 252
@@ -677,13 +678,16 @@ def persist_results(
 ) -> None:
     rows = []
     for idx, row in nav_df.iterrows():
+        nav = float(row["nav"])
+        if not np.isfinite(nav):
+            raise ValueError("NAV_NOT_FINITE")
         rows.append({
             "run_id": run_id,
             "portfolio_key": portfolio_key,
             "date": idx.date().isoformat(),
-            "nav": float(row["nav"]),
-            "drawdown": float(row["drawdown"]),
-            "returns_daily": float(row["returns_daily"]),
+            "nav": nav,
+            "drawdown": None,
+            "returns_daily": None,
         })
     upsert_rows(supabase, "backtest_results", rows)
 
@@ -695,7 +699,7 @@ def persist_kpis(
     kpis: dict,
 ) -> None:
     payload = {"run_id": run_id, "portfolio_key": portfolio_key}
-    payload.update(kpis)
+    payload.update(protect_fields(kpis, "BACKTEST"))
     supabase.table("backtest_kpis").upsert(payload).execute()
 
 

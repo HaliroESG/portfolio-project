@@ -6,6 +6,10 @@ from datetime import date, datetime, timedelta, timezone
 from decimal import Decimal
 from typing import Any, Iterable
 
+from financial_qualification import (
+    protect_performance_payload, protect_risk_payload, qualification,
+)
+
 from .analytics import calculate_performance_series, calculate_risk_snapshot
 from .ledger import build_book
 from .models import DailyValuation, LedgerEvent, ZERO
@@ -736,6 +740,7 @@ def rebuild_portfolio(
         for point in performance
     ]
     if performance_rows:
+        performance_rows = [protect_performance_payload(row) for row in performance_rows]
         repository.upsert_many("fo_performance_daily", performance_rows, "portfolio_id,performance_date")
 
     latest_cash_eur = sum(
@@ -764,6 +769,8 @@ def rebuild_portfolio(
         "details": {"position_count": len(latest_position_values)},
         "calculated_at": _iso_now(),
     }
+    risk_row["details"]["financial_qualification"] = qualification("PORTFOLIO_RISK", risk_row)
+    risk_row = protect_risk_payload(risk_row)
     repository.upsert_many("fo_risk_daily", [risk_row], "portfolio_id,risk_date")
 
     for payload in latest_position_payloads:

@@ -1,0 +1,389 @@
+[
+  {
+    "family": "PORTFOLIO_PERFORMANCE",
+    "row": {
+      "portfolio_id": "synthetic-a",
+      "data_state": "READY",
+      "coverage_pct": null,
+      "calculation_version": "unapproved-v99",
+      "nav_eur": 200,
+      "twr_daily": null,
+      "twr_ytd": null,
+      "xirr_since_inception": null
+    }
+  },
+  {
+    "family": "PORTFOLIO_PERFORMANCE",
+    "row": {
+      "portfolio_id": "synthetic-a",
+      "data_state": "READY",
+      "coverage_pct": 0,
+      "calculation_version": "unapproved-v99",
+      "nav_eur": 200,
+      "twr_daily": 0,
+      "twr_ytd": 0,
+      "xirr_since_inception": 0
+    }
+  },
+  {
+    "family": "PORTFOLIO_PERFORMANCE",
+    "row": {
+      "portfolio_id": "synthetic-a",
+      "data_state": "READY",
+      "coverage_pct": -1,
+      "calculation_version": "unapproved-v99",
+      "nav_eur": 200,
+      "twr_daily": -1,
+      "twr_ytd": -1,
+      "xirr_since_inception": -1
+    }
+  },
+  {
+    "family": "PORTFOLIO_PERFORMANCE",
+    "row": {
+      "portfolio_id": "synthetic-a",
+      "data_state": "READY",
+      "coverage_pct": 0.125,
+      "calculation_version": "unapproved-v99",
+      "nav_eur": 200,
+      "twr_daily": 0.125,
+      "twr_ytd": 0.125,
+      "xirr_since_inception": 0.125
+    }
+  },
+  {
+    "family": "PORTFOLIO_PERFORMANCE",
+    "row": {
+      "portfolio_id": "synthetic-a",
+      "data_state": "READY",
+      "coverage_pct": "NaN",
+      "calculation_version": "unapproved-v99",
+      "nav_eur": 200,
+      "twr_daily": "NaN",
+      "twr_ytd": "NaN",
+      "xirr_since_inception": "NaN"
+    }
+  },
+  {
+    "family": "PORTFOLIO_PERFORMANCE",
+    "row": {
+      "portfolio_id": "synthetic-a",
+      "data_state": "READY",
+      "coverage_pct": "Infinity",
+      "calculation_version": "unapproved-v99",
+      "nav_eur": 200,
+      "twr_daily": "Infinity",
+      "twr_ytd": "Infinity",
+      "xirr_since_inception": "Infinity"
+    }
+  },
+  {
+    "family": "PORTFOLIO_PERFORMANCE",
+    "row": {
+      "portfolio_id": "synthetic-a",
+      "data_state": "READY",
+      "coverage_pct": "0x10",
+      "calculation_version": "unapproved-v99",
+      "nav_eur": 200,
+      "twr_daily": "0x10",
+      "twr_ytd": "0x10",
+      "xirr_since_inception": "0x10"
+    }
+  },
+  {
+    "family": "PORTFOLIO_PERFORMANCE",
+    "row": {
+      "portfolio_id": "synthetic-a",
+      "data_state": "READY",
+      "coverage_pct": false,
+      "calculation_version": "unapproved-v99",
+      "nav_eur": 200,
+      "twr_daily": false,
+      "twr_ytd": false,
+      "xirr_since_inception": false
+    }
+  },
+  {
+    "family": "PORTFOLIO_PERFORMANCE",
+    "row": {
+      "portfolio_id": "synthetic-a",
+      "data_state": "READY",
+      "coverage_pct": "",
+      "calculation_version": "unapproved-v99",
+      "nav_eur": 200,
+      "twr_daily": "",
+      "twr_ytd": "",
+      "xirr_since_inception": ""
+    }
+  },
+  {
+    "family": "PORTFOLIO_PERFORMANCE",
+    "row": {
+      "portfolio_id": "synthetic-a",
+      "data_state": "READY",
+      "coverage_pct": 100,
+      "calculation_version": "unapproved-v99",
+      "nav_eur": 200,
+      "twr_daily": 100,
+      "twr_ytd": 100,
+      "xirr_since_inception": 100
+    }
+  },
+  {
+    "family": "PORTFOLIO_RISK",
+    "row": {
+      "portfolio_id": "synthetic-a",
+      "data_state": "READY",
+      "coverage_pct": null,
+      "calculation_version": "unapproved-v99",
+      "nav_eur": 200,
+      "volatility_30d_pct": null,
+      "max_drawdown_ytd_pct": null
+    }
+  },
+  {
+    "family": "PORTFOLIO_RISK",
+    "row": {
+      "portfolio_id": "synthetic-a",
+      "data_state": "READY",
+      "coverage_pct": 0,
+      "calculation_version": "unapproved-v99",
+      "nav_eur": 200,
+      "volatility_30d_pct": 0,
+      "max_drawdown_ytd_pct": 0
+    }
+  },
+  {
+    "family": "PORTFOLIO_RISK",
+    "row": {
+      "portfolio_id": "synthetic-a",
+      "data_state": "READY",
+      "coverage_pct": -1,
+      "calculation_version": "unapproved-v99",
+      "nav_eur": 200,
+      "volatility_30d_pct": -1,
+      "max_drawdown_ytd_pct": -1
+    }
+  },
+  {
+    "family": "PORTFOLIO_RISK",
+    "row": {
+      "portfolio_id": "synthetic-a",
+      "data_state": "READY",
+      "coverage_pct": 0.125,
+      "calculation_version": "unapproved-v99",
+      "nav_eur": 200,
+      "volatility_30d_pct": 0.125,
+      "max_drawdown_ytd_pct": 0.125
+    }
+  },
+  {
+    "family": "PORTFOLIO_RISK",
+    "row": {
+      "portfolio_id": "synthetic-a",
+      "data_state": "READY",
+      "coverage_pct": "NaN",
+      "calculation_version": "unapproved-v99",
+      "nav_eur": 200,
+      "volatility_30d_pct": "NaN",
+      "max_drawdown_ytd_pct": "NaN"
+    }
+  },
+  {
+    "family": "PORTFOLIO_RISK",
+    "row": {
+      "portfolio_id": "synthetic-a",
+      "data_state": "READY",
+      "coverage_pct": "Infinity",
+      "calculation_version": "unapproved-v99",
+      "nav_eur": 200,
+      "volatility_30d_pct": "Infinity",
+      "max_drawdown_ytd_pct": "Infinity"
+    }
+  },
+  {
+    "family": "PORTFOLIO_RISK",
+    "row": {
+      "portfolio_id": "synthetic-a",
+      "data_state": "READY",
+      "coverage_pct": "0x10",
+      "calculation_version": "unapproved-v99",
+      "nav_eur": 200,
+      "volatility_30d_pct": "0x10",
+      "max_drawdown_ytd_pct": "0x10"
+    }
+  },
+  {
+    "family": "PORTFOLIO_RISK",
+    "row": {
+      "portfolio_id": "synthetic-a",
+      "data_state": "READY",
+      "coverage_pct": false,
+      "calculation_version": "unapproved-v99",
+      "nav_eur": 200,
+      "volatility_30d_pct": false,
+      "max_drawdown_ytd_pct": false
+    }
+  },
+  {
+    "family": "PORTFOLIO_RISK",
+    "row": {
+      "portfolio_id": "synthetic-a",
+      "data_state": "READY",
+      "coverage_pct": "",
+      "calculation_version": "unapproved-v99",
+      "nav_eur": 200,
+      "volatility_30d_pct": "",
+      "max_drawdown_ytd_pct": ""
+    }
+  },
+  {
+    "family": "PORTFOLIO_RISK",
+    "row": {
+      "portfolio_id": "synthetic-a",
+      "data_state": "READY",
+      "coverage_pct": 100,
+      "calculation_version": "unapproved-v99",
+      "nav_eur": 200,
+      "volatility_30d_pct": 100,
+      "max_drawdown_ytd_pct": 100
+    }
+  },
+  {
+    "family": "BACKTEST",
+    "row": {
+      "portfolio_id": "synthetic-a",
+      "data_state": "READY",
+      "coverage_pct": null,
+      "calculation_version": "unapproved-v99",
+      "nav_eur": 200,
+      "cagr": null,
+      "sharpe": null,
+      "drawdown": null
+    }
+  },
+  {
+    "family": "BACKTEST",
+    "row": {
+      "portfolio_id": "synthetic-a",
+      "data_state": "READY",
+      "coverage_pct": 0,
+      "calculation_version": "unapproved-v99",
+      "nav_eur": 200,
+      "cagr": 0,
+      "sharpe": 0,
+      "drawdown": 0
+    }
+  },
+  {
+    "family": "BACKTEST",
+    "row": {
+      "portfolio_id": "synthetic-a",
+      "data_state": "READY",
+      "coverage_pct": -1,
+      "calculation_version": "unapproved-v99",
+      "nav_eur": 200,
+      "cagr": -1,
+      "sharpe": -1,
+      "drawdown": -1
+    }
+  },
+  {
+    "family": "BACKTEST",
+    "row": {
+      "portfolio_id": "synthetic-a",
+      "data_state": "READY",
+      "coverage_pct": 0.125,
+      "calculation_version": "unapproved-v99",
+      "nav_eur": 200,
+      "cagr": 0.125,
+      "sharpe": 0.125,
+      "drawdown": 0.125
+    }
+  },
+  {
+    "family": "BACKTEST",
+    "row": {
+      "portfolio_id": "synthetic-a",
+      "data_state": "READY",
+      "coverage_pct": "NaN",
+      "calculation_version": "unapproved-v99",
+      "nav_eur": 200,
+      "cagr": "NaN",
+      "sharpe": "NaN",
+      "drawdown": "NaN"
+    }
+  },
+  {
+    "family": "BACKTEST",
+    "row": {
+      "portfolio_id": "synthetic-a",
+      "data_state": "READY",
+      "coverage_pct": "Infinity",
+      "calculation_version": "unapproved-v99",
+      "nav_eur": 200,
+      "cagr": "Infinity",
+      "sharpe": "Infinity",
+      "drawdown": "Infinity"
+    }
+  },
+  {
+    "family": "BACKTEST",
+    "row": {
+      "portfolio_id": "synthetic-a",
+      "data_state": "READY",
+      "coverage_pct": "0x10",
+      "calculation_version": "unapproved-v99",
+      "nav_eur": 200,
+      "cagr": "0x10",
+      "sharpe": "0x10",
+      "drawdown": "0x10"
+    }
+  },
+  {
+    "family": "BACKTEST",
+    "row": {
+      "portfolio_id": "synthetic-a",
+      "data_state": "READY",
+      "coverage_pct": false,
+      "calculation_version": "unapproved-v99",
+      "nav_eur": 200,
+      "cagr": false,
+      "sharpe": false,
+      "drawdown": false
+    }
+  },
+  {
+    "family": "BACKTEST",
+    "row": {
+      "portfolio_id": "synthetic-a",
+      "data_state": "READY",
+      "coverage_pct": "",
+      "calculation_version": "unapproved-v99",
+      "nav_eur": 200,
+      "cagr": "",
+      "sharpe": "",
+      "drawdown": ""
+    }
+  },
+  {
+    "family": "BACKTEST",
+    "row": {
+      "portfolio_id": "synthetic-a",
+      "data_state": "READY",
+      "coverage_pct": 100,
+      "calculation_version": "unapproved-v99",
+      "nav_eur": 200,
+      "cagr": 100,
+      "sharpe": 100,
+      "drawdown": 100
+    }
+  },
+  {
+    "family": "UNKNOWN_FAMILY",
+    "row": {
+      "coverage_pct": {},
+      "calculation_version": 42
+    }
+  }
+]

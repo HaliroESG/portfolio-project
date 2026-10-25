@@ -89,7 +89,8 @@ def test_monthly_close_freezes_period_end_data() -> None:
     )
 
     close = result["monthly_close"]
-    assert close["status"] == "CLOSED"
+    assert close["status"] == "BLOCKED"
+    assert close["checks_json"]["financial_calculation_qualified"] is False
     assert close["nav_eur"] == "100000"
     assert close["report_json"]["performance"][0]["performance_date"] == "2026-06-30"
     assert close["report_json"]["risk"]["risk_date"] == "2026-06-30"

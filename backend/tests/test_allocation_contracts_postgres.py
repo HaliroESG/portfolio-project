@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import os
 import shutil
 import socket
 import subprocess
@@ -42,32 +43,83 @@ def _free_port() -> int:
         return int(probe.getsockname()[1])
 
 
+def _stop_and_cleanup(pg_bin: Path, root: Path, pg_env: dict[str, str]) -> None:
+    data = root / "data"
+    try:
+        stopped = subprocess.run(
+            [str(pg_bin / "pg_ctl"), "-D", str(data), "-m", "fast", "-w", "stop"],
+            check=False, env=pg_env, stdout=subprocess.DEVNULL,
+            stderr=subprocess.DEVNULL, timeout=60,
+        )
+    except subprocess.TimeoutExpired as exc:
+        raise RuntimeError(f"PostgreSQL stop timed out; cluster retained at {root}") from exc
+    if stopped.returncode != 0 or (data / "postmaster.pid").exists():
+        raise RuntimeError(f"PostgreSQL stop unconfirmed; cluster retained at {root}")
+    shutil.rmtree(root)
+
+
+@pytest.mark.parametrize("outcome", ["stopped", "failed", "timeout", "pid-remains"])
+def test_stop_cleanup_preserves_uncertain_cluster(tmp_path, monkeypatch, outcome):
+    from types import SimpleNamespace
+    root = tmp_path / "cluster"
+    data = root / "data"
+    data.mkdir(parents=True)
+    (root / "server.log").write_text("diagnostic")
+    if outcome == "pid-remains":
+        (data / "postmaster.pid").write_text("123")
+    def stop(*args, **kwargs):
+        assert kwargs["timeout"] == 60 and "-w" in args[0]
+        if outcome == "timeout":
+            raise subprocess.TimeoutExpired(args[0], 60)
+        return SimpleNamespace(returncode=1 if outcome == "failed" else 0)
+    monkeypatch.setattr(subprocess, "run", stop)
+    if outcome == "stopped":
+        _stop_and_cleanup(Path("/synthetic/bin"), root, {})
+        assert not root.exists()
+    else:
+        with pytest.raises(RuntimeError):
+            _stop_and_cleanup(Path("/synthetic/bin"), root, {})
+        assert (root / "server.log").read_text() == "diagnostic"
+
+
 @contextmanager
 def _temporary_postgres():
     pg_bin = _postgres_15_bin()
+    # macOS postmaster must not resolve the ambient locale during startup.
+    pg_env = {"PATH": os.defpath, "LC_ALL": "C", "LANG": "C"}
     root = Path(tempfile.mkdtemp(prefix="allocation-contracts-", dir="/tmp"))
     data = root / "data"
     port = _free_port()
-    subprocess.run(
-        [str(pg_bin / "initdb"), "-D", str(data), "--no-locale", "--encoding=UTF8"],
-        check=True,
-        capture_output=True,
-        text=True,
-    )
-    subprocess.run(
-        [
-            str(pg_bin / "pg_ctl"),
-            "-D",
-            str(data),
-            "-o",
-            f"-k {root} -p {port} -c listen_addresses=''",
-            "-w",
-            "start",
-        ],
-        check=True,
-        stdout=subprocess.DEVNULL,
-        stderr=subprocess.DEVNULL,
-    )
+    try:
+        subprocess.run(
+            [str(pg_bin / "initdb"), "-D", str(data), "--no-locale", "--encoding=UTF8"],
+            check=True, env=pg_env,
+            capture_output=True,
+            text=True,
+            timeout=60,
+        )
+        subprocess.run(
+            [
+                str(pg_bin / "pg_ctl"),
+                "-D",
+                str(data),
+                "-o",
+                f"-k {root} -p {port} -c listen_addresses=''",
+                "-l",
+                str(root / "server.log"),
+                "-w",
+                "start",
+            ],
+            check=True, env=pg_env,
+            capture_output=True,
+            text=True,
+            timeout=60,
+        )
+    except (subprocess.CalledProcessError, subprocess.TimeoutExpired) as exc:
+        log = root / "server.log"
+        detail = log.read_text(errors="replace")[-6000:] if log.exists() else str(exc.stderr or "")[-6000:]
+        _stop_and_cleanup(pg_bin, root, pg_env)
+        raise RuntimeError(f"Isolated PostgreSQL startup failed: {detail}") from exc
 
     def sql(statement: str, *, file: Path | None = None) -> list[str]:
         command = [
@@ -90,7 +142,7 @@ def _temporary_postgres():
         result = subprocess.run(
             command,
             input=statement,
-            check=True,
+            check=True, env=pg_env,
             capture_output=True,
             text=True,
         )
@@ -239,13 +291,7 @@ def _temporary_postgres():
         )
         yield sql
     finally:
-        subprocess.run(
-            [str(pg_bin / "pg_ctl"), "-D", str(data), "-m", "fast", "stop"],
-            check=False,
-            stdout=subprocess.DEVNULL,
-            stderr=subprocess.DEVNULL,
-        )
-        shutil.rmtree(root, ignore_errors=True)
+        _stop_and_cleanup(pg_bin, root, pg_env)
 
 
 @pytest.fixture(scope="module")
