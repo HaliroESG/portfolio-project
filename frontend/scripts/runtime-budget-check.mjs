@@ -56,13 +56,16 @@ const checks = [
   ),
   assertCheck(
     'dashboard.family_office_bounded_reads',
-    dashboard.includes('FAMILY_OFFICE_SWR_KEY') &&
-      dashboard.includes('loadFamilyOfficeBundle(supabase)') &&
+    dashboard.includes('useFamilyOfficeBundle(supabase)') &&
+      familyOfficeData.includes("import useSWR from 'swr'") &&
+      familyOfficeData.includes('export function useFamilyOfficeBundle(') &&
+      familyOfficeData.includes('useSWR(owner ? [FAMILY_OFFICE_SWR_KEY, owner, pathname] : null, async () => {') &&
+      familyOfficeData.includes('const bundle = await loadFamilyOfficeBundle(supabase)') &&
       familyOfficeData.includes('const results = await Promise.all([') &&
       familyOfficeData.includes('.limit(1500)') &&
       familyOfficeData.includes('.limit(100)') &&
       familyOfficeData.includes('.limit(36)'),
-    'Family Office overview should share its cache and bound historical data reads.'
+    'Family Office overview should use its shared owner/route-scoped hook and bound historical data reads.'
   ),
   assertCheck(
     'data_operations.action_hints',

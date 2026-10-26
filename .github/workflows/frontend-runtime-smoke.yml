@@ -64,6 +64,7 @@ jobs:
           npm run lint
           npx tsc --noEmit
           npm run test:frontend
+          node scripts/test-runtime-budget-check.mjs
           npm run perf:budget
           npm run build
       - name: Install Playwright browser
