@@ -267,12 +267,14 @@ export interface BacktestResult {
   run_id: string
   portfolio_key: string
   date: string
-  nav: number
+  nav: number | null
   drawdown: number | null
   returns_daily: number | null
 }
 
 export interface BacktestKpi {
+  /** Derived presentation metadata; never selected as a SQL column. */
+  financial_qualification?: FinancialKpiQualification
   run_id: string
   portfolio_key: string
   cagr: number | null
@@ -1239,6 +1241,22 @@ export interface AllocationAdviceRow {
 }
 
 export type FamilyOfficeDataState = 'READY' | 'PARTIAL' | 'STALE' | 'MISSING' | 'UNRECONCILED'
+
+/** Financial qualification is separate from SQL collection/reconciliation states. */
+export interface FinancialKpiQualification {
+  policy_version: 'fi03-protect-v1'
+  state: 'UNQUALIFIED'
+  reason_code: 'CALCULATION_NOT_QUALIFIED'
+  message: string
+  metric_family: 'PORTFOLIO_PERFORMANCE' | 'PORTFOLIO_RISK' | 'BACKTEST' | 'UNKNOWN'
+  calculation_version: string | null
+  portfolio_id: string | null
+  run_id: string | null
+  window_start: string | null
+  window_end: string | null
+  calculated_at: string | null
+  coverage_pct: number | null
+}
 export type FamilyOfficeEnvelope = 'PEA' | 'CTO' | 'PER' | 'AV' | 'CASH' | 'OTHER'
 export type FamilyOfficeSeverity = 'INFO' | 'WARNING' | 'CRITICAL'
 export type FamilyOfficeDecisionStatus = 'DRAFT' | 'VALIDATED' | 'EXPORTED' | 'EXECUTED' | 'RECONCILED' | 'CANCELLED'
@@ -1291,6 +1309,7 @@ export interface FamilyOfficeAccountRow {
 }
 
 export interface FamilyOfficeOverviewRow {
+  financial_qualification?: FinancialKpiQualification[]
   owner_user_id: string
   portfolio_id: string
   portfolio_name: string
@@ -1391,6 +1410,7 @@ export interface FamilyOfficeOperationRow {
 }
 
 export interface FamilyOfficePerformanceRow {
+  financial_qualification?: FinancialKpiQualification[]
   portfolio_id: string
   performance_date: string
   nav_eur: number | null
@@ -1408,6 +1428,8 @@ export interface FamilyOfficePerformanceRow {
 }
 
 export interface FamilyOfficeDecisionRow {
+  /** Derived dependency guard, not a persisted status. */
+  financial_dependency_blocked?: boolean
   id: string
   owner_user_id: string
   portfolio_id: string
@@ -1425,6 +1447,7 @@ export interface FamilyOfficeDecisionRow {
 }
 
 export interface FamilyOfficeMonthlyCloseRow {
+  financial_qualification?: FinancialKpiQualification[]
   id: string
   owner_user_id: string
   portfolio_id: string

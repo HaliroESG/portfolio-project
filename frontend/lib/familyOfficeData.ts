@@ -1,4 +1,8 @@
+import { useEffect, useState } from 'react'
+import { usePathname } from 'next/navigation'
+import useSWR from 'swr'
 import type { SupabaseClient } from '@supabase/supabase-js'
+import { protectFamilyOfficeBundle } from './financialQualification'
 import type {
   FamilyOfficeAccountRow,
   FamilyOfficeCashRow,
@@ -67,7 +71,7 @@ export async function loadFamilyOfficeBundle(supabase: SupabaseClient): Promise<
     throw firstError
   }
 
-  return {
+  return protectFamilyOfficeBundle({
     schemaState: 'READY',
     portfolios: (results[0].data ?? []) as FamilyOfficePortfolioRow[],
     overview: (results[1].data ?? []) as FamilyOfficeOverviewRow[],
@@ -80,8 +84,57 @@ export async function loadFamilyOfficeBundle(supabase: SupabaseClient): Promise<
     performance: (results[8].data ?? []) as FamilyOfficePerformanceRow[],
     decisions: (results[9].data ?? []) as FamilyOfficeDecisionRow[],
     closes: (results[10].data ?? []) as FamilyOfficeMonthlyCloseRow[],
-  }
+  })
 }
 
-export const FAMILY_OFFICE_SWR_KEY = 'family-office-bundle-v1'
+export const FAMILY_OFFICE_SWR_KEY = 'family-office-bundle-fi03-protect-v1'
 export const FAMILY_OFFICE_REFRESH_MS = 60_000
+
+/** Verify the subject before selecting a cache; auth event payloads are not evidence. */
+export function useFamilyOfficeBundle(supabase: SupabaseClient) {
+  const pathname = usePathname()
+  const [session, setSession] = useState<{ path: string; owner?: string; error?: Error } | null>(null)
+  useEffect(() => {
+    let alive = true, generation = 0
+    const verify = () => {
+      const request = ++generation
+      setSession(null)
+      // Auth callbacks must return before another SDK auth call can take its lock.
+      void Promise.resolve().then(() => supabase.auth.getUser()).then(({ data, error }) => {
+        if (!alive || request !== generation) return
+        setSession(error || !data.user
+          ? { path: pathname, error: new Error('Session non vérifiable. Aucune donnée affichée.') }
+          : { path: pathname, owner: data.user.id })
+      }).catch(() => {
+        if (alive && request === generation) setSession({ path: pathname, error: new Error('Session non vérifiable. Aucune donnée affichée.') })
+      })
+    }
+    verify()
+    const { data: { subscription } } = supabase.auth.onAuthStateChange(event => {
+      if (event !== 'INITIAL_SESSION') verify()
+    })
+    window.addEventListener('focus', verify)
+    return () => { alive = false; generation++; subscription.unsubscribe(); window.removeEventListener('focus', verify) }
+  }, [pathname, supabase])
+  // A route change invalidates the old scope synchronously, before the effect runs.
+  const owner = session?.path === pathname ? session.owner : undefined
+  const result = useSWR(owner ? [FAMILY_OFFICE_SWR_KEY, owner, pathname] : null, async () => {
+    const verifyOwner = async () => {
+      const { data, error } = await supabase.auth.getUser()
+      if (error || !owner || data.user?.id !== owner) throw new Error('Session modifiée. Rechargez la page.')
+    }
+    await verifyOwner()
+    const bundle = await loadFamilyOfficeBundle(supabase)
+    await verifyOwner()
+    const owned = [bundle.portfolios, bundle.overview, bundle.accounts, bundle.institutions,
+      bundle.positions, bundle.cash, bundle.manualHoldings, bundle.operations, bundle.decisions, bundle.closes]
+    const portfolios = new Set(bundle.portfolios.map(row => row.id))
+    if (owned.some(rows => rows.some(row => row.owner_user_id !== owner)) || bundle.performance.some(row => !portfolios.has(row.portfolio_id))) {
+      throw new Error('Données hors périmètre de la session. Aucune donnée affichée.')
+    }
+    return bundle
+  }, { refreshInterval: FAMILY_OFFICE_REFRESH_MS, keepPreviousData: false, shouldRetryOnError: false })
+  return { ...result, data: owner && !result.error ? result.data : undefined,
+    error: session?.path === pathname ? session.error ?? result.error : undefined,
+    isLoading: session?.path !== pathname || (!session.error && (!owner || result.isLoading)) }
+}

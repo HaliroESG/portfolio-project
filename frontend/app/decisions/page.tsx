@@ -1,12 +1,14 @@
 "use client"
 
+import { protectFamilyOfficeBundle } from '../../lib/financialQualification'
+import { FinancialKpiNotice } from '../../components/FinancialKpiNotice'
+
 import { CheckCircle2, FileDown, Plus, Send, XCircle } from 'lucide-react'
 import { FormEvent, useState } from 'react'
-import useSWR from 'swr'
 import { AppShell } from '../../components/AppShell'
 import { EmptyState } from '../../components/EmptyState'
 import { authenticatedDownload, command } from '../../lib/commandApi'
-import { FAMILY_OFFICE_REFRESH_MS, FAMILY_OFFICE_SWR_KEY, loadFamilyOfficeBundle } from '../../lib/familyOfficeData'
+import { useFamilyOfficeBundle } from '../../lib/familyOfficeData'
 import { supabase } from '../../lib/supabase'
 import type { FamilyOfficeDecisionRow, FamilyOfficeDecisionStatus } from '../../types'
 
@@ -25,7 +27,8 @@ function statusClass(status: FamilyOfficeDecisionStatus): string {
 }
 
 export default function DecisionsPage() {
-  const { data, error, isLoading, mutate } = useSWR(FAMILY_OFFICE_SWR_KEY, () => loadFamilyOfficeBundle(supabase), { refreshInterval: FAMILY_OFFICE_REFRESH_MS })
+  const { data: cachedData, error, isLoading, mutate } = useFamilyOfficeBundle(supabase)
+  const data = cachedData ? protectFamilyOfficeBundle(cachedData) : undefined
   const [pending, setPending] = useState<string | null>(null)
   const [feedback, setFeedback] = useState<string | null>(null)
   const [actionError, setActionError] = useState<string | null>(null)
@@ -51,6 +54,10 @@ export default function DecisionsPage() {
   }
 
   const transition = async (decision: FamilyOfficeDecisionRow, target: FamilyOfficeDecisionStatus) => {
+    if (target === 'VALIDATED' && decision.financial_dependency_blocked) {
+      setActionError('Décision dépendante d’un indicateur financier non qualifié.')
+      return
+    }
     setPending(decision.id)
     setActionError(null)
     try {
@@ -115,6 +122,7 @@ export default function DecisionsPage() {
       <main className="p-4 sm:p-5 lg:p-8">
         <div className="mx-auto max-w-[1450px] space-y-5">
           <header><p className="text-[10px] font-black uppercase text-emerald-600 dark:text-emerald-400">Gouvernance</p><h1 className="mt-1 text-2xl font-black text-slate-950 dark:text-white">Journal de décisions</h1><p className="mt-2 text-sm text-slate-500">Rationale, validation, ordre brouillon, exécution et rapprochement.</p></header>
+          <FinancialKpiNotice family="PORTFOLIO_PERFORMANCE" />
           {feedback && <div className="border-l-2 border-emerald-500 bg-emerald-50 px-4 py-3 text-xs text-emerald-700 dark:bg-emerald-950/20 dark:text-emerald-300">{feedback}</div>}
           {actionError && <div className="border-l-2 border-red-500 bg-red-50 px-4 py-3 text-xs text-red-700 dark:bg-red-950/20 dark:text-red-300">{actionError}</div>}
 

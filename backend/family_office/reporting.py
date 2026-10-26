@@ -9,6 +9,11 @@ from typing import Any
 from reportlab.lib.pagesizes import A4
 from reportlab.pdfgen import canvas
 
+from financial_qualification import (
+    MESSAGE, POLICY_VERSION, REASON_CODE, protect_performance_payload,
+    qualification, risk_export,
+)
+
 
 def order_csv(order: dict[str, Any], lines: list[dict[str, Any]]) -> bytes:
     output = io.StringIO()
@@ -87,6 +92,8 @@ def monthly_close_csv(
     risk: dict[str, Any] | None,
     exceptions: list[dict[str, Any]],
 ) -> bytes:
+    performance = [protect_performance_payload(row) for row in performance]
+    risk = risk_export(risk)
     output = io.StringIO()
     writer = csv.writer(output)
     writer.writerow(["report_type", "FAMILY_OFFICE_MONTHLY_CLOSE"])
@@ -96,6 +103,13 @@ def monthly_close_csv(
     writer.writerow(["nav_eur", close.get("nav_eur")])
     writer.writerow(["coverage_pct", close.get("coverage_pct")])
     writer.writerow(["generated_on", date.today().isoformat()])
+    writer.writerow(["financial_qualification", "UNQUALIFIED", REASON_CODE, POLICY_VERSION])
+    writer.writerow(["qualification_reason", MESSAGE])
+    writer.writerow(["status_scope", "Archived status; current financial KPIs are not qualified"])
+    _csv_section(
+        writer, "CURRENT_FINANCIAL_QUALIFICATION", ["field", "value"],
+        list(qualification("PORTFOLIO_PERFORMANCE", {**close, "portfolio_id": close.get("portfolio_id") or portfolio.get("id")}).items()),
+    )
 
     checks = close.get("checks_json") or {}
     _csv_section(
@@ -246,6 +260,8 @@ def monthly_close_pdf(
     risk: dict[str, Any] | None,
     exceptions: list[dict[str, Any]],
 ) -> bytes:
+    performance = [protect_performance_payload(row) for row in performance]
+    risk = risk_export(risk)
     output = io.BytesIO()
     document = canvas.Canvas(output, pagesize=A4)
     width, height = A4
@@ -286,6 +302,12 @@ def monthly_close_pdf(
     document.drawString(42, y, f"{portfolio['name']} | Periode {close['period_end']} | {close['status']}")
     y -= 25
 
+    heading("Qualification financiere actuelle : NON QUALIFIE")
+    line("Politique", POLICY_VERSION)
+    line("Motif", REASON_CODE)
+    line("Rendements et risque", "Calcul et historique non qualifies - valeurs retenues")
+    line("Statut de cloture", "Archive conservee ; ne certifie pas les KPI actuels")
+
     heading("Synthese patrimoniale")
     line("Actif net (EUR)", _number(close.get("nav_eur")), bold=True)
     line("Couverture de donnees", f"{_number(close.get('coverage_pct'))}%")
@@ -301,7 +323,7 @@ def monthly_close_pdf(
     line("Drawdown maximum YTD", f"{_number((risk or {}).get('max_drawdown_ytd_pct'))}%")
     line("Premiere position", f"{_number((risk or {}).get('largest_position_pct'))}%")
 
-    heading("Controles de cloture")
+    heading("Controles archives de cloture (non requalifies)")
     for key, passed in sorted((close.get("checks_json") or {}).items()):
         line(key.replace("_", " ").title(), "OK" if passed else "BLOQUANT", bold=not passed)
 

@@ -1,5 +1,6 @@
 import fs from 'node:fs'
 import path from 'node:path'
+import ts from 'typescript'
 
 const repoRoot = path.resolve(process.cwd(), '..')
 
@@ -292,18 +293,38 @@ try {
     'Geo page should expose day/month/ytd selectors.'
   )
 
+  // Parse before removing comments, including templates and JSX.
+  function executableSource(source) {
+    const tree = ts.createSourceFile('guard.tsx', source, ts.ScriptTarget.Latest, true, ts.ScriptKind.TSX)
+    return ts.createPrinter({ removeComments: true }).printFile(tree)
+  }
+  function hasExecutableAll(source, patterns) {
+    const normalize = value => value.replace(/[;\s]+/g, '')
+    const executable = normalize(executableSource(source))
+    return patterns.every(pattern => executable.includes(normalize(pattern)))
+  }
   const dashboard = read('frontend/app/page.tsx')
   const familyOfficeData = read('frontend/lib/familyOfficeData.ts')
   addCheck(
     'frontend.dashboard.family_office_shared_cache',
-    hasAll(dashboard, [
-      'useSWR(',
-      'FAMILY_OFFICE_SWR_KEY',
-      'loadFamilyOfficeBundle(supabase)',
+    hasExecutableAll(dashboard, [
+      'useFamilyOfficeBundle(supabase)',
       '<FamilyOfficeStateBadge',
       "data?.schemaState === 'SCHEMA_PENDING'",
+    ]) && hasExecutableAll(familyOfficeData, [
+      'export function useFamilyOfficeBundle(',
+      'setSession(null)',
+      'supabase.auth.getUser()',
+      'owner: data.user.id',
+      'session?.path === pathname ? session.owner : undefined',
+      'useSWR(owner ? [FAMILY_OFFICE_SWR_KEY, owner, pathname] : null,',
+      'data.user?.id !== owner',
+      'await verifyOwner()\n    const bundle = await loadFamilyOfficeBundle(supabase)\n    await verifyOwner()',
+      'row.owner_user_id !== owner',
+      'keepPreviousData: false',
+      'data: owner && !result.error ? result.data : undefined',
     ]),
-    'Family Office overview should use the shared registry cache and expose explicit contract/data states.'
+    'Overview must use the shared verified-owner cache, verify identity around reads, hide unverified data and expose contract states. Static contract check; runtime isolation is tested separately.'
   )
   addCheck(
     'frontend.family_office.bounded_parallel_reads',

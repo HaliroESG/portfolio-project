@@ -1,6 +1,7 @@
 import React from 'react'
 import { BacktestKpi } from '../types'
 import { cn } from '../lib/utils'
+import { protectBacktestKpi } from '../lib/financialQualification'
 
 interface KpiComparisonTableProps {
   portfolios: { portfolio_key: string; label: string; role: string }[]
@@ -29,7 +30,7 @@ const KPI_ROWS: { key: KpiMetricKey; label: string; format: 'pct' | 'num' }[] = 
 ]
 
 function formatValue(value: number | null | undefined, format: 'pct' | 'num'): string {
-  if (value === null || value === undefined || Number.isNaN(value)) return '--'
+  if (value === null || value === undefined || Number.isNaN(value)) return 'Non qualifié'
   if (format === 'pct') return `${(value * 100).toFixed(2)}%`
   return value.toFixed(2)
 }
@@ -78,7 +79,8 @@ export function KpiComparisonTable({ portfolios, kpis }: KpiComparisonTableProps
               <tr key={row.key} className="border-b border-slate-200/60 dark:border-white/5">
                 <td className="p-4 text-[11px] font-mono text-slate-600 dark:text-gray-300">{row.label}</td>
                 {portfolios.map((portfolio) => {
-                  const kpi = kpis[portfolio.portfolio_key]
+                  const source = kpis[portfolio.portfolio_key]
+                  const kpi = source ? protectBacktestKpi(source) : null
                   const value = kpi ? kpi[row.key] : null
                   return (
                     <td key={`${portfolio.portfolio_key}-${row.key}`} className="p-4 text-right text-[11px] font-mono text-slate-900 dark:text-gray-200">

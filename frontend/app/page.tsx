@@ -1,5 +1,8 @@
 "use client"
 
+import { protectFamilyOfficeBundle } from '../lib/financialQualification'
+import { FinancialKpiNotice } from '../components/FinancialKpiNotice'
+
 import {
   AlertTriangle,
   ArrowUpRight,
@@ -16,15 +19,12 @@ import {
 } from 'lucide-react'
 import Link from 'next/link'
 import { useMemo, useState } from 'react'
-import useSWR from 'swr'
 import { AppShell } from '../components/AppShell'
 import { EmptyState } from '../components/EmptyState'
 import { FamilyOfficeStateBadge } from '../components/FamilyOfficeStateBadge'
 import { command } from '../lib/commandApi'
 import {
-  FAMILY_OFFICE_REFRESH_MS,
-  FAMILY_OFFICE_SWR_KEY,
-  loadFamilyOfficeBundle,
+  useFamilyOfficeBundle,
 } from '../lib/familyOfficeData'
 import { supabase } from '../lib/supabase'
 import type { FamilyOfficeOperationRow, FamilyOfficeOverviewRow } from '../types'
@@ -40,7 +40,7 @@ function formatEur(value: number | null | undefined): string {
 }
 
 function formatRate(value: number | null | undefined): string {
-  if (value === null || value === undefined) return '--'
+  if (value === null || value === undefined) return 'Non qualifié'
   return `${value >= 0 ? '+' : ''}${(value * 100).toFixed(2)}%`
 }
 
@@ -75,11 +75,8 @@ function severityClass(severity: FamilyOfficeOperationRow['severity']): string {
 }
 
 export default function FamilyOfficeOverviewPage() {
-  const { data, error, isLoading, mutate } = useSWR(
-    FAMILY_OFFICE_SWR_KEY,
-    () => loadFamilyOfficeBundle(supabase),
-    { refreshInterval: FAMILY_OFFICE_REFRESH_MS, revalidateOnFocus: false }
-  )
+  const { data: cachedData, error, isLoading, mutate } = useFamilyOfficeBundle(supabase)
+  const data = cachedData ? protectFamilyOfficeBundle(cachedData) : undefined
   const [bootstrapping, setBootstrapping] = useState(false)
   const [commandError, setCommandError] = useState<string | null>(null)
 
@@ -175,7 +172,7 @@ export default function FamilyOfficeOverviewPage() {
               <p className="mt-2 text-sm text-slate-500 dark:text-gray-400">{data.portfolios.length} portefeuille{data.portfolios.length > 1 ? 's' : ''} · consolidation EUR</p>
             </div>
             <div className="flex items-center gap-2">
-              <FamilyOfficeStateBadge state={primary?.performance_state ?? 'MISSING'} />
+              <span className="text-xs text-slate-500">État des données</span><FamilyOfficeStateBadge state={primary?.performance_state ?? 'MISSING'} />
               <Link href="/operations" className="inline-flex h-9 items-center gap-2 rounded-md border border-slate-300 bg-white px-3 text-xs font-black text-slate-700 hover:bg-slate-50 dark:border-white/10 dark:bg-white/5 dark:text-gray-200">
                 <AlertTriangle size={14} />
                 {totals.exceptions} exception{totals.exceptions !== 1 ? 's' : ''}
@@ -196,7 +193,7 @@ export default function FamilyOfficeOverviewPage() {
               <div className="flex items-center justify-between border-b border-slate-200 px-4 py-3 dark:border-white/10">
                 <div>
                   <h2 className="text-sm font-black text-slate-950 dark:text-white">Performance investisseur</h2>
-                  <p className="mt-1 text-[10px] font-mono text-slate-500">TWR neutralisé des flux · XIRR investisseur</p>
+                  <p className="mt-1 text-[10px] font-mono text-slate-500">TWR / XIRR en attente de qualification</p>
                 </div>
                 <CircleDollarSign size={18} className="text-emerald-500" />
               </div>
@@ -205,20 +202,21 @@ export default function FamilyOfficeOverviewPage() {
                 <RateMetric label="Année" value={formatRate(primary?.twr_ytd)} />
                 <RateMetric label="XIRR" value={formatRate(primary?.xirr_since_inception)} />
               </div>
+              <FinancialKpiNotice family="PORTFOLIO_PERFORMANCE" context={primary ?? {}} />
               <PerformanceTrack rows={data.performance.filter((row) => row.portfolio_id === primary?.portfolio_id)} />
             </section>
 
             <section className="overflow-hidden rounded-md border border-slate-200 bg-white dark:border-white/10 dark:bg-[#0D1117]">
               <div className="flex items-center justify-between border-b border-slate-200 px-4 py-3 dark:border-white/10">
                 <div>
-                  <h2 className="text-sm font-black text-slate-950 dark:text-white">Risque consolidé</h2>
-                  <p className="mt-1 text-[10px] font-mono text-slate-500">Mesures calculées sur la NAV vérifiée</p>
+                  <h2 className="text-sm font-black text-slate-950 dark:text-white">Risque du portefeuille</h2>
+                  <p className="mt-1 text-[10px] font-mono text-slate-500">Risque temporel non qualifié · poids descriptifs distincts</p>
                 </div>
                 <ShieldCheck size={18} className="text-blue-500" />
               </div>
               <div className="divide-y divide-slate-200 dark:divide-white/10">
-                <RiskLine label="Volatilité 30 jours" value={formatRiskPct(primary?.volatility_30d_pct)} />
-                <RiskLine label="Drawdown YTD" value={formatRiskPct(primary?.max_drawdown_ytd_pct)} alert={(primary?.max_drawdown_ytd_pct ?? 0) < -10} />
+                <RiskLine label="Volatilité 30 jours" value="Non qualifié" />
+                <RiskLine label="Drawdown YTD" value="Non qualifié" />
                 <RiskLine label="Plus grande ligne" value={formatRiskPct(primary?.largest_position_pct)} alert={(primary?.largest_position_pct ?? 0) > 15} />
                 <RiskLine label="Couverture des données" value={coverage === null ? '--' : `${coverage.toFixed(1)}%`} alert={(coverage ?? 0) < 100} />
               </div>
@@ -259,7 +257,7 @@ export default function FamilyOfficeOverviewPage() {
               <div className="overflow-x-auto">
                 <table className="w-full min-w-[650px]">
                   <thead className="bg-slate-50 text-[9px] font-black uppercase text-slate-500 dark:bg-black/20">
-                    <tr><th className="px-4 py-3 text-left">Portefeuille</th><th className="px-3 py-3 text-right">NAV</th><th className="px-3 py-3 text-right">Cash</th><th className="px-3 py-3 text-right">TWR YTD</th><th className="px-4 py-3 text-right">État</th></tr>
+                    <tr><th className="px-4 py-3 text-left">Portefeuille</th><th className="px-3 py-3 text-right">NAV</th><th className="px-3 py-3 text-right">Cash</th><th className="px-3 py-3 text-right">TWR YTD</th><th className="px-4 py-3 text-right">Données</th></tr>
                   </thead>
                   <tbody className="divide-y divide-slate-200 dark:divide-white/10">
                     {data.overview.map((row) => (
@@ -293,26 +291,33 @@ function SummaryMetric({ icon: Icon, label, value, emphasis = false, negative = 
 
 function RateMetric({ label, value }: { label: string; value: string }) {
   const negative = value.startsWith('-')
-  return <div className="border-r border-slate-200 px-4 py-4 last:border-r-0 dark:border-white/10"><div className="text-[9px] font-black uppercase text-slate-500">{label}</div><div className={`mt-2 font-mono text-lg font-black ${negative ? 'text-red-600 dark:text-red-300' : 'text-emerald-600 dark:text-emerald-300'}`}>{value}</div></div>
+  const unavailable = value === 'Non qualifié'
+  return <div className="border-r border-slate-200 px-4 py-4 last:border-r-0 dark:border-white/10"><div className="text-[9px] font-black uppercase text-slate-500">{label}</div><div className={`mt-2 font-mono text-lg font-black ${unavailable ? 'text-amber-700 dark:text-amber-300' : negative ? 'text-red-600 dark:text-red-300' : 'text-emerald-600 dark:text-emerald-300'}`}>{value}</div></div>
 }
 
 function RiskLine({ label, value, alert = false }: { label: string; value: string; alert?: boolean }) {
   return <div className="flex items-center justify-between px-4 py-3"><span className="text-xs font-medium text-slate-600 dark:text-gray-300">{label}</span><span className={`font-mono text-xs font-black ${alert ? 'text-amber-600 dark:text-amber-300' : 'text-slate-950 dark:text-white'}`}>{value}</span></div>
 }
 
-function PerformanceTrack({ rows }: { rows: Array<{ nav_eur: number | null; performance_date: string }> }) {
-  const points = rows.filter((row) => row.nav_eur !== null).slice(-90)
-  if (points.length < 2) return <div className="flex h-40 items-center justify-center text-xs text-slate-500">Historique insuffisant</div>
-  const values = points.map((point) => point.nav_eur as number)
+function PerformanceTrack({ rows }: { rows: Array<{ nav_eur: number | null; performance_date: string; external_flow_eur: number }> }) {
+  const points = rows.slice(-90)
+  const values = points.map(point => point.nav_eur).filter((value): value is number => value !== null && Number.isFinite(value))
+  if (values.length < 2) return <div className="flex h-40 items-center justify-center text-xs text-slate-500">Historique de patrimoine insuffisant</div>
   const min = Math.min(...values)
-  const max = Math.max(...values)
-  const spread = max - min || 1
-  const path = values.map((value, index) => `${(index / (values.length - 1)) * 100},${100 - ((value - min) / spread) * 80 - 10}`).join(' ')
+  const spread = Math.max(...values) - min || 1
+  const path = points.map((point, index) => {
+    if (point.nav_eur === null || !Number.isFinite(point.nav_eur)) return ''
+    const previous = points[index - 1]?.nav_eur
+    const command = previous !== null && previous !== undefined && Number.isFinite(previous) ? 'L' : 'M'
+    return `${command}${(index / (points.length - 1)) * 100},${100 - ((point.nav_eur - min) / spread) * 80 - 10}`
+  }).join(' ')
   return (
-    <div className="h-40 px-4 py-4">
-      <svg viewBox="0 0 100 100" preserveAspectRatio="none" className="h-full w-full" role="img" aria-label="Évolution de la valeur nette">
-        <polyline points={path} fill="none" stroke="currentColor" strokeWidth="2" vectorEffect="non-scaling-stroke" className="text-emerald-500" />
+    <div className="px-4 py-4">
+      <p className="mb-2 text-xs text-slate-500">Patrimoine (NAV), apports et retraits inclus — ce n’est pas un rendement. Historique affiché limité à 90 observations ; couverture complète non attestée.</p>
+      <svg viewBox="0 0 100 100" preserveAspectRatio="none" className="h-32 w-full" role="img" aria-label="Patrimoine, flux inclus, sans indice de rendement">
+        <path d={path} fill="none" stroke="currentColor" strokeWidth="2" vectorEffect="non-scaling-stroke" className="text-blue-500" />
       </svg>
+      <details className="mt-2 text-xs text-slate-500"><summary>Dates, valeurs et flux publiés</summary><ul>{points.map(point => <li key={point.performance_date}>{point.performance_date} : NAV {formatEur(point.nav_eur)} · flux {formatEur(point.external_flow_eur)}</li>)}</ul></details>
     </div>
   )
 }

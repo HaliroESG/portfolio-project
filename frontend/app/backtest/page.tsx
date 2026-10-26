@@ -1,6 +1,8 @@
 "use client"
 
 import React, { useEffect, useMemo, useState } from 'react'
+import { protectBacktestKpi, protectBacktestResult } from '../../lib/financialQualification'
+import { FinancialKpiNotice } from '../../components/FinancialKpiNotice'
 import { supabase } from '../../lib/supabase'
 import { AppShell } from '../../components/AppShell'
 import { BacktestChart, LineSeries } from '../../components/BacktestChart'
@@ -76,12 +78,7 @@ async function fetchResultsForPortfolio(runId: string, portfolioKey: string): Pr
     if (error) throw error
     const batch = (data ?? []) as BacktestResult[]
     results.push(
-      ...batch.map((row) => ({
-        ...row,
-        nav: parseNumeric(row.nav) ?? 0,
-        drawdown: parseNumeric(row.drawdown),
-        returns_daily: parseNumeric(row.returns_daily),
-      }))
+      ...batch.map(protectBacktestResult)
     )
     if (batch.length < pageSize) break
     offset += pageSize
@@ -102,26 +99,24 @@ function computeDataState(loading: boolean, runs: BacktestRun[], selectedRun?: B
 }
 
 function buildCommonDates(resultsByKey: Record<string, BacktestResult[]>, keys: string[]): string[] {
-  if (keys.length === 0) return []
-  const base = resultsByKey[keys[0]]?.map((row) => row.date) ?? []
-  if (base.length === 0) return []
-  let common = new Set(base)
-  for (const key of keys.slice(1)) {
-    const dates = resultsByKey[key]?.map((row) => row.date) ?? []
-    const next = new Set(dates)
-    common = new Set(Array.from(common).filter((date) => next.has(date)))
-  }
-  return Array.from(common).sort()
+  // Union retains a missing observation in one series as an explicit gap.
+  return Array.from(new Set(keys.flatMap(key => (resultsByKey[key] ?? []).map(row => row.date)))).sort()
 }
 
 function downsampleSeries(dates: string[], series: LineSeries[], maxPoints = 1200): { dates: string[]; series: LineSeries[] } {
   if (dates.length <= maxPoints) return { dates, series }
   const stride = Math.ceil(dates.length / maxPoints)
-  const indices = dates.map((_, index) => index).filter((index) => index % stride === 0 || index === dates.length - 1)
+  const selected = new Set(dates.map((_, index) => index).filter(index => index % stride === 0 || index === dates.length - 1))
+  // Preserve both sides of every validity transition, even off the sampling grid.
+  for (const item of series) for (let index = 1; index < dates.length; index++) {
+    const valid = (i: number) => typeof item.values[i] === 'number' && Number.isFinite(item.values[i])
+    if (valid(index) !== valid(index - 1)) { selected.add(index - 1); selected.add(index) }
+  }
+  const indices = Array.from(selected).sort((a, b) => a - b)
   const nextDates = indices.map((index) => dates[index])
   const nextSeries = series.map((s) => ({
     ...s,
-    values: indices.map((index) => s.values[index] ?? s.values[s.values.length - 1] ?? 0),
+    values: indices.map((index) => typeof s.values[index] === 'number' && Number.isFinite(s.values[index]) ? s.values[index] : null),
   }))
   return { dates: nextDates, series: nextSeries }
 }
@@ -198,7 +193,7 @@ export default function BacktestPage() {
           kpi.calmar = parseNumeric(kpi.calmar)
           kpi.worst_year = parseNumeric(kpi.worst_year)
           kpi.best_year = parseNumeric(kpi.best_year)
-          kpiMap[kpi.portfolio_key] = kpi
+          kpiMap[kpi.portfolio_key] = protectBacktestKpi(kpi)
         })
 
         const resultsByKey: Record<string, BacktestResult[]> = {}
@@ -287,8 +282,8 @@ export default function BacktestPage() {
     keys.forEach((key, index) => {
       const data = results[key] ?? []
       const map = new Map(data.map((row) => [row.date, row]))
-      const navValues = commonDates.map((date) => map.get(date)?.nav ?? 0)
-      const ddValues = commonDates.map((date) => map.get(date)?.drawdown ?? 0)
+      const navValues = commonDates.map((date) => map.get(date)?.nav ?? null)
+      const ddValues = commonDates.map(() => null)
       const portfolio = portfolios.find((p) => p.portfolio_key === key)
       navSeries.push({
         key,
@@ -427,6 +422,7 @@ export default function BacktestPage() {
               />
             ) : (
               <div className="space-y-6">
+                <FinancialKpiNotice family="BACKTEST" context={selectedRun ?? {}} />
                 <BacktestChart dates={chartPayload.dates} series={chartPayload.navSeries} />
                 <DrawdownChart dates={chartPayload.dates} series={chartPayload.ddSeries} />
                 <KpiComparisonTable

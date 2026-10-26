@@ -11,6 +11,10 @@ from broker_ingest.fortuneo import parse_fortuneo_csv
 from broker_ingest.ibkr import parse_ibkr_trades_csv
 from broker_ingest.models import CanonicalTransaction
 from broker_ingest.reconciliation import parse_broker_positions_csv
+from financial_qualification import (
+    REASON_CODE, has_protected_dependency, protect_performance_payload,
+    qualification, risk_export,
+)
 
 from .ledger import build_book
 from .models import LedgerEvent
@@ -109,6 +113,8 @@ def require_order_scope(
     )
     if decision["portfolio_id"] != account["portfolio_id"]:
         raise ValueError("Decision and account must belong to the same portfolio")
+    if has_protected_dependency([decision.get("risk_context"), decision.get("source_snapshot")]):
+        raise ValueError(REASON_CODE)
     return decision, account
 
 
@@ -920,6 +926,7 @@ def prepare_monthly_close(
         "period_valuation_present": performance is not None and performance.get("nav_eur") is not None,
         "coverage_ready": coverage >= 100,
         "performance_ready": performance_state == "READY",
+        "financial_calculation_qualified": qualification("PORTFOLIO_PERFORMANCE", performance)["state"] == "QUALIFIED",
         "critical_exceptions_clear": len(critical) == 0,
     }
     can_close = all(checks.values())
@@ -938,8 +945,9 @@ def prepare_monthly_close(
         "positions": positions,
         "cash": cash,
         "manual_holdings": manual_holdings,
-        "performance": [performance] if performance else [],
-        "risk": risk,
+        "performance": [protect_performance_payload(performance)] if performance else [],
+        "risk": risk_export(risk),
+        "financial_qualification": qualification("PORTFOLIO_PERFORMANCE", {**(performance or {}), "period_end": period_end.isoformat()}),
         "exceptions": exceptions,
     }
     payload = {
@@ -1001,6 +1009,10 @@ def transition_decision(
     current = decision["status"]
     if target_status not in VALID_DECISION_TRANSITIONS.get(current, set()):
         raise ValueError(f"Invalid decision transition {current} -> {target_status}")
+    if target_status in {"VALIDATED", "EXPORTED", "EXECUTED"} and has_protected_dependency(
+        [decision.get("risk_context"), decision.get("source_snapshot")]
+    ):
+        raise ValueError(REASON_CODE)
     timestamps: dict[str, Any] = {"updated_at": _iso_now()}
     if target_status == "VALIDATED":
         timestamps["validated_at"] = _iso_now()
