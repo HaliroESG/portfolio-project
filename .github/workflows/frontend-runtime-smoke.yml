@@ -2,18 +2,85 @@ name: Frontend Runtime Smoke
 
 on:
   workflow_dispatch:
+    inputs:
+      allow_real_runtime:
+        description: "Explicitly authorize the existing Supabase-connected browser smoke"
+        type: boolean
+        required: true
+        default: false
+  pull_request:
+    paths:
+      - "frontend/**"
+      - ".github/workflows/frontend-runtime-smoke.yml"
+      - ".github/scripts/run-offline-browser-smoke.sh"
+      - ".github/tests/test_runtime_smoke_isolation.py"
   push:
     branches:
       - main
     paths:
       - "frontend/**"
       - ".github/workflows/frontend-runtime-smoke.yml"
+      - ".github/scripts/run-offline-browser-smoke.sh"
+      - ".github/tests/test_runtime_smoke_isolation.py"
 
 permissions:
   contents: read
 
 jobs:
-  smoke:
+  smoke-offline:
+    name: Frontend runtime / offline
+    if: ${{ github.event_name != 'workflow_dispatch' || !inputs.allow_real_runtime }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    env:
+      NEXT_PUBLIC_SUPABASE_URL: http://127.0.0.1:54321
+      NEXT_PUBLIC_SUPABASE_ANON_KEY: ci-placeholder-anon-key
+      NEXT_TELEMETRY_DISABLED: "1"
+      PLAYWRIGHT_BROWSERS_PATH: ${{ github.workspace }}/.playwright-offline
+    steps:
+      - name: Checkout
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
+        with:
+          persist-credentials: false
+      - name: Setup Node
+        uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020
+        with:
+          node-version: "22"
+          cache: "npm"
+          cache-dependency-path: frontend/package-lock.json
+      - name: Reject runtime environment files before install and build
+        run: |
+          for file in frontend/.env frontend/.env.local frontend/.env.production frontend/.env.production.local; do
+            test ! -e "$file" || { echo "Offline job rejects runtime environment files"; exit 1; }
+          done
+      - name: Test offline workflow and runner contract
+        run: python3 -m unittest discover -s .github/tests -p test_runtime_smoke_isolation.py
+      - name: Install dependencies
+        working-directory: ./frontend
+        run: npm ci
+      - name: Frontend checks and build with local placeholders
+        working-directory: ./frontend
+        run: |
+          npm run lint
+          npx tsc --noEmit
+          npm run test:frontend
+          npm run perf:budget
+          npm run build
+      - name: Install Playwright browser
+        working-directory: ./frontend
+        run: npx --no-install playwright install --with-deps chromium
+      - name: Browser smoke with loopback networking only
+        run: |
+          sudo env -i PATH="$PATH" HOME="$HOME" \
+            PLAYWRIGHT_BROWSERS_PATH="$PLAYWRIGHT_BROWSERS_PATH" \
+            NEXT_PUBLIC_SUPABASE_URL=http://127.0.0.1:54321 \
+            NEXT_PUBLIC_SUPABASE_ANON_KEY=ci-placeholder-anon-key \
+            NEXT_TELEMETRY_DISABLED=1 NODE_ENV=production \
+            unshare --net bash .github/scripts/run-offline-browser-smoke.sh
+
+  smoke-real:
+    if: ${{ github.event_name == 'workflow_dispatch' && inputs.allow_real_runtime }}
+    timeout-minutes: 20
     runs-on: ubuntu-latest
     env:
       NEXT_PUBLIC_SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
